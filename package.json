@@ -1,0 +1,30 @@
+{
+    "name": "community-bot",
+    "version": "3.9.38",
+    "description": "All-in-One Discord Community Bot — ticket panel (multi-category), auto-responder, anti-spam, AFK, leveling, key-driven VIP role, self-role, temp voice, giveaway, scheduled announcements, embed builder, backup, warn, stats, poll, midman/rekber (deal escrow 3-pihak, buat deal oleh siapa saja via formulir 3 langkah, persetujuan ganda, kelola member di channel deal, fee additive) — fully configurable from Discord",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "nodemon index.js",
+        "test": "node --test --test-concurrency=1 tests/unit/*.test.js",
+        "test:unit": "node --test tests/unit/*.test.js",
+        "lint": "eslint index.js src/",
+        "lint:fix": "eslint index.js src/ --fix",
+        "format": "prettier --write \"**/*.{js,json,md,yml}\" --ignore-path .gitignore",
+        "format:check": "prettier --check \"**/*.{js,json,md,yml}\" --ignore-path .gitignore"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.5",
+        "eslint": "^9.0.0",
+        "globals": "^17.11.0",
+        "nodemon": "^3.1.14",
+        "prettier": "^3.0.0"
+    },
+    "dependencies": {
+        "discord.js": "^14.27.0",
+        "dotenv": "^16.4.1"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}

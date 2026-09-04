@@ -1,0 +1,45 @@
+# === Dependencies ===
+node_modules/
+
+# === Environment variables (SENSITIVE — never commit) ===
+.env
+.env.bak
+.env.local
+.env.*.local
+
+# === Runtime data files (JSON persistence) ===
+# v3.9.10: file data JSON sekarang di data/ folder (sebelumnya di root).
+# Kalau file lama masih ada di root (pre-v3.9.10), tetap di-ignore.
+data/*.json
+config.json
+scheduledRoles.json
+keys.json
+selfRoles.json
+giveaways.json
+warns.json
+polls.json
+scheduledAnnouncements.json
+stats.json
+tempVoice.json
+tickets.json
+
+# === Backup folder ===
+backups/
+
+# === Logs ===
+*.log
+npm-debug.log*
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# === OS ===
+Thumbs.db
+
+# === Test coverage ===
+coverage/
+.nyc_output/
