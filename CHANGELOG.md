@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.41] — 2026-09-05
+
+### Fixed — 🔍 Full re-debug in response to a production error report ("Interaction Error: ExpectedConstraintError — s.string().lengthLessThanOrEqual()")
+
+Trigger: the user reported error-log spam every time the **embed send modal** was opened in production. Root cause: `TextInputBuilder.setLabel` has a Discord limit of **45 characters** — the English labels `'Message outside the embed (optional, supports @)'` (48 chars) and `'Message outside the embed (leave empty to remove)'` (49 chars) **exceeded the limit**, so the builder threw before the modal could even render. The Indonesian twin happened to stay ≤ 45 (`Pesan di luar embed (opsional, support @)` = 40) — which is why this bug only surfaced in the EN repo: the earlier v3.9.27 limit fix only covered the ticket flows, and the EN embed file slipped through the audit because it was checked via its Indonesian twin.
+
+- 🟠 **The "Send Embed to Channel" modal was completely dead in the EN repo** — the 48-char label caused an `ExpectedConstraintError` on EVERY send-button click, making the embed send flow unusable. Fix: the label was shortened to `'Message outside the embed (optional)'` (36 chars); the @-mention hint stays complete in the placeholder (limit 100).
+- 🟠 **The "Set Message (Plain Text)" modal was completely dead in the EN repo** — the 49-char label caused the same throw. Fix: a 36-char label; the "leave empty to remove" hint was moved into the placeholder.
+
+### Audit — 🛡️ full sweep of every Discord component limit (not just the crashing one)
+
+An automated scan of the full source of both repos against ALL builder limits: TextInput label ≤ 45 / placeholder ≤ 100 / `setMaxLength` ≤ 4000, Modal title ≤ 45, Button label ≤ 80, Select option label & description ≤ 100 (call-sites classified by their nearest constructor). Result: **0 literal violations remain** in either repo; every dynamic site (template literals) was verified as already guarded by the v3.9.26/27 fixes (`.slice(0,45)` ticket modals, `.slice(0,100)` select placeholders) or bounded by input validation (product label ≤ 80, poll question ≤ 250, panel field ≤ 9 chars, config tipe ≤ 17 chars).
+
+### Tests
+
+- 🟢 +4 unit tests (total **433**, up from 429): `tests/unit/componentLimits.test.js` — (1) a static scan asserting zero literal violations across all of src/ (**a permanent safety net** — any future PR that adds an over-length label instantly goes red with a file:line message), (2) a runtime contract for every modal label/title in `embed.js` against REAL discord.js builders (not mocks), (3) limit documentation (46 chars throws / 45 passes), (4) a specific regression for the embed send modal. Full suite 433/433 green, ESLint 0 warnings.
+
 ## [3.9.40] — 2026-09-04
 
 ### Fixed — 🛡️ Post-v3.9.39 full audit ("check the whole codebase + sync the docs"): 6 real bugs + hardening + docs sync

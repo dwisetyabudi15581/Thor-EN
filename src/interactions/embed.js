@@ -103,7 +103,11 @@ module.exports = async function (interaction) {
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('message')
-                    .setLabel('Message outside the embed (optional, supports @)')
+                    // v3.9.41 FIX: label was 'Message outside the embed (optional, supports @)'
+                    // (48 chars) — Discord TextInput label limit is 45 → TextInputBuilder
+                    // threw ExpectedConstraintError on EVERY send-modal open (bot log spam).
+                    // Kept under 45; the @-mention hint already lives in the placeholder.
+                    .setLabel('Message outside the embed (optional)')
                     .setStyle(TextInputStyle.Paragraph)
                     .setRequired(false)
                     .setMaxLength(2000)
@@ -319,11 +323,13 @@ async function handleEmbedBuilderEdit(interaction) {
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('value')
-                    .setLabel('Message outside the embed (leave empty to remove)')
+                    // v3.9.41 FIX: label was 49 chars > 45 limit (same class of bug as
+                    // the send-modal above). 'leave empty to remove' moved to placeholder.
+                    .setLabel('Message outside the embed (optional)')
                     .setStyle(TextInputStyle.Paragraph)
                     .setRequired(false)
                     .setMaxLength(2000)
-                    .setPlaceholder('Intro text outside the embed.\nSupports @everyone, @here, mentions')
+                    .setPlaceholder('Intro text outside the embed. Leave empty to remove.\nSupports @everyone, @here, mentions')
                     .setValue(d.content || '')
             )
         );
