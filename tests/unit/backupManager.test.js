@@ -1,5 +1,5 @@
 /**
- * Unit tests untuk backupManager (data layer)
+ * Unit tests for backupManager (data layer)
  *
  * Verify: createBackup, listBackups, restoreBackup, cleanOldBackups
  */
@@ -18,11 +18,11 @@ const {
 } = require('../../src/data/backupManager');
 
 // ====================================================
-// === v3.9.24 FIX: sandbox backups/ produksi ===
+// === v3.9.24 FIX: production backups/ sandbox ===
 // ====================================================
-// Test sebelumnya bikin backup beneran di backups/ produksi DAN memicu
-// cleanOldBackups() (keep-7) yang meng-EVICT backup asli. Sekarang: folder
-// backups/ asli di-rename sementara saat test jalan, dikembalikan saat exit.
+// The previous test created real backups in the production backups/ folder AND
+// triggered cleanOldBackups() (keep-7), which EVICTED real backups. Now: the
+// real backups/ folder is temporarily renamed while the test runs, and restored on exit.
 const realBackupsDir = path.join(__dirname, '..', '..', 'backups');
 const stashBackupsDir = path.join(__dirname, '..', '..', 'backups_test_stash');
 let backupsStashed = false;
@@ -31,7 +31,7 @@ if (fs.existsSync(realBackupsDir)) {
     backupsStashed = true;
 }
 process.on('exit', () => {
-    // Harus sync (dalam exit handler). Restore backups/ asli, buang hasil test.
+    // Must be sync (inside an exit handler). Restore the real backups/, discard test output.
     try {
         if (fs.existsSync(realBackupsDir)) {
             fs.rmSync(realBackupsDir, { recursive: true, force: true });
@@ -70,7 +70,7 @@ test('backupManager: createBackup result.ok is true when files copied', () => {
     if (result.filesCopied > 0) {
         assert.strictEqual(result.ok, true);
     }
-    // Kalau filesCopied === 0 (no data files yet), ok bisa false — itu OK.
+    // If filesCopied === 0 (no data files yet), ok may be false — that's fine.
 });
 
 test('backupManager: listBackups returns array', () => {
@@ -95,16 +95,16 @@ test('backupManager: restoreBackup rejects path traversal attempts', () => {
     const result = restoreBackup('../../../etc/passwd');
     assert.strictEqual(result.ok, false);
     assert.ok(result.errors.length > 0);
-    // Bisa match "Invalid backup name format" atau "path traversal"
+    // Can match "Invalid backup name format" or "path traversal"
     assert.ok(/Invalid|path traversal/i.test(result.errors[0]));
 });
 
 test('backupManager: restoreBackup rejects non-existent backup', () => {
-    // Valid format tapi tidak ada di disk
+    // Valid format but missing on disk
     const result = restoreBackup('2020-01-01_00-00-00');
     assert.strictEqual(result.ok, false);
     assert.ok(result.errors.length > 0);
-    assert.match(result.errors[0], /tidak ditemukan/i);
+    assert.match(result.errors[0], /not found/i);
 });
 
 test('backupManager: createBackup + listBackups integration', () => {
@@ -119,23 +119,23 @@ test('backupManager: createBackup + listBackups integration', () => {
 });
 
 // ====================================================
-// === v3.9.24 GUARD: FILES_TO_BACKUP tidak boleh bolong ===
+// === v3.9.24 GUARD: FILES_TO_BACKUP must not have holes ===
 // ====================================================
-// Bug nyata: automod.json (word rules auto-mod), levels.json, responders.json,
-// afk.json, panels.json TIDAK pernah di-backup — /restore-backup tidak bisa
-// memulihkan fitur-fitur itu. Guard: setiap file JSON live di data/ WAJIB
-// ada di FILES_TO_BACKUP (test gagal kalau ada file baru yang lupa di-register).
-test('v3.9.24 GUARD: FILES_TO_BACKUP mencakup semua file JSON live di data/', () => {
+// Real bug: automod.json (word rules auto-mod), levels.json, responders.json,
+// afk.json, panels.json were NEVER backed up — /restore-backup couldn't
+// recover those features. Guard: every live JSON file in data/ MUST be
+// present in FILES_TO_BACKUP (the test fails if a new file is missing from the registry).
+test('v3.9.24 GUARD: FILES_TO_BACKUP covers every live JSON file in data/', () => {
     const dataDir = path.join(__dirname, '..', '..', 'data');
     if (!fs.existsSync(dataDir)) {
-        return; // fresh checkout tanpa data — tidak ada yang bisa bolong
+        return; // fresh checkout without data — nothing can be missing
     }
     const liveFiles = fs.readdirSync(dataDir).filter(f => f.endsWith('.json'));
-    assert.ok(liveFiles.length > 0, 'data/ seharusnya berisi minimal beberapa file JSON di repo dev ini');
+    assert.ok(liveFiles.length > 0, 'data/ should contain at least a few JSON files in this dev repo');
     for (const f of liveFiles) {
         assert.ok(
             FILES_TO_BACKUP.includes(f),
-            `File data live "${f}" TIDAK ada di FILES_TO_BACKUP — backup jadi bolong! Tambahkan ke src/data/backupManager.js`
+            `Live data file "${f}" is NOT in FILES_TO_BACKUP — the backup has a hole! Add it to src/data/backupManager.js`
         );
     }
 });

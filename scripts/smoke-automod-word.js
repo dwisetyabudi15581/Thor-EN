@@ -1,7 +1,7 @@
 /**
- * Smoke test end-to-end untuk command automod baru (v3.9.23 WORD FLEX).
- * Simulasi interaction mock → pastikan semua handler jalan tanpa error
- * dan state data benar.
+ * End-to-end smoke test for the new automod commands (v3.9.23 WORD FLEX).
+ * Simulates mock interactions → makes sure every handler runs without errors
+ * and the data state is correct.
  *
  * Run: node scripts/smoke-automod-word.js
  */
@@ -46,7 +46,7 @@ function makeMockInteraction({ commandName, options = {} }) {
         })
     );
 
-    console.log('\n2. /add-word duplicate (harus skip)');
+    console.log('\n2. /add-word duplicate (must skip)');
     await handler(makeMockInteraction({ commandName: 'add-word', options: { words: 'smokeword1' } }));
 
     console.log('\n3. /add-word tipe exempt');
@@ -64,10 +64,10 @@ function makeMockInteraction({ commandName, options = {} }) {
     console.log('\n7. /automod-show');
     await handler(makeMockInteraction({ commandName: 'automod-show' }));
 
-    console.log('\n8. /remove-link-whitelist tanpa argumen (harus error message)');
+    console.log('\n8. /remove-link-whitelist without arguments (must show an error message)');
     await handler(makeMockInteraction({ commandName: 'remove-link-whitelist' }));
 
-    console.log('\n9. /add-link-whitelist + /remove-link-whitelist dengan role');
+    console.log('\n9. /add-link-whitelist + /remove-link-whitelist with a role');
     await handler(
         makeMockInteraction({
             commandName: 'add-link-whitelist',
@@ -92,7 +92,7 @@ function makeMockInteraction({ commandName, options = {} }) {
     console.log('\n11. /automod-toggle');
     await handler(makeMockInteraction({ commandName: 'automod-toggle', options: { enabled: true } }));
 
-    // === Verifikasi state akhir ===
+    // === Verify the final state ===
     const { getGuildConfig, findViolatedWord } = require('../src/data/automodManager');
     const config = getGuildConfig('smoke_guild_automod');
 
@@ -101,14 +101,14 @@ function makeMockInteraction({ commandName, options = {} }) {
     console.log('exemptWords :', JSON.stringify(config.exemptWords));
     console.log('wordAction  :', config.wordAction, '| matchMode:', config.wordMatchMode);
 
-    // Sanity: deteksi violation end-to-end dari state hasil command
+    // Sanity: end-to-end violation detection from the state produced by the commands
     const v = findViolatedWord('cek bulk1 dong', config);
-    if (!v || v.word !== 'bulk1') throw new Error('FAIL: bulk1 harus terdeteksi sebagai violation');
-    if (v.action !== null) throw new Error('FAIL: bulk1 tanpa action khusus harus null (fallback global)');
-    console.log('\nviolation check OK:', JSON.stringify(v), '(fallback ke wordAction=warn)');
+    if (!v || v.word !== 'bulk1') throw new Error('FAIL: bulk1 must be detected as a violation');
+    if (v.action !== null) throw new Error('FAIL: bulk1 without a specific action must be null (global fallback)');
+    console.log('\nviolation check OK:', JSON.stringify(v), '(falls back to wordAction=warn)');
 
-    // === v3.9.24: cleanup residue — smoke test sebelumnya meninggalkan
-    // guild smoke_guild_automod selamanya di data/automod.json produksi.
+    // === v3.9.24: cleanup residue — previous smoke tests used to leave the
+    // smoke_guild_automod guild behind forever in the production data/automod.json.
     const fs = require('fs');
     const path = require('path');
     const { safeWriteJSON } = require('../src/infra/safeWrite');
@@ -119,14 +119,14 @@ function makeMockInteraction({ commandName, options = {} }) {
             if (data && typeof data === 'object' && !Array.isArray(data) && 'smoke_guild_automod' in data) {
                 delete data.smoke_guild_automod;
                 safeWriteJSON(automodPath, data);
-                console.log('🧹 Residue smoke_guild_automod dibersihkan dari data/automod.json');
+                console.log('🧹 smoke_guild_automod residue cleaned from data/automod.json');
             }
         }
     } catch (cleanupErr) {
-        console.warn('⚠️ Cleanup residue gagal (tidak fatal):', cleanupErr.message);
+        console.warn('⚠️ Residue cleanup failed (not fatal):', cleanupErr.message);
     }
 
-    console.log('\n✅ SMOKE TEST PASS — semua handler v3.9.23 jalan tanpa error');
+    console.log('\n✅ SMOKE TEST PASS — all v3.9.23 handlers ran without errors');
 })().catch(err => {
     console.error('❌ SMOKE FAIL:', err);
     process.exit(1);

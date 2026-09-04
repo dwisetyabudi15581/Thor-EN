@@ -1,5 +1,5 @@
 /**
- * Midman (Rekber) Manager — data layer & state machine deal escrow 3-pihak.
+ * Midman (Escrow) Manager — data layer & state machine for 3-party escrow deals.
  * v3.9.34.
  *
  * File: data/deals.json
@@ -7,57 +7,57 @@
  *   "<channelId>": {
  *     "channelId": "123...",
  *     "guildId":    "123...",
- *     "buyerId":    "123...",   // pembeli
- *     "sellerId":   "123...",   // penjual
- *     // v3.9.34: deal bisa dibuka siapa saja (pembeli/penjual/pihak yang
- *     // menolong) — peran eksplisit dipilih lewat formulir 3 langkah.
- *     "buyerAgreed":  false,     // v3.9.34: persetujuan DUA pihak (WAITING_AGREE)
+ *     "buyerId":    "123...",   // buyer
+ *     "sellerId":   "123...",   // seller
+ *     // v3.9.34: a deal can be opened by anyone (buyer/seller/helpful third
+ *     // party) — the role is chosen explicitly via a 3-step form.
+ *     "buyerAgreed":  false,     // v3.9.34: dual consent (WAITING_AGREE)
  *     "sellerAgreed": false,
- *     "observers":  ["123..."],  // v3.9.34: member tambahan (non-peserta) di channel deal
+ *     "observers":  ["123..."],  // v3.9.34: additional (non-participant) members in the deal channel
  *     "item":       "Akun ML Mythic",
- *     "priceNum":   100000,     // harga deal dalam rupiah (number)
+ *     "priceNum":   100000,     // deal price in rupiah (number)
  *     "priceText":  "Rp100.000",
- *     "fee":        5000,       // fee midman (dihitung saat deal dibuat)
- *     "feeMode":    "percent",  // v3.9.33: snapshot mode fee saat deal dibuat
- *     "feeValue":   5,          // v3.9.33: snapshot nilai fee saat deal dibuat
+ *     "fee":        5000,       // middleman fee (computed when the deal is created)
+ *     "feeMode":    "percent",  // v3.9.33: fee mode snapshot at deal creation
+ *     "feeValue":   5,          // v3.9.33: fee value snapshot at deal creation
  *     "state":      "WAITING_PAYMENT",
- *     "boardMessageId": "123...", // ID pesan Deal Board (embed sumber kebenaran)
+ *     "boardMessageId": "123...", // Deal Board message ID (embed as the source of truth)
  *     "createdBy":  "123...",
  *     "createdAt":  1725...,
  *     "history": [ { ts, event, fromState, toState, actorId, actorTag } ]
  *   }
  * }
  *
- * === PRINSIP INTI ===
- * Rekber = ada ORANG KETIGA yang pegang dana. Mode gagal rekber selalu soal
- * "siapa bilang apa di chat" — chat bisa diedit/dihapus, jadi chat bukan bukti.
- * Solusinya: Deal Board (embed bot) jadi sumber kebenaran, dan SEMUA
- * perpindahan state hanya lewat tombol dengan validasi GANDA:
- *   1. `canTransition(state, event)`  → urutan langkah tidak bisa dilompati.
- *   2. `actorAllowed(event, roles)`   → hanya pihak yang berhak yang bisa klik.
+ * === CORE PRINCIPLE ===
+ * Escrow means a THIRD PARTY holds the funds. Escrow failure modes are always
+ * about "who said what in chat" — chat can be edited/deleted, so chat is not proof.
+ * The solution: the Deal Board (bot embed) is the source of truth, and ALL
+ * state transitions go only through buttons with DUAL validation:
+ *   1. `canTransition(state, event)`  → the step order cannot be skipped.
+ *   2. `actorAllowed(event, roles)`   → only the authorized party can click.
  *
- * Contoh yang OTOMATIS DITOLAK bot:
- *   - Midman klik "Cairkan" saat buyer belum konfirmasi barang  (release dari
+ * Examples the bot AUTOMATICALLY REJECTS:
+ *   - Midman clicks "Release" before the buyer confirms the goods (release from
  *     WAITING_DELIVERY → invalid).
- *   - Buyer klik "Dana Masuk" menyamar midman                  (aktor salah).
- *   - Semua aksi saat DISPUTE                                  (state dibekukan).
+ *   - Buyer clicks "Funds Received" while posing as the midman            (wrong actor).
+ *   - Any action while in DISPUTE                                        (state frozen).
  *
- * v3.9.34: state awal WAITING_AGREE — PEMBELI DAN PENJUAL dua-duanya harus
- * klik "Setuju Deal" sebelum terms terkunci (dulu hanya penjual, karena
- * creator deal selalu pembeli yang menulis terms). Sekarang creator bisa
- * siapa saja, jadi persetujuan ganda menjaga prinsip "pihak yang TIDAK
- * menulis terms harus menyetujuinya".
+ * v3.9.34: initial state WAITING_AGREE — BOTH the BUYER AND SELLER must
+ * click "Agree to Deal" before the terms are locked (before, only the seller,
+ * because the deal creator was always the buyer who wrote the terms). Now the
+ * creator can be anyone, so dual consent preserves the principle "the party
+ * that did NOT write the terms must approve them".
  *
- * Fungsi pure (canTransition, nextState, actorAllowed, calcFee,
+ * Pure functions (canTransition, nextState, actorAllowed, calcFee,
  * calcTotals, parsePriceNumber, formatRupiah, applyAgreement,
- * canAddObserver, addObserver, removeObserver) mengikuti pola
- * classifyProduct() v3.9.28: di-ekstrak supaya bisa di-unit-test tanpa mock
- * Discord.
+ * canAddObserver, addObserver, removeObserver) follow the
+ * classifyProduct() v3.9.28 pattern: extracted so they can be unit-tested
+ * without mocking Discord.
  *
- * v3.9.33 revisi fee: fee DITAMBAHKAN DI ATAS harga (additive), TIDAK dipotong
- * dari dana penjual. Contoh: harga 100.000 + fee 5% (5.000) → pembeli
- * transfer 105.000, penjual menerima 100.000 PENUH, midman menyimpan 5.000.
- * Penjual tidak pernah "kehilangan" sebagian harga deal karena fee.
+ * v3.9.33 fee revision: the fee is ADDED ON TOP of the price (additive), NOT
+ * deducted from the seller's funds. Example: price 100.000 + 5% fee (5.000) →
+ * the buyer transfers 105.000, the seller receives the FULL 100.000, the
+ * middleman keeps 5.000. The seller never "loses" part of the deal price to the fee.
  */
 
 const fs = require('fs');
@@ -67,58 +67,57 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 const dealsPath = path.join(__dirname, '..', '..', 'data', 'deals.json');
 
 // ====================================================
-// === STATE DEAL ===
+// === DEAL STATES ===
 // ====================================================
 const STATES = {
-    // v3.9.34: WAITING_SELLER diganti WAITING_AGREE — pembeli & penjual
-    // dua-duanya harus setuju (creator deal bisa siapa saja sekarang).
-    // Deal lama (WAITING_SELLER) dimigrasi otomatis saat load (lihat loadDeals).
-    WAITING_AGREE: { label: '⏳ Menunggu Pembeli & Penjual Setuju Deal', color: 0xf1c40f },
-    WAITING_PAYMENT: { label: '💰 Menunggu Pembayaran ke Midman', color: 0xe67e22 },
-    WAITING_DELIVERY: { label: '📦 Menunggu Barang Dikirim Penjual', color: 0x3498db },
-    WAITING_RELEASE: { label: '✅ Barang Diterima — Menunggu Pencairan', color: 0x9b59b6 },
-    DISPUTE: { label: '🚨 DISPUTE — Deal Dibekukan', color: 0xed4245 },
-    // Terminal states (deal selesai — meta dihapus dari deals.json saat close):
-    COMPLETED: { label: '✅ Selesai — Dana Cair ke Penjual', color: 0x2ecc71 },
-    REFUNDED: { label: '↩️ Selesai — Dana Kembali ke Pembeli', color: 0x95a5a6 },
-    CANCELLED: { label: '❌ Dibatalkan (sebelum dana masuk)', color: 0x95a5a6 }
+    // v3.9.34: WAITING_SELLER replaced by WAITING_AGREE — the buyer & seller
+    // must BOTH agree (the deal creator can be anyone now).
+    // Old deals (WAITING_SELLER) are migrated automatically at load (see loadDeals).
+    WAITING_AGREE: { label: '⏳ Waiting for Buyer & Seller to Agree to the Deal', color: 0xf1c40f },
+    WAITING_PAYMENT: { label: '💰 Waiting for Payment to the Middleman', color: 0xe67e22 },
+    WAITING_DELIVERY: { label: '📦 Waiting for the Seller to Deliver the Goods', color: 0x3498db },
+    WAITING_RELEASE: { label: '✅ Goods Delivered — Waiting for Payout', color: 0x9b59b6 },
+    DISPUTE: { label: '🚨 DISPUTE — Deal Frozen', color: 0xed4245 },
+    // Terminal states (deal finished — meta is removed from deals.json at close):
+    COMPLETED: { label: '✅ Completed — Funds Released to the Seller', color: 0x2ecc71 },
+    REFUNDED: { label: '↩️ Completed — Funds Returned to the Buyer', color: 0x95a5a6 },
+    CANCELLED: { label: '❌ Cancelled (before funds arrived)', color: 0x95a5a6 }
 };
 
 const TERMINAL_STATES = new Set(['COMPLETED', 'REFUNDED', 'CANCELLED']);
 
 // ====================================================
-// === TABEL TRANSISI — jantung escrow ===
+// === TRANSITION TABLE — the heart of escrow ===
 // ====================================================
-// Urutan normal: WAITING_AGREE → (buyer & seller join) → WAITING_PAYMENT →
+// Normal order: WAITING_AGREE → (buyer & seller join) → WAITING_PAYMENT →
 // (midman fundin) → WAITING_DELIVERY → (buyer received) → WAITING_RELEASE →
 // (midman release) → COMPLETED.
 //
-// Dua "gerbang ganda" (inti keamanan escrow):
-//   - Barang boleh dikirim HANYA setelah midman konfirmasi dana masuk.
-//   - Dana boleh dicairkan HANYA setelah pembeli konfirmasi barang diterima.
-//   - v3.9.34: Terms terkunci HANYA setelah pembeli & penjual dua-duanya
-//     setuju (gerbang ketiga — creator deal bisa siapa saja).
-// Tidak ada satu orang pun yang bisa gerakkan deal sendirian melewati
-// gerbang yang bukan otoritasnya.
+// Two "dual gates" (the core of escrow security):
+//   - Goods may be delivered ONLY after the midman confirms funds received.
+//   - Funds may be released ONLY after the buyer confirms goods delivered.
+//   - v3.9.34: Terms are locked ONLY after the buyer & seller BOTH agree
+//     (the third gate — the deal creator can be anyone).
+// No single person can move a deal past a gate that isn't theirs to control.
 const TRANSITIONS = {
-    // v3.9.34: join = persetujuan pihak deal. Aktor boleh buyer ATAU seller;
-    // transisi ke WAITING_PAYMENT hanya terjadi setelah KEDUA pihak setuju
-    // (flag buyerAgreed/sellerAgreed — lihat applyAgreement).
+    // v3.9.34: join = consent from a deal party. The actor can be the buyer OR seller;
+    // the transition to WAITING_PAYMENT happens only after BOTH parties agree
+    // (buyerAgreed/sellerAgreed flags — see applyAgreement).
     join: { from: ['WAITING_AGREE'], to: 'WAITING_PAYMENT', actors: ['buyer', 'seller'] },
-    // Cancel hanya sebelum dana masuk — setelah dana di midman, urusan
-    // pengembalian dana HARUS lewat dispute + resolve admin (tercatat).
+    // Cancel is only allowed before funds arrive — once the midman holds the
+    // funds, any refund MUST go through dispute + admin resolution (recorded).
     cancel: { from: ['WAITING_AGREE', 'WAITING_PAYMENT'], to: 'CANCELLED', actors: ['buyer', 'seller', 'admin'] },
     fundin: { from: ['WAITING_PAYMENT'], to: 'WAITING_DELIVERY', actors: ['midman', 'admin'] },
     received: { from: ['WAITING_DELIVERY'], to: 'WAITING_RELEASE', actors: ['buyer'] },
     dispute: { from: ['WAITING_PAYMENT', 'WAITING_DELIVERY', 'WAITING_RELEASE'], to: 'DISPUTE', actors: ['buyer', 'seller', 'midman', 'admin'] },
     release: { from: ['WAITING_RELEASE'], to: 'COMPLETED', actors: ['midman', 'admin'] },
-    // Resolve dispute — hanya admin (midman pihak berkepentingan atas fee,
-    // jadi keputusan akhir dispute harus di atas midman):
+    // Dispute resolution — admin only (the midman is an interested party on the
+    // fee, so final dispute decisions must sit above the midman):
     resolve_release: { from: ['DISPUTE'], to: 'COMPLETED', actors: ['admin'] },
     resolve_refund: { from: ['DISPUTE'], to: 'REFUNDED', actors: ['admin'] }
 };
 
-// Lock per-channel: cegah double-click race saat transisi diproses.
+// Per-channel lock: prevents a double-click race while a transition is being processed.
 const transitionLocks = new Set();
 
 // ====================================================
@@ -134,9 +133,9 @@ function loadDeals() {
         return all;
     } catch (err) {
         if (err.code !== 'ENOENT') {
-            console.warn('⚠️ deals.json rusak, pakai {}. Pesan:', err.message);
-            // v3.9.26 pattern: karantina file korup sebelum lanjut pakai kosong —
-            // supaya save berikutnya tidak menimpa data lama tanpa bekas.
+            console.warn('⚠️ deals.json is corrupted, using {}. Message:', err.message);
+            // v3.9.26 pattern: quarantine the corrupt file before continuing with empty —
+            // so the next save doesn't overwrite the old data without a trace.
             quarantineCorruptFile(dealsPath);
         }
         return {};
@@ -148,12 +147,12 @@ function saveDeals(all) {
 }
 
 /**
- * v3.9.34 migration (sekali jalan per deal, idempotent):
- *   - WAITING_SELLER (v3.9.32/33: creator = pembeli, terms tertulis oleh
- *     pembeli) → WAITING_AGREE dengan buyerAgreed=true (pembeli penulis terms
- *     = sudah setuju implisit), sellerAgreed=false (tetap harus klik setuju).
- *   - deal tanpa field `observers` → [] (field baru v3.9.34).
- * Perubahan di-save langsung supaya file di disk selalu bentuk baru.
+ * v3.9.34 migration (runs once per deal, idempotent):
+ *   - WAITING_SELLER (v3.9.32/33: creator = buyer, terms written by the
+ *     buyer) → WAITING_AGREE with buyerAgreed=true (the buyer who wrote the
+ *     terms = implicitly agreed), sellerAgreed=false (still must click agree).
+ *   - deal without the `observers` field → [] (new field in v3.9.34).
+ * Changes are saved immediately so the file on disk is always the new shape.
  */
 function migrateDeals(all) {
     let migrated = false;
@@ -203,12 +202,12 @@ function removeDeal(channelId) {
 }
 
 /**
- * User terlibat deal aktif (sebagai buyer ATAU seller) di guild ini?
+ * Is the user involved in an active deal (as buyer OR seller) in this guild?
  *
- * Dipakai ganda:
- *   - createDeal: buyer & seller tidak boleh terlibat 2 deal bersamaan.
- *   - createTicket (ticketManager): user dengan deal aktif tidak bisa buka
- *     tiket reguler lain — cegah bypass alur escrow lewat tiket biasa.
+ * Dual use:
+ *   - createDeal: the buyer & seller must not be involved in 2 deals at once.
+ *   - createTicket (ticketManager): a user with an active deal cannot open
+ *     another regular ticket — prevents bypassing the escrow flow via a regular ticket.
  */
 function hasActiveDealFor(guildId, userId) {
     if (!guildId || !userId) return false;
@@ -228,11 +227,11 @@ function getActiveDealsByGuild(guildId) {
 }
 
 // ====================================================
-// === PURE FUNCTIONS (testable — pola classifyProduct) ===
+// === PURE FUNCTIONS (testable — classifyProduct pattern) ===
 // ====================================================
 
 /**
- * Apakah event valid dari state sekarang? (validasi URUTAN langkah)
+ * Is the event valid from the current state? (STEP-ORDER validation)
  */
 function canTransition(state, event) {
     const t = TRANSITIONS[event];
@@ -240,25 +239,25 @@ function canTransition(state, event) {
 }
 
 /**
- * State berikutnya setelah event — null kalau transisi invalid.
+ * The next state after the event — null if the transition is invalid.
  */
 function nextState(state, event) {
     return canTransition(state, event) ? TRANSITIONS[event].to : null;
 }
 
-// Mapping nama aktor di TRANSITIONS → key object roles.
-// TRANSITIONS pakai nama pendek ('buyer'), pemanggil pakai boolean flags
-// ({isBuyer}) — mapping ini menyatukan keduanya.
+// Mapping of actor names in TRANSITIONS → role object keys.
+// TRANSITIONS uses short names ('buyer'), the caller uses boolean flags
+// ({isBuyer}) — this mapping joins the two.
 const ACTOR_KEY_MAP = { buyer: 'isBuyer', seller: 'isSeller', midman: 'isMidman', admin: 'isAdmin' };
 
 /**
- * Apakah aktor boleh melakukan event? (validasi PERAN)
+ * Is the actor allowed to perform the event? (ROLE validation)
  *
  * @param {string} event
  * @param {{isBuyer: boolean, isSeller: boolean, isMidman: boolean, isAdmin: boolean}} roles
- *   Catatan: pemanggil (interactions/midman.js resolveActor) sudah menjamin
- *   isMidman/isAdmin FALSE kalau user adalah buyer/seller deal itu — anti
- *   self-dealing (midman tidak bisa megang deal-nya sendiri sebagai peserta).
+ *   Note: the caller (interactions/midman.js resolveActor) already guarantees
+ *   isMidman/isAdmin are FALSE if the user is the buyer/seller of that deal —
+ *   anti self-dealing (a midman cannot handle their own deal as a participant).
  */
 function actorAllowed(event, roles) {
     const t = TRANSITIONS[event];
@@ -267,17 +266,17 @@ function actorAllowed(event, roles) {
 }
 
 /**
- * Hitung fee midman. PURE — tidak baca config (caller yang passes).
+ * Compute the middleman fee. PURE — doesn't read config (the caller passes it).
  *
- * v3.9.33: fee ADDITIVE — ditambah di atas harga, bukan dipotong dari dana
- * penjual. Karena tidak lagi "memotong" dana siapa pun, fee tidak di-cap
- * sebesar harga deal (fee flat boleh melebihi harga; /set-midman-fee sudah
- * membatasi persen maks 90% sebagai sanity guard di sisi command).
+ * v3.9.33: ADDITIVE fee — added on top of the price, not deducted from the
+ * seller's funds. Since it no longer "cuts" anyone's funds, the fee isn't
+ * capped at the deal price (a flat fee may exceed the price; /set-midman-fee
+ * already limits the max percent to 90% as a sanity guard on the command side).
  *
- * @param {number} priceNum - harga deal (rupiah)
+ * @param {number} priceNum - deal price (rupiah)
  * @param {string} feeMode - 'percent' | 'flat'
- * @param {number} feeValue - persen (mis. 5 = 5%) atau nominal flat
- * @returns {number} fee nominal rupiah
+ * @param {number} feeValue - percent (e.g. 5 = 5%) or flat amount
+ * @returns {number} fee amount in rupiah
  */
 function calcFee(priceNum, feeMode, feeValue) {
     const price = Number(priceNum) || 0;
@@ -290,21 +289,21 @@ function calcFee(priceNum, feeMode, feeValue) {
     if (feeMode === 'flat') {
         return Math.round(val);
     }
-    return 0; // mode tak dikenal → fee 0 (deal tetap jalan, gratis)
+    return 0; // unknown mode → fee 0 (the deal still proceeds, free)
 }
 
 /**
- * Rincian nominal deal (v3.9.33 — fee additive, sumber tunggal perhitungan):
- *   buyerPays   = price + fee → yang ditransfer pembeli ke midman
- *   sellerGets  = price       → yang diterima penjual (harga PENUH, tanpa potongan)
- *   midmanKeeps = fee         → sisa dana di tangan midman setelah cairkan
+ * Deal amount breakdown (v3.9.33 — additive fee, single source of computation):
+ *   buyerPays   = price + fee → what the buyer transfers to the middleman
+ *   sellerGets  = price       → what the seller receives (FULL price, no deduction)
+ *   midmanKeeps = fee         → the funds left in the middleman's hands after release
  *
- * Contoh: calcTotals(100000, 5000) →
+ * Example: calcTotals(100000, 5000) →
  *   { buyerPays: 105000, sellerGets: 100000, midmanKeeps: 5000 }
  */
 function calcTotals(priceNum, fee) {
-    // Clamp negatif → 0 (defensive: calcFee tidak pernah return negatif, tapi
-    // data lama/manual edit deals.json tidak boleh bikin total jadi minus).
+    // Clamp negatives → 0 (defensive: calcFee never returns negative, but
+    // old data/manual edits to deals.json must not turn totals negative).
     const price = Math.max(0, Number(priceNum) || 0);
     const feeNum = Math.max(0, Number(fee) || 0);
     return {
@@ -315,16 +314,16 @@ function calcTotals(priceNum, fee) {
 }
 
 /**
- * Parse harga dari input modal. Terima: "100000", "100.000", "100,000",
- * "100k", "1m", "Rp100.000". Return 0 kalau invalid.
+ * Parse a price from modal input. Accepts: "100000", "100.000", "100,000",
+ * "100k", "1m", "Rp100.000". Returns 0 if invalid.
  *
- * v3.9.38 FIX: desimal tidak lagi "lolos" jadi digit ekstra (bug 10x harga).
- *   - Dengan suffix k/m: sisa input TIDAK BOLEH mengandung `.`/`,` ("1.5m"
- *     dulu di-parse jadi 15.000.000 — desimal dibaca sebagai digit tambahan).
- *   - Tanpa suffix: `.`/`,` hanya sah sebagai pemisah RIBUAN — format
- *     `^\d{1,3}([.,]\d{3})*$` dengan JENIS separator konsisten ("1.000.000"
- *     dan "1,000,000" valid; "2.5", "1.000,000", "100000." invalid → 0).
- *     Harga deal rekber memang selalu integer rupiah.
+ * v3.9.38 FIX: decimals no longer "slip through" as extra digits (10x price bug).
+ *   - With a k/m suffix: the remaining input must NOT contain `.`/`,` ("1.5m"
+ *     used to parse as 15.000.000 — the decimal was read as extra digits).
+ *   - Without a suffix: `.`/`,` are only valid as THOUSANDS separators — format
+ *     `^\d{1,3}([.,]\d{3})*$` with a CONSISTENT separator type ("1.000.000"
+ *     and "1,000,000" valid; "2.5", "1.000,000", "100000." invalid → 0).
+ *     Escrow deal prices are always whole rupiah.
  */
 function parsePriceNumber(input) {
     if (typeof input === 'number') return input > 0 ? Math.floor(input) : 0;
@@ -343,10 +342,10 @@ function parsePriceNumber(input) {
         multiplier = 1000000;
         s = s.slice(0, -1);
     }
-    // v3.9.38 FIX: validasi pemisah SEBELUM strip — lihat JSDoc di atas.
+    // v3.9.38 FIX: validate separators BEFORE stripping — see the JSDoc above.
     if (/[.,]/.test(s)) {
-        if (hasSuffix) return 0; // "1.5m" / "0.5k" → invalid (bukan 15jt/5rb)
-        // Tanpa suffix: hanya pemisah ribuan konsisten yang boleh.
+        if (hasSuffix) return 0; // "1.5m" / "0.5k" → invalid (not 15m/5k)
+        // No suffix: only consistent thousands separators are allowed.
         const isDotGroups = /^\d{1,3}(\.\d{3})+$/.test(s);
         const isCommaGroups = /^\d{1,3}(,\d{3})+$/.test(s);
         if (!isDotGroups && !isCommaGroups) return 0; // "2.5" / "1.000,000" → 0
@@ -357,24 +356,24 @@ function parsePriceNumber(input) {
 }
 
 /**
- * Format rupiah: 95000 → "Rp95.000" (locale id-ID).
+ * Format rupiah: 95000 → "Rp95,000" (en-US locale).
  */
 function formatRupiah(n) {
     const num = Number(n) || 0;
-    return 'Rp' + num.toLocaleString('id-ID');
+    return 'Rp' + num.toLocaleString('en-US');
 }
 
 /**
- * v3.9.34: terapkan persetujuan pihak deal (mutate deal, tanpa IO).
+ * v3.9.34: apply a deal party's consent (mutates the deal, no IO).
  *
- * Dipanggil saat buyer/seller klik "Setuju Deal" di state WAITING_AGREE.
- * Yang menjalankan transisi `join` (→ WAITING_PAYMENT) adalah caller, HANYA
- * setelah fungsi ini return { ok: true, both: true }.
+ * Called when the buyer/seller clicks "Agree to Deal" in the WAITING_AGREE state.
+ * The one that performs the `join` transition (→ WAITING_PAYMENT) is the caller,
+ * ONLY after this function returns { ok: true, both: true }.
  *
  * @returns {{ok: boolean, both: boolean, role: string|null}}
- *   ok=false   → userId bukan peserta deal, ATAU pihak itu sudah setuju
- *                (double-click / tombol stale).
- *   both=true  → kedua pihak sudah setuju → caller wajib recordTransition.
+ *   ok=false   → userId is not a deal participant, OR that party already agreed
+ *                (double-click / stale button).
+ *   both=true  → both parties agreed → the caller must recordTransition.
  */
 function applyAgreement(deal, userId) {
     if (!deal || !userId) return { ok: false, both: false, role: null };
@@ -390,26 +389,26 @@ function applyAgreement(deal, userId) {
 }
 
 // ====================================================
-// === OBSERVER (member tambahan di channel deal) ===
+// === OBSERVER (additional members in the deal channel) ===
 // ====================================================
-// v3.9.34: admin/midman bisa menambah member NON-PESERTA ke channel deal
-// (saksi, staff yang dilatih, midman cadangan). Observer dapat akses
-// lihat/chat/attach, tapi resolveActor tidak mengakuinya sebagai
-// buyer/seller — dia tidak bisa menggerakkan state deal. Observer yang
-// kebetulan punya role midman TETAP dihitung midman (fitur: midman
-// cadangan). Jumlah dibatasi supaya channel deal tidak jadi ruang publik.
+// v3.9.34: admins/midmen can add NON-PARTICIPANT members to a deal channel
+// (witnesses, staff in training, backup midmen). Observers get
+// view/chat/attach access, but resolveActor doesn't recognize them as the
+// buyer/seller — they cannot move the deal state. An observer who happens
+// to hold the midman role STILL counts as a midman (feature: backup
+// midman). The count is limited so a deal channel doesn't become a public room.
 
 const MAX_OBSERVERS = 10;
 
 /**
- * Bolehkah user jadi observer deal ini? (pure — tanpa IO)
+ * May this user become an observer of this deal? (pure — no IO)
  * @returns {{ok: boolean, reason: string|null}} reason: 'principal' |
- *   'duplicate' | 'full' | 'invalid' — null kalau ok.
+ *   'duplicate' | 'full' | 'invalid' — null if ok.
  */
 function canAddObserver(deal, userId) {
     if (!deal || !userId) return { ok: false, reason: 'invalid' };
-    // Peserta deal (buyer/seller) TIDAK bisa jadi observer — mereka memang
-    // peserta. Add member bukan cara mengganti peran orang.
+    // Deal participants (buyer/seller) CANNOT become observers — they already
+    // are participants. Adding a member is not how you swap someone's role.
     if (userId === deal.buyerId || userId === deal.sellerId) {
         return { ok: false, reason: 'principal' };
     }
@@ -420,8 +419,8 @@ function canAddObserver(deal, userId) {
 }
 
 /**
- * Tambah observer (mutate deal). Return false kalau ditolak canAddObserver.
- * Tidak menyimpan ke disk — caller panggil setDeal().
+ * Add an observer (mutates the deal). Returns false if rejected by canAddObserver.
+ * Doesn't persist to disk — the caller calls setDeal().
  */
 function addObserver(deal, userId) {
     if (!canAddObserver(deal, userId).ok) return false;
@@ -431,8 +430,8 @@ function addObserver(deal, userId) {
 }
 
 /**
- * Hapus observer (mutate deal). Return false kalau userId memang bukan
- * observer. Peserta deal tidak bisa dihapus lewat sini (bukan observer).
+ * Remove an observer (mutates the deal). Returns false if userId isn't
+ * actually an observer. Deal participants cannot be removed here (they aren't observers).
  */
 function removeObserver(deal, userId) {
     if (!deal || !Array.isArray(deal.observers)) return false;
@@ -443,11 +442,11 @@ function removeObserver(deal, userId) {
 }
 
 /**
- * Terapkan event ke deal (mutate): push history + set state.
- * TIDAK menyimpan ke disk — caller panggil setDeal() setelah ini.
+ * Apply an event to the deal (mutates): push history + set state.
+ * Does NOT persist to disk — the caller calls setDeal() after this.
  *
- * @returns {Object|null} deal yang sudah di-update, atau null kalau event
- *   invalid dari state sekarang (caller harus cek nextState dulu).
+ * @returns {Object|null} the updated deal, or null if the event is invalid
+ *   from the current state (the caller must check nextState first).
  */
 function recordTransition(deal, event, actor) {
     if (!deal || !actor) return null;
@@ -480,9 +479,9 @@ module.exports = {
     nextState,
     actorAllowed,
     recordTransition,
-    // persetujuan ganda v3.9.34 (pure, mutate deal tanpa IO)
+    // dual consent v3.9.34 (pure, mutates the deal without IO)
     applyAgreement,
-    // observer v3.9.34 (pure, mutate deal tanpa IO)
+    // observer v3.9.34 (pure, mutates the deal without IO)
     canAddObserver,
     addObserver,
     removeObserver,

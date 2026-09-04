@@ -56,10 +56,10 @@ function safeWriteJSON(filePath, data, opts = {}) {
  * @returns {void}
  */
 function safeWriteText(filePath, content) {
-    // v3.9.8 FIX: pakai tmp path yang unik per PID+timestamp supaya kalau bot
-    // dijalankan cluster mode (multi-worker) atau 2 instance share folder yang
-    // sama, 2 write paralel tidak saling overwrite .tmp (yang bisa silent loss).
-    // Untuk single-process (mayoritas case), behavior sama seperti sebelumnya.
+    // v3.9.8 FIX: use a tmp path unique per PID+timestamp so that if the bot
+    // runs in cluster mode (multi-worker) or 2 instances share the same folder,
+    // 2 parallel writes don't overwrite each other's .tmp (which could cause silent loss).
+    // For single-process (the majority case), behavior is the same as before.
     const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
 
     // Write to tmp file first.
@@ -80,7 +80,7 @@ function safeWriteText(filePath, content) {
     try {
         fs.renameSync(tmpPath, filePath);
     } catch (err) {
-        // v3.9.8: kalau rename gagal, cleanup .tmp supaya tidak numpuk.
+        // v3.9.8: if the rename fails, clean up the .tmp so it doesn't pile up.
         try {
             fs.unlinkSync(tmpPath);
         } catch (_) {}
@@ -106,7 +106,7 @@ function safeWriteText(filePath, content) {
  */
 function safeWriteJSONWithBackup(filePath, data, opts = {}) {
     const bakPath = `${filePath}.bak`;
-    // v3.9.8: pakai tmp path unik per PID+timestamp (konsisten dengan safeWriteText).
+    // v3.9.8: use a tmp path unique per PID+timestamp (consistent with safeWriteText).
     const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
     const content = JSON.stringify(data, null, opts.spaces ?? 2);
 
@@ -127,7 +127,7 @@ function safeWriteJSONWithBackup(filePath, data, opts = {}) {
     try {
         fs.renameSync(tmpPath, filePath);
     } catch (err) {
-        // v3.9.8: cleanup .tmp kalau rename gagal.
+        // v3.9.8: clean up the .tmp if the rename fails.
         try {
             fs.unlinkSync(tmpPath);
         } catch (_) {}
@@ -136,25 +136,25 @@ function safeWriteJSONWithBackup(filePath, data, opts = {}) {
 }
 
 /**
- * v3.9.26: Karantina file data yang korup sebelum manager fallback ke default.
+ * v3.9.26: Quarantine a corrupt data file before the manager falls back to defaults.
  *
- * MASALAH: semua manager punya pola `catch → return {}` saat JSON.parse gagal.
- * Isi file korup (hasil crash manual / edit salah / disk bad sector) lalu
- * HILANG PERMANEN saat save() berikutnya menulis state kosong — tanpa bekas.
+ * PROBLEM: all managers use the pattern `catch → return {}` when JSON.parse fails.
+ * The corrupt file contents (from a manual crash / bad edit / disk bad sector)
+ * then disappear PERMANENTLY on the next save() which writes empty state — no trace left.
  *
- * SOLUSI: rename file korup → `<file>.corrupt-<timestamp>` SEBELUM return
- * fallback. Isi asli preserved, admin bisa inspeksi/pulihkan manual, dan file
- * baru ditulis fresh oleh save() berikutnya. Best-effort: kalau rename gagal
- * (permission/lock), lanjut tanpa karantina — jangan bikin load() throw.
+ * SOLUTION: rename the corrupt file → `<file>.corrupt-<timestamp>` BEFORE returning
+ * the fallback. The original contents are preserved, an admin can inspect/restore
+ * them manually, and a fresh file is written by the next save(). Best-effort: if
+ * the rename fails (permission/lock), continue without quarantine — don't make load() throw.
  *
- * @param {string} filePath - path file yang gagal di-parse
+ * @param {string} filePath - path of the file that failed to parse
  */
 function quarantineCorruptFile(filePath) {
     try {
         if (!fs.existsSync(filePath)) return false;
         const quarantined = `${filePath}.corrupt-${Date.now()}`;
         fs.renameSync(filePath, quarantined);
-        console.warn(`🧪 File data korup di-karantina: ${filePath} → ${quarantined}`);
+        console.warn(`🧪 Corrupt data file quarantined: ${filePath} → ${quarantined}`);
         return true;
     } catch (_) {
         return false;

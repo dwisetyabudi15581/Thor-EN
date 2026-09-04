@@ -3,8 +3,8 @@
  * Slash commands: /add-product, /remove-product, /list-products,
  *                 /set-product-role, /remove-product-role, /list-product-roles
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: kelola produk + auto-role mapping per produk.
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: manage products + auto-role mapping per product.
  */
 
 const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply } = require('./_shared');
@@ -19,47 +19,47 @@ module.exports = async function (interaction) {
         const label = interaction.options.getString('label');
         const value = interaction.options.getString('value');
         const price = interaction.options.getString('price');
-        // duration opsional - kalau tidak diisi, TIDAK disimpan sama sekali
+        // duration is optional - if not filled in, it is NOT stored at all
         const duration = interaction.options.getString('duration');
         // v3.9.11 Phase 2: category & requires_key
         const category = interaction.options.getString('category');
         const requiresKeyOpt = interaction.options.getBoolean('requires_key');
 
-        // v3.9.8 FIX: validate `value` — dipakai di customId modal_set_key:${value}
+        // v3.9.8 FIX: validate `value` — used in the modal_set_key:${value} customId
         if (!value || !/^[a-zA-Z0-9_-]{1,50}$/.test(value)) {
             return safeEditReply(interaction, {
-                content: '❌ `value` hanya boleh huruf/angka/_/-, maks 50 karakter, tanpa spasi/kolom/titik dua.'
+                content: '❌ `value` may only contain letters/numbers/_/-, max 50 characters, no spaces/commas/colons.'
             });
         }
 
-        // v3.9.26 FIX: cap label/price di handler (konsisten dengan /update-product
-        // yang sudah slice ke 80). Registry sudah max_length, tapi data LAMA atau
-        // hasil restore backup bisa tetap panjang — dropdown tiket mem-slice
-        // defensif, simpanan config juga biar rapi.
+        // v3.9.26 FIX: cap label/price in the handler (consistent with /update-product
+        // which already slices to 80). The registry has max_length, but OLD data or
+        // restored backup data can still be long — the ticket dropdown slices
+        // defensively, and the saved config is capped too so it stays tidy.
         const safeLabel = label.slice(0, 80);
         const safePrice = price.slice(0, 100);
 
         if (config.products.some(p => p.value === value)) {
-            return safeEditReply(interaction, { content: `❌ Produk dengan value \`${value}\` sudah ada.` });
+            return safeEditReply(interaction, { content: `❌ A product with value \`${value}\` already exists.` });
         }
         if (config.products.length >= 25) {
-            return safeEditReply(interaction, { content: '❌ Maksimal 25 produk (batas dropdown Discord).' });
+            return safeEditReply(interaction, { content: '❌ Maximum of 25 products (Discord dropdown limit).' });
         }
 
-        // v3.9.11 Phase 2: validate category exists (kalau di-specify)
+        // v3.9.11 Phase 2: validate category exists (if specified)
         const finalCategory = category || 'transaction';
         const categories = config.ticketCategories || [];
         const categoryExists = categories.some(c => c.id === finalCategory);
         if (!categoryExists && category) {
-            // Kalau admin specify category yang gak ada, tolak.
+            // If the admin specifies a category that doesn't exist, reject it.
             return safeEditReply(interaction, {
-                content: `❌ Kategori \`${category}\` tidak ditemukan. Pakai /list-categories untuk lihat daftar, atau /add-category untuk bikin baru.`
+                content: `❌ Category \`${category}\` not found. Use /list-categories to see the list, or /add-category to create a new one.`
             });
         }
 
         // v3.9.11 Phase 2: determine requiresKey
-        // - Kalau explicitly set via option, pakai itu.
-        // - Kalau tidak, default berdasarkan category config (kalau category punya requiresKey field).
+        // - If explicitly set via the option, use that.
+        // - Otherwise, default based on the category config (if the category has a requiresKey field).
         let finalRequiresKey;
         if (requiresKeyOpt !== null) {
             finalRequiresKey = requiresKeyOpt;
@@ -68,7 +68,7 @@ module.exports = async function (interaction) {
             finalRequiresKey = catConfig?.requiresKey !== undefined ? catConfig.requiresKey : true;
         }
 
-        // Hanya simpan duration kalau diisi
+        // Only store duration if filled in
         const newProduct = { label: safeLabel, value, price: safePrice };
         if (duration) newProduct.duration = duration;
         newProduct.category = finalCategory;
@@ -77,17 +77,17 @@ module.exports = async function (interaction) {
         config.products.push(newProduct);
         saveConfig(config);
 
-        const durationInfo = duration ? ` (durasi: ${duration})` : ' (tanpa duration)';
-        const catInfo = ` | kategori: ${finalCategory} | requiresKey: ${finalRequiresKey ? 'yes' : 'no'}`;
+        const durationInfo = duration ? ` (duration: ${duration})` : ' (no duration)';
+        const catInfo = ` | category: ${finalCategory} | requiresKey: ${finalRequiresKey ? 'yes' : 'no'}`;
         await logAudit(interaction.client, {
             action: 'ADD_PRODUCT',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Tambah produk: **${label}** (\`${value}\`) — ${price}${durationInfo}${catInfo}`,
+            details: `Add product: **${label}** (\`${value}\`) — ${price}${durationInfo}${catInfo}`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ Produk ditambahkan: **${label}** — ${price}${durationInfo}\n📦 Kategori: \`${finalCategory}\` | 🔑 Requires Key: ${finalRequiresKey ? 'Yes' : 'No'}`
+            content: `✅ Product added: **${label}** — ${price}${durationInfo}\n📦 Category: \`${finalCategory}\` | 🔑 Requires Key: ${finalRequiresKey ? 'Yes' : 'No'}`
         });
     }
 
@@ -96,33 +96,33 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const value = interaction.options.getString('value');
         const idx = config.products.findIndex(p => p.value === value);
-        if (idx === -1) return safeEditReply(interaction, { content: `❌ Produk \`${value}\` tidak ditemukan.` });
+        if (idx === -1) return safeEditReply(interaction, { content: `❌ Product \`${value}\` not found.` });
         const [removed] = config.products.splice(idx, 1);
         saveConfig(config);
         await logAudit(interaction.client, {
             action: 'REMOVE_PRODUCT',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus produk: **${removed.label}** (\`${removed.value}\`) — ${removed.price}`,
+            details: `Remove product: **${removed.label}** (\`${removed.value}\`) — ${removed.price}`,
             guildId: interaction.guild.id
         });
-        return safeEditReply(interaction, { content: `✅ Produk dihapus: **${removed.label}**` });
+        return safeEditReply(interaction, { content: `✅ Product deleted: **${removed.label}**` });
     }
 
     // === LIST PRODUCTS ===
     if (interaction.commandName === 'list-products') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         if (config.products.length === 0) {
-            return safeEditReply(interaction, { content: '📭 Belum ada produk.' });
+            return safeEditReply(interaction, { content: '📭 No products yet.' });
         }
         const list = config.products
             .map((p, i) => {
                 let line = `\`${i + 1}.\` **${p.label}** — ${p.price}\n   └ value: \`${p.value}\``;
-                if (p.duration) line += ` | durasi: ${p.duration}`;
+                if (p.duration) line += ` | duration: ${p.duration}`;
                 return line;
             })
             .join('\n');
-        const embed = embeds.info('📋 DAFTAR PRODUK', list);
+        const embed = embeds.info('📋 PRODUCT LIST', list);
         return safeEditReply(interaction, { embeds: [embed] });
     }
 
@@ -133,20 +133,20 @@ module.exports = async function (interaction) {
         const role = interaction.options.getRole('role');
         const days = interaction.options.getInteger('days');
 
-        // v3.9.8 FIX: validate days >= 0. Sebelumnya gak divalidasi — admin bisa
-        // input days: -5 → scheduleRoleRemoval compute expireAt = now + (-5)*86400000
-        // = 5 hari lalu → scheduler immediate process → member dapat role lalu
-        // ke-remove dalam 60 detik.
+        // v3.9.8 FIX: validate days >= 0. Previously not validated — an admin could
+        // input days: -5 → scheduleRoleRemoval computes expireAt = now + (-5)*86400000
+        // = 5 days ago → the scheduler processes it immediately → the member gets the
+        // role and has it removed within 60 seconds.
         if (days == null || days < 0 || days > 3650) {
             return safeEditReply(interaction, {
-                content: '❌ `days` harus antara 0 dan 3650. (0 = permanen, >0 = durasi hari).'
+                content: '❌ `days` must be between 0 and 3650. (0 = permanent, >0 = duration in days).'
             });
         }
 
         const product = config.products.find(p => p.value === value);
         if (!product) {
             return safeEditReply(interaction, {
-                content: `❌ Produk dengan value \`${value}\` tidak ditemukan. Pakai \`/list-products\` untuk lihat daftar.`
+                content: `❌ Product with value \`${value}\` not found. Use \`/list-products\` to see the list.`
             });
         }
 
@@ -157,14 +157,14 @@ module.exports = async function (interaction) {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Set auto-role produk **${product.label}** → ${role.name} (${days > 0 ? days + ' hari' : 'permanen'})`,
+            details: `Set product auto-role **${product.label}** → ${role.name} (${days > 0 ? days + ' days' : 'permanent'})`,
             guildId: interaction.guild.id
         });
 
         const expireInfo =
-            days > 0 ? `akan otomatis dihapus setelah **${days} hari**` : '**permanen** (tidak akan otomatis dihapus)';
+            days > 0 ? `auto-removed after **${days} days**` : '**permanent** (will not be auto-removed)';
         return safeEditReply(interaction, {
-            content: `✅ Auto-role untuk produk **${product.label}** diatur!\n\n🎁 Role: ${role}\n⏰ Expire: ${expireInfo}\n\n💡 Role otomatis diberikan saat admin klik **🔑 Set Key** / **📦 Kirim Pesanan** / **✅ Pesanan Sukses** di tiket.`
+            content: `✅ Auto-role for product **${product.label}** set!\n\n🎁 Role: ${role}\n⏰ Expiry: ${expireInfo}\n\n💡 The role is automatically granted when an admin clicks **🔑 Set Key** / **📦 Deliver Order** / **✅ Order Success** in the ticket.`
         });
     }
 
@@ -175,11 +175,11 @@ module.exports = async function (interaction) {
 
         const product = config.products.find(p => p.value === value);
         if (!product) {
-            return safeEditReply(interaction, { content: `❌ Produk dengan value \`${value}\` tidak ditemukan.` });
+            return safeEditReply(interaction, { content: `❌ Product with value \`${value}\` not found.` });
         }
         if (!product.roleId) {
             return safeEditReply(interaction, {
-                content: `ℹ️ Produk **${product.label}** memang belum punya auto-role.`
+                content: `ℹ️ Product **${product.label}** doesn't have an auto-role yet.`
             });
         }
 
@@ -190,11 +190,11 @@ module.exports = async function (interaction) {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus auto-role produk **${product.label}**`,
+            details: `Remove product auto-role **${product.label}**`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ Auto-role untuk produk **${product.label}** berhasil dihapus.`
+            content: `✅ Auto-role for product **${product.label}** successfully removed.`
         });
     }
 
@@ -204,25 +204,25 @@ module.exports = async function (interaction) {
         const withRoles = config.products.filter(p => p.roleId);
         if (withRoles.length === 0) {
             return safeEditReply(interaction, {
-                content: '📭 Belum ada produk yang punya auto-role. Pakai `/set-product-role` untuk setup.'
+                content: '📭 No products have an auto-role yet. Use `/set-product-role` to set one up.'
             });
         }
         const list = withRoles
             .map(p => {
                 const roleMention = `<@&${p.roleId}>`;
-                const expire = p.days > 0 ? `${p.days} hari` : 'permanen';
+                const expire = p.days > 0 ? `${p.days} days` : 'permanent';
                 return `• **${p.label}** (\`${p.value}\`) → ${roleMention} — expire: ${expire}`;
             })
             .join('\n');
-        const embed = embeds.info('🎁 AUTO-ROLE PER PRODUK', list);
+        const embed = embeds.info('🎁 AUTO-ROLE PER PRODUCT', list);
         return safeEditReply(interaction, { embeds: [embed] });
     }
 
     // === UPDATE PRODUCT (v3.9.19) ===
-    // Edit produk existing tanpa harus hapus + add ulang.
-    // Semua field optional (kecuali `value` sebagai identifier).
-    // Catatan: `value` sendiri TIDAK bisa diubah karena dipakai sebagai customId
-    // di modal_set_key:${value} — mengubah value akan break tiket yang sedang aktif.
+    // Edit an existing product without having to delete + re-add it.
+    // All fields are optional (except `value` as the identifier).
+    // Note: `value` itself CANNOT be changed because it's used as the customId
+    // in modal_set_key:${value} — changing value would break active tickets.
     if (interaction.commandName === 'update-product') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -236,17 +236,17 @@ module.exports = async function (interaction) {
         const product = config.products.find(p => p.value === value);
         if (!product) {
             return safeEditReply(interaction, {
-                content: `❌ Produk dengan value \`${value}\` tidak ditemukan. Pakai \`/list-products\` untuk lihat daftar.`
+                content: `❌ Product with value \`${value}\` not found. Use \`/list-products\` to see the list.`
             });
         }
 
-        // Validate category kalau diisi
+        // Validate category if filled in
         if (newCategory !== null) {
             const categories = config.ticketCategories || [];
             const categoryExists = categories.some(c => c.id === newCategory);
             if (!categoryExists) {
                 return safeEditReply(interaction, {
-                    content: `❌ Kategori \`${newCategory}\` tidak ditemukan. Pakai /list-categories untuk lihat daftar.`
+                    content: `❌ Category \`${newCategory}\` not found. Use /list-categories to see the list.`
                 });
             }
         }
@@ -263,11 +263,11 @@ module.exports = async function (interaction) {
             changes.push(`price: \`${before.price}\` → \`${newPrice}\``);
         }
         if (newDuration !== null) {
-            // Empty string → hapus field duration
+            // Empty string → delete the duration field
             if (newDuration === '') {
                 if (product.duration !== undefined) {
                     delete product.duration;
-                    changes.push(`duration: \`${before.duration || '-'}\` → (dihapus)`);
+                    changes.push(`duration: \`${before.duration || '-'}\` → (deleted)`);
                 }
             } else {
                 product.duration = newDuration;
@@ -286,8 +286,8 @@ module.exports = async function (interaction) {
         if (changes.length === 0) {
             return safeEditReply(interaction, {
                 content:
-                    `ℹ️ Tidak ada perubahan dilakukan. Berikan minimal 1 field untuk diupdate (label/price/duration/category/requires_key).\n\n` +
-                    `Produk **${before.label}** (\`${before.value}\`) tetap seperti sebelumnya.`
+                    `ℹ️ No changes were made. Provide at least 1 field to update (label/price/duration/category/requires_key).\n\n` +
+                    `Product **${before.label}** (\`${before.value}\`) stays as it was.`
             });
         }
 
@@ -296,15 +296,15 @@ module.exports = async function (interaction) {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Update produk: **${before.label}** (\`${before.value}\`) — ${changes.join('; ')}`,
+            details: `Update product: **${before.label}** (\`${before.value}\`) — ${changes.join('; ')}`,
             guildId: interaction.guild.id
         });
 
         return safeEditReply(interaction, {
             content:
-                `✅ Produk **${product.label}** (\`${product.value}\`) berhasil diupdate!\n\n` +
-                `📝 Perubahan:\n${changes.map(c => `• ${c}`).join('\n')}\n\n` +
-                `💡 Pakai \`/refresh-panel <id>\` untuk re-render panel yang sudah terpasang.`
+                `✅ Product **${product.label}** (\`${product.value}\`) successfully updated!\n\n` +
+                `📝 Changes:\n${changes.map(c => `• ${c}`).join('\n')}\n\n` +
+                `💡 Use \`/refresh-panel <id>\` to re-render installed panels.`
         });
     }
 };

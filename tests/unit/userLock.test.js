@@ -1,8 +1,8 @@
 /**
- * Unit tests untuk userLock (TOCTOU race condition guard)
+ * Unit tests for userLock (TOCTOU race condition guard)
  *
- * v3.9.24: acquire() sekarang mengembalikan TOKEN unik (truthy) alih-alih `true` —
- * dipakai release() untuk owner-check (cek test "stale holder" di bawah).
+ * v3.9.24: acquire() now returns a unique (truthy) TOKEN instead of `true` —
+ * release() uses it for the owner-check (see the "stale holder" test below).
  */
 
 const test = require('node:test');
@@ -51,11 +51,11 @@ test('release: idempotent (safe to call without prior acquire)', () => {
 });
 
 test('v3.9.8 FIX: acquire throws on missing scope or userId', () => {
-    // Sebelum v3.9.8: return true (bypass lock) — hide bug.
-    // Sekarang: throw error.
-    assert.throws(() => acquire(null, 'user'), /scope dan userId wajib diisi/);
-    assert.throws(() => acquire('scope', null), /scope dan userId wajib diisi/);
-    assert.throws(() => acquire('', 'user'), /scope dan userId wajib diisi/);
+    // Before v3.9.8: returned true (bypassing the lock) — hiding the bug.
+    // Now: throws an error.
+    assert.throws(() => acquire(null, 'user'), /scope and userId are required/);
+    assert.throws(() => acquire('scope', null), /scope and userId are required/);
+    assert.throws(() => acquire('', 'user'), /scope and userId are required/);
 });
 
 test('withLock: executes fn and returns its result', async () => {
@@ -116,42 +116,42 @@ test('withLock: serializes concurrent calls', async () => {
 });
 
 // ====================================================
-// === v3.9.24: owner token — regresi stale release ===
+// === v3.9.24: owner token — stale release regression ===
 // ====================================================
 
-test('v3.9.24 FIX: stale holder tidak bisa melepas lock holder baru (owner token)', async () => {
+test('v3.9.24 FIX: a stale holder cannot release the new holder\'s lock (owner token)', async () => {
     const scope = 'test_scope_token1';
     const userId = 'user_token1';
 
-    // Holder A acquire dengan timeout 10ms (supaya cepat expired)
+    // Holder A acquires with a 10ms timeout (so it expires quickly)
     const tokenA = acquire(scope, userId, 10);
     assert.ok(tokenA);
 
-    await sleep(25); // biar lock A expired
+    await sleep(25); // let lock A expire
 
-    // Holder B overtake (lock A sudah expired)
+    // Holder B takes over (lock A already expired)
     const tokenB = acquire(scope, userId, 5000);
     assert.ok(tokenB);
 
-    // Holder A (stale) coba release pakai token lama → harus NO-OP.
-    // Bug lama: release tanpa owner-check menghapus lock B!
+    // Holder A (stale) tries to release with the old token → must be a NO-OP.
+    // Old bug: release without an owner-check deleted B's lock!
     release(scope, userId, tokenA);
 
-    // Lock harus masih dipegang B → acquire baru ditolak
-    assert.strictEqual(acquire(scope, userId, 5000), false, 'lock B harus masih aktif setelah stale release dari A');
+    // The lock must still be held by B → a new acquire is rejected
+    assert.strictEqual(acquire(scope, userId, 5000), false, 'lock B must still be active after the stale release from A');
 
-    // Release oleh pemilik yang benar → lock lepas
+    // Release by the correct owner → lock released
     release(scope, userId, tokenB);
     const tokenC = acquire(scope, userId, 5000);
-    assert.ok(tokenC, 'lock harus bisa di-acquire lagi setelah release oleh holder B');
+    assert.ok(tokenC, 'the lock must be acquirable again after the release by holder B');
     release(scope, userId, tokenC);
 });
 
-test('v3.9.24 FIX: withLock fn lambat — release di finally tidak melepas lock holder yang overtake', async () => {
+test('v3.9.24 FIX: slow withLock fn — the finally-release does not release the overtaking holder\'s lock', async () => {
     const scope = 'test_scope_token2';
     const userId = 'user_token2';
 
-    // A: critical section lambat (30ms) dengan timeout lock 10ms → lock kedaluwarsa saat masih jalan
+    // A: slow critical section (30ms) with a 10ms lock timeout → the lock expires while A is still running
     const pA = withLock(
         scope,
         userId,
@@ -162,9 +162,9 @@ test('v3.9.24 FIX: withLock fn lambat — release di finally tidak melepas lock 
         10
     );
 
-    await sleep(15); // lock A expired → B bisa overtake
+    await sleep(15); // lock A expired → B can take over
 
-    // B: critical section lebih lama (50ms) — masih berjalan saat A selesai
+    // B: longer critical section (50ms) — still running when A finishes
     const pB = withLock(
         scope,
         userId,
@@ -175,18 +175,18 @@ test('v3.9.24 FIX: withLock fn lambat — release di finally tidak melepas lock 
         5000
     );
 
-    await sleep(30); // t=45: A sudah selesai & release (stale token), B masih jalan
+    await sleep(30); // t=45: A already finished & released (stale token), B still running
 
-    // Bug lama: release unconditional dari A menghapus lock B → pihak ketiga bisa masuk
-    // Fix baru: release A no-op (token beda) → lock B masih aktif
-    assert.strictEqual(acquire(scope, userId, 5000), false, 'lock B harus masih aktif saat B masih jalan');
+    // Old bug: A's unconditional release deleted B's lock → a third party could get in
+    // New fix: A's release is a no-op (different token) → B's lock stays active
+    assert.strictEqual(acquire(scope, userId, 5000), false, 'lock B must still be active while B is still running');
 
     const [ra, rb] = await Promise.all([pA, pB]);
     assert.strictEqual(ra, 'A');
     assert.strictEqual(rb, 'B');
 
-    // Setelah B selesai & release dengan token-nya sendiri → lock lepas
+    // After B finishes & releases with its own token → the lock is free
     const tokenC = acquire(scope, userId, 5000);
-    assert.ok(tokenC, 'lock harus lepas setelah B selesai');
+    assert.ok(tokenC, 'the lock must be free after B finishes');
     release(scope, userId, tokenC);
 });

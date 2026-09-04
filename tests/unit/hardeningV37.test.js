@@ -1,28 +1,31 @@
 /**
- * Unit tests v3.9.37 — hardening & konsistensi pasca-fitur midman/rekber.
+ * Unit tests v3.9.37 — hardening & consistency after the midman/escrow feature.
  *
- * Yang diuji (bug/issue ditemukan audit menyeluruh "sync semuanya"):
- *   1. Router: `ticket_cat:midman` kini EXACT-match — kategori custom yang
- *      id-nya diawali "midman" (mis. midman_jual) tidak lagi "mati" di
- *      domain midman (fallback tanpa reply), tapi di-route benar ke ticket.
- *   2. findEmptyCategoryWarnings: kategori midman di-skip — warning lama
- *      menyarankan "tambah produk ke kategori midman" (menyesatkan: klik
- *      tombol rekber selalu buka deal, produk tidak pernah tampil).
- *   3. buildTicketPanel (use_dropdown): deskripsi option midman menyebut
- *      deal escrow — bukan "Bantuan / buka tiket langsung" (menyesatkan).
- *   4. auditLog ACTION_LABELS: action MIDMAN_xxx dan SET_MIDMAN_FEE punya label
- *      (sebelumnya fallback ke raw string — inkonsisten dgn konvensi label).
- *   5. /help: Auto-Split 3 kategori (TRANSAKSI/BANTUAN/REKBER), section
- *      Midman/Rekber ada, role midman disebut, versi dinamis dari
- *      package.json (anti stale — dulu hardcode v3.9.26).
- *   6. reconcileZombieDeals: deal non-terminal dengan channel yang sudah
- *      dihapus manual → meta dibersihkan (pembeli/penjual tidak terkunci
- *      selamanya); deal hidup & terminal tidak di-touch; wrapper harian
- *      hanya jalan 1x/hari.
- *   7. Formulir deal 3-langkah: penjual dengan tiket reguler aktif DITOLAK
- *      (v3.9.37 — dulu cuma pembeli yang dicek); happy path tetap jalan.
- *   8. saveTranscript: chunk kosong tidak dikirim (code block blank saat
- *      baris hard-split bersisa tepat CHUNK_SIZE).
+ * What is tested (bugs/issues found by the thorough "sync everything" audit):
+ *   1. Router: `ticket_cat:midman` is now an EXACT match — a custom category
+ *      whose id starts with "midman" (e.g. midman_jual) no longer "dies" in
+ *      the midman domain (fallback without a reply), but is routed correctly
+ *      to ticket.
+ *   2. findEmptyCategoryWarnings: the midman category is skipped — the old
+ *      warning suggested "add products to the midman category" (misleading:
+ *      clicking the escrow button always opens a deal, products are never
+ *      shown).
+ *   3. buildTicketPanel (use_dropdown): the midman option description mentions
+ *      an escrow deal — not "Support / open a ticket directly" (misleading).
+ *   4. auditLog ACTION_LABELS: the MIDMAN_xxx and SET_MIDMAN_FEE actions have
+ *      labels (previously falling back to the raw string — inconsistent with
+ *      the label convention).
+ *   5. /help: Auto-Split 3 categories (TRANSACTIONS/SUPPORT/ESCROW), the
+ *      Midman/Escrow section exists, the midman role is mentioned, dynamic
+ *      version from package.json (anti-stale — it used to hardcode v3.9.26).
+ *   6. reconcileZombieDeals: a non-terminal deal whose channel was manually
+ *      deleted → meta cleaned up (the buyer/seller is not locked forever);
+ *      live & terminal deals untouched; the daily wrapper only runs 1x/day.
+ *   7. 3-step deal form: a seller with an active regular ticket is REJECTED
+ *      (v3.9.37 — previously only the buyer was checked); the happy path
+ *      still works.
+ *   8. saveTranscript: empty chunks are not sent (blank code block when the
+ *      hard-split lines leave exactly CHUNK_SIZE left).
  */
 
 const test = require('node:test');
@@ -33,8 +36,8 @@ const path = require('path');
 const dataDir = path.join(__dirname, '..', '..', 'data');
 
 // ====================================================
-// === Sandbox: file data produksi di-snapshot & restore ===
-// === (pola midman.test.js / ticketCloseButtons.test.js) ===
+// === Sandbox: production data files are snapshotted & restored ===
+// === (midman.test.js / ticketCloseButtons.test.js pattern) ===
 // ====================================================
 const SANDBOX_FILES = ['deals.json', 'config.json', 'tickets.json'];
 const backups = [];
@@ -76,8 +79,8 @@ function resetDataFile(name, content) {
 // === 1. ROUTER — exact match ticket_cat:midman ===
 // ====================================================
 
-test('router v3.9.37: kategori custom "midman_jual" (prefix midman) di-route ke TICKET, tidak mati di midman', async () => {
-    resetDataFile('config.json', {}); // → DEFAULTS (midman_jual tidak terdaftar)
+test('router v3.9.37: a custom "midman_jual" category (midman prefix) is routed to TICKET, does not die in midman', async () => {
+    resetDataFile('config.json', {}); // → DEFAULTS (midman_jual is not registered)
     const routeInteraction = require('../../src/interactions');
     const replies = [];
     const interaction = {
@@ -101,14 +104,14 @@ test('router v3.9.37: kategori custom "midman_jual" (prefix midman) di-route ke 
         }
     };
     await routeInteraction(interaction);
-    // Domain ticket menjawab "kategori tidak ditemukan" — BUKAN dead-air
-    // (sebelum fix: jatuh ke fallback midman → console.warn, tanpa reply).
-    assert.strictEqual(replies.length, 1, 'interaction harus di-reply domain ticket');
+    // The ticket domain answers "category not found" — NOT dead air
+    // (before the fix: it fell into the midman fallback → console.warn, no reply).
+    assert.strictEqual(replies.length, 1, 'the interaction must be replied to by the ticket domain');
     assert.match(replies[0].content, /midman_jual/);
-    assert.match(replies[0].content, /tidak ditemukan/);
+    assert.match(replies[0].content, /not found/);
 });
 
-test('router v3.9.37: tombol persis "ticket_cat:midman" tetap dispatch ke domain midman', async () => {
+test('router v3.9.37: the exact "ticket_cat:midman" button still dispatches to the midman domain', async () => {
     resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' } });
     const routeInteraction = require('../../src/interactions');
     const interaction = {
@@ -122,7 +125,7 @@ test('router v3.9.37: tombol persis "ticket_cat:midman" tetap dispatch ke domain
         isStringSelectMenu: () => false,
         isUserSelectMenu: () => false,
         isModalSubmit: () => false,
-        // openCreateModal pakai interaction.reply (bukan deferReply).
+        // openCreateModal uses interaction.reply (not deferReply).
         user: { id: 'u1', tag: 'Creator#0001' },
         member: { roles: { cache: new Map() } },
         reply: async () => ({}),
@@ -135,17 +138,17 @@ test('router v3.9.37: tombol persis "ticket_cat:midman" tetap dispatch ke domain
     try {
         await routeInteraction(interaction);
     } catch (_) {
-        // mock tidak lengkap boleh throw SETELAH showModal — yang penting
-        // domain midman yang jalan (showModal terpanggil).
+        // The incomplete mock may throw AFTER showModal — what matters is
+        // that the midman domain ran (showModal was called).
     }
-    assert.ok(modalShown, 'openCreateModal (domain midman) harus terpanggil');
+    assert.ok(modalShown, 'openCreateModal (midman domain) must have been called');
 });
 
 // ====================================================
-// === 2. findEmptyCategoryWarnings — midman di-skip ===
+// === 2. findEmptyCategoryWarnings — midman is skipped ===
 // ====================================================
 
-test('findEmptyCategoryWarnings v3.9.37: kategori midman tidak di-warn (bukan kategori produk)', () => {
+test('findEmptyCategoryWarnings v3.9.37: the midman category is not warned about (not a product category)', () => {
     const { findEmptyCategoryWarnings } = require('../../src/commands/panels');
     const lines = findEmptyCategoryWarnings(
         { categoryIds: [] },
@@ -156,14 +159,14 @@ test('findEmptyCategoryWarnings v3.9.37: kategori midman tidak di-warn (bukan ka
             products: []
         }
     );
-    assert.strictEqual(lines.length, 0, 'midman bukan kategori jualan — tidak boleh ada warning "tambah produk"');
+    assert.strictEqual(lines.length, 0, 'midman is not a selling category — there must be no "add products" warning');
 });
 
 // ====================================================
-// === 3. buildTicketPanel dropdown — deskripsi midman ===
+// === 3. buildTicketPanel dropdown — midman description ===
 // ====================================================
 
-test('buildTicketPanel v3.9.37: option midman di dropdown menyebut deal/escrow (bukan "buka tiket")', () => {
+test('buildTicketPanel v3.9.37: the midman dropdown option mentions deal/escrow (not "open a ticket")', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
     resetDataFile('config.json', {});
     const build = buildTicketPanel(
@@ -175,16 +178,16 @@ test('buildTicketPanel v3.9.37: option midman di dropdown menyebut deal/escrow (
     const menu = build.components[0].components[0].toJSON();
     const options = menu.options;
     const midmanOpt = options.find(o => o.value === 'midman');
-    assert.ok(midmanOpt, 'option midman harus ada di dropdown (DEFAULTS)');
-    assert.match(midmanOpt.description, /rekber|escrow|deal/i);
-    assert.doesNotMatch(midmanOpt.description, /bantuan|tiket/i);
+    assert.ok(midmanOpt, 'the midman option must exist in the dropdown (DEFAULTS)');
+    assert.match(midmanOpt.description, /escrow|deal/i);
+    assert.doesNotMatch(midmanOpt.description, /support|ticket/i);
 });
 
 // ====================================================
-// === 4. auditLog ACTION_LABELS — label midman ===
+// === 4. auditLog ACTION_LABELS — midman labels ===
 // ====================================================
 
-test('auditLog v3.9.37: action MIDMAN_* dan SET_MIDMAN_FEE punya label (bukan raw string)', () => {
+test('auditLog v3.9.37: the MIDMAN_* and SET_MIDMAN_FEE actions have labels (not raw strings)', () => {
     const { ACTION_LABELS } = require('../../src/infra/auditLog');
     const expected = [
         'SET_MIDMAN_FEE',
@@ -202,29 +205,30 @@ test('auditLog v3.9.37: action MIDMAN_* dan SET_MIDMAN_FEE punya label (bukan ra
         'MIDMAN_MEMBER_REMOVE'
     ];
     for (const action of expected) {
-        assert.ok(ACTION_LABELS[action], `ACTION_LABELS.${action} harus ada`);
+        assert.ok(ACTION_LABELS[action], `ACTION_LABELS.${action} must exist`);
     }
 });
 
-// v3.9.37 FIX: deals.json (data live rekber) bolong dari FILES_TO_BACKUP —
-// guard test backupManager cuma memindai file yang ADA di data/ (di dev
-// deals.json bisa absen), jadi pin eksplisit di sini supaya regresi
-// future-proof. Restore tanpa deals.json = semua deal escrow aktif putus.
-test('backup v3.9.37: FILES_TO_BACKUP wajib memuat deals.json (restore tidak boleh putuskan deal rekber)', () => {
+// v3.9.37 FIX: deals.json (live escrow data) was missing from FILES_TO_BACKUP —
+// the backupManager guard test only scans files that EXIST in data/ (in dev
+// deals.json may be absent), so it is pinned explicitly here to make the
+// regression future-proof. A restore without deals.json = every active escrow
+// deal is lost.
+test('backup v3.9.37: FILES_TO_BACKUP must include deals.json (a restore must not break escrow deals)', () => {
     const fs2 = require('fs');
     const path2 = require('path');
     const src = fs2.readFileSync(
         path2.join(__dirname, '..', '..', 'src', 'data', 'backupManager.js'),
         'utf8'
     );
-    assert.match(src, /'deals\.json'/, 'deals.json harus ada di FILES_TO_BACKUP');
+    assert.match(src, /'deals\.json'/, 'deals.json must be present in FILES_TO_BACKUP');
 });
 
 // ====================================================
-// === 5. /help — auto-split 3 kategori + midman ===
+// === 5. /help — auto-split 3 categories + midman ===
 // ====================================================
 
-test('help v3.9.37: Auto-Split 3 kategori (TRANSAKSI/BANTUAN/REKBER) + section Midman', async () => {
+test('help v3.9.37: Auto-Split 3 categories (TRANSACTIONS/SUPPORT/ESCROW) + Midman section', async () => {
     const replies = [];
     const mockInteraction = {
         user: { toString: () => '<@test>' },
@@ -244,27 +248,27 @@ test('help v3.9.37: Auto-Split 3 kategori (TRANSAKSI/BANTUAN/REKBER) + section M
     const embed = replies[0].embeds[0];
     const allText = embed.data.fields.map(f => f.value).join('\n') + '\n' + embed.data.description;
 
-    // Auto-Split kini 3 kategori — bug user-reported ("masih 2").
-    assert.match(allText, /3 kategori/);
-    assert.doesNotMatch(allText, /2 kategori/);
-    assert.match(allText, /REKBER/);
+    // Auto-Split now has 3 categories — user-reported bug ("still 2").
+    assert.match(allText, /3 categories/);
+    assert.doesNotMatch(allText, /2 categories/);
+    assert.match(allText, /ESCROW/);
     assert.match(allText, /midman\.category/);
 
-    // Section + command midman.
+    // Midman section + command.
     assert.match(allText, /set-midman-fee/);
     assert.match(allText, /midman-deals/);
     assert.match(allText, /set-role midman/);
 
-    // Role list menyebut midman.
+    // The role list mentions midman.
     assert.match(allText, /verified\/unverified\/admin\/\*\*midman\*\*/);
 
-    // Versi dinamis dari package.json.
+    // Dynamic version from package.json.
     const { version: pkgVersion } = require('../../package.json');
     assert.match(embed.data.footer.text, new RegExp(`v${pkgVersion.replace(/\./g, '\\.')}`));
 });
 
 // ====================================================
-// === 6. reconcileZombieDeals — self-healing deal ===
+// === 6. reconcileZombieDeals — self-healing deals ===
 // ====================================================
 
 const mm = require('../../src/data/midmanManager');
@@ -282,18 +286,18 @@ function makeGuildForReconcile({ fetch }) {
     };
 }
 
-test('reconcileZombieDeals v3.9.37: deal dengan channel hilang → meta dihapus; deal hidup & terminal tetap', async () => {
+test('reconcileZombieDeals v3.9.37: a deal with a missing channel → meta deleted; live & terminal deals remain', async () => {
     resetDataFile('deals.json', {
         ch_live: { channelId: 'ch_live', guildId: 'g_rec', state: 'WAITING_PAYMENT', buyerId: 'b1', sellerId: 's1' },
         ch_dead: { channelId: 'ch_dead', guildId: 'g_rec', state: 'WAITING_PAYMENT', buyerId: 'b2', sellerId: 's2' },
         ch_terminal: { channelId: 'ch_terminal', guildId: 'g_rec', state: 'COMPLETED', buyerId: 'b3', sellerId: 's3' },
         ch_fetch_err: { channelId: 'ch_err', guildId: 'g_rec', state: 'WAITING_PAYMENT', buyerId: 'b4', sellerId: 's4' },
-        // Discord fetch channel terhapus → throw code 10003 (bukan null).
+        // Discord fetching a deleted channel → throws code 10003 (not null).
         ch_10003: { channelId: 'ch_10003', guildId: 'g_rec', state: 'WAITING_PAYMENT', buyerId: 'b5', sellerId: 's5' }
     });
     const guild = makeGuildForReconcile({
-        // ch_dead → null; ch_10003 → throw code 10003 (keduanya = channel hilang
-        // → meta dihapus); ch_err → throw TANPA code (transient — entry tetap).
+        // ch_dead → null; ch_10003 → throws code 10003 (both = channel gone
+        // → meta deleted); ch_err → throws WITHOUT a code (transient — entry kept).
         fetch: async id => {
             if (id === 'ch_dead') return null;
             if (id === 'ch_err') throw new Error('transient 500');
@@ -309,26 +313,26 @@ test('reconcileZombieDeals v3.9.37: deal dengan channel hilang → meta dihapus;
 
     const removed = await reconcileZombieDeals(client);
 
-    assert.strictEqual(removed, 2, 'ch_dead (null) + ch_10003 (error 10003) dibersihkan',
+    assert.strictEqual(removed, 2, 'ch_dead (null) + ch_10003 (error 10003) cleaned up',
     );
-    assert.ok(mm.getDeal('ch_live'), 'deal hidup tetap ada');
-    assert.strictEqual(mm.getDeal('ch_dead'), null, 'meta deal zombie dihapus (getDeal → null)');
-    assert.strictEqual(mm.getDeal('ch_10003'), null, 'meta deal 10003 dihapus');
-    assert.ok(mm.getDeal('ch_terminal'), 'deal terminal tidak di-touch (tidak di daftar aktif)');
-    assert.ok(mm.getDeal('ch_fetch_err'), 'transient fetch error → entry tetap, di-retry tick berikutnya');
+    assert.ok(mm.getDeal('ch_live'), 'the live deal stays');
+    assert.strictEqual(mm.getDeal('ch_dead'), null, 'zombie deal meta deleted (getDeal → null)');
+    assert.strictEqual(mm.getDeal('ch_10003'), null, '10003 deal meta deleted');
+    assert.ok(mm.getDeal('ch_terminal'), 'terminal deal not touched (not in the active list)');
+    assert.ok(mm.getDeal('ch_fetch_err'), 'transient fetch error → entry kept, retried on the next tick');
 
-    // Inti bug: user deal zombie tidak terkunci lagi.
-    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b2'), false, 'buyer deal zombie dibebaskan');
-    assert.strictEqual(mm.hasActiveDealFor('g_rec', 's2'), false, 'seller deal zombie dibebaskan');
-    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b5'), false, 'buyer deal 10003 dibebaskan');
-    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b1'), true, 'buyer deal hidup tetap terkunci (benar)');
+    // The core bug: users in zombie deals are no longer locked.
+    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b2'), false, 'the zombie deal buyer is freed');
+    assert.strictEqual(mm.hasActiveDealFor('g_rec', 's2'), false, 'the zombie deal seller is freed');
+    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b5'), false, 'the 10003 deal buyer is freed');
+    assert.strictEqual(mm.hasActiveDealFor('g_rec', 'b1'), true, 'the live deal buyer stays locked (correct)');
 });
 
-test('reconcileZombieDealsDaily v3.9.37: wrapper harian hanya menjalankan reconcile 1x/hari', async () => {
+test('reconcileZombieDealsDaily v3.9.37: the daily wrapper only runs the reconcile 1x/day', async () => {
     resetDataFile('deals.json', {});
     let calls = 0;
-    // Spy lewat module registry tidak bisa (function internal) — hitung via
-    // efek samping: guild fetch dipanggil per reconcile jalan.
+    // Spying via the module registry is not possible (internal function) — count
+    // via a side effect: guild fetch is called each time the reconcile runs.
     const guild = makeGuildForReconcile({ fetch: async () => null });
     const client = { guilds: { cache: new Map([['g_rec', guild]]) } };
     const origFetch = guild.channels.fetch;
@@ -337,22 +341,22 @@ test('reconcileZombieDealsDaily v3.9.37: wrapper harian hanya menjalankan reconc
         return origFetch(id);
     };
     await reconcileZombieDealsDaily(client);
-    await reconcileZombieDealsDaily(client); // kedua kalinya → harus skip
-    assert.strictEqual(calls, 0, 'deals.json kosong → tidak ada fetch sama sekali');
+    await reconcileZombieDealsDaily(client); // second time → must skip
+    assert.strictEqual(calls, 0, 'empty deals.json → no fetch calls at all');
     resetDataFile('deals.json', {
         ch_dead: { channelId: 'ch_dead', guildId: 'g_rec', state: 'WAITING_PAYMENT', buyerId: 'b2', sellerId: 's2' }
     });
-    await reconcileZombieDealsDaily(client); // hari sama → masih skip
-    assert.ok(mm.getDeal('ch_dead'), 'guard harian: reconcile kedua di hari yang sama tidak jalan');
+    await reconcileZombieDealsDaily(client); // same day → still skipped
+    assert.ok(mm.getDeal('ch_dead'), 'daily guard: a second reconcile on the same day does not run');
 });
 
 // ====================================================
-// === 7. Formulir deal 3-langkah — cek tiket penjual ===
+// === 7. 3-step deal form — seller ticket check ===
 // ====================================================
 
 /**
- * Collection palsu (Map + find — mirror discord.js Collection API yang
- * dipakai guild.channels.cache / guild.members.cache).
+ * Fake Collection (Map + find — mirrors the discord.js Collection API used
+ * by guild.channels.cache / guild.members.cache).
  */
 class FakeCollection extends Map {
     find(pred) {
@@ -367,10 +371,10 @@ function makeMidmanGuild({ sellerHasTicket }) {
     members.set('seller1', { id: 'seller1', user: { id: 'seller1', bot: false } });
 
     const channels = new FakeCollection();
-    // Kategori rekber "sudah ada" → skip create kategori.
-    channels.set('cat_rec', { id: 'cat_rec', name: '🤝 REKBER', type: 4 });
+    // The escrow category "already exists" → skip category creation.
+    channels.set('cat_rec', { id: 'cat_rec', name: '🤝 ESCROW', type: 4 });
     if (sellerHasTicket) {
-        // Tiket reguler aktif milik seller1 — findActiveTicketFor harus nemu ini.
+        // seller1's active regular ticket — findActiveTicketFor must find this.
         channels.set('ch_ticket_seller', {
             id: 'ch_ticket_seller',
             toString: () => '<#ch_ticket_seller>'
@@ -385,7 +389,7 @@ function makeMidmanGuild({ sellerHasTicket }) {
         channels: {
             cache: channels,
             create: async () => {
-                throw new Error('create tidak boleh dipanggil di test ini');
+                throw new Error('create must not be called in this test');
             }
         }
     };
@@ -422,7 +426,7 @@ function makeFlowInteraction({ type, customId, values, fields, guild }) {
     };
 }
 
-test('deal flow v3.9.37: penjual dengan tiket reguler aktif DITOLAK (asimetri diperbaiki)', async () => {
+test('deal flow v3.9.37: a seller with an active regular ticket is REJECTED (asymmetry fixed)', async () => {
     resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' } });
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {
@@ -431,7 +435,7 @@ test('deal flow v3.9.37: penjual dengan tiket reguler aktif DITOLAK (asimetri di
     const guild = makeMidmanGuild({ sellerHasTicket: true });
     const midmanDomain = require('../../src/interactions/midman');
 
-    // Langkah 1 — modal item & harga.
+    // Step 1 — item & price modal.
     const i1 = makeFlowInteraction({
         type: 'modal',
         customId: 'modal_mm_create',
@@ -442,32 +446,32 @@ test('deal flow v3.9.37: penjual dengan tiket reguler aktif DITOLAK (asimetri di
     });
     await midmanDomain(i1);
 
-    // Langkah 2 — pilih pembeli.
+    // Step 2 — pick the buyer.
     const i2 = makeFlowInteraction({ type: 'userselect', customId: 'mm_pick_buyer', values: ['buyer1'], guild });
     await midmanDomain(i2);
 
-    // Langkah 3 — pilih penjual (punya tiket aktif) → harus ditolak.
+    // Step 3 — pick the seller (has an active ticket) → must be rejected.
     const i3 = makeFlowInteraction({ type: 'userselect', customId: 'mm_pick_seller', values: ['seller1'], guild });
     await midmanDomain(i3);
 
     const last = i3._replies[i3._replies.length - 1];
-    assert.ok(last, 'harus ada reply');
-    assert.match(last.content, /seller1.*tiket aktif/i, 'penolakan menyebut tiket aktif penjual');
-    assert.match(last.content, /Pilih penjual lain/);
-    assert.strictEqual(mm.getDeal('ch_new_deal'), null, 'deal TIDAK boleh dibuat (getDeal → null kalau tidak ada)');
+    assert.ok(last, 'there must be a reply');
+    assert.match(last.content, /seller1.*active ticket/i, 'the rejection mentions the seller\'s active ticket');
+    assert.match(last.content, /Please pick another seller/);
+    assert.strictEqual(mm.getDeal('ch_new_deal'), null, 'the deal must NOT be created (getDeal → null when absent)');
 
-    // Seller tetap tidak di-lock deal (belum ada deal sama sekali).
+    // The seller is still not deal-locked (no deal exists at all).
     assert.strictEqual(mm.hasActiveDealFor('g_deal', 'seller1'), false);
 });
 
-test('deal flow v3.9.37 (regression): penjual tanpa tiket aktif → deal tetap dibuat normal', async () => {
+test('deal flow v3.9.37 (regression): a seller without an active ticket → the deal is still created normally', async () => {
     resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' }, channels: {} });
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {});
     const guild = makeMidmanGuild({ sellerHasTicket: false });
-    // Happy path perlu channel deal → allow create.
+    // The happy path needs the deal channel → allow create.
     guild.channels.create = async opts => {
-        assert.ok(opts.name.startsWith('rekber-buyer1'), 'nama channel deal benar');
+        assert.ok(opts.name.startsWith('escrow-buyer1'), 'correct deal channel name');
         return {
             id: 'ch_new_deal',
             send: async () => ({ id: 'msg_board' }),
@@ -492,30 +496,30 @@ test('deal flow v3.9.37 (regression): penjual tanpa tiket aktif → deal tetap d
     await midmanDomain(i3);
 
     const deal = mm.getDeal('ch_new_deal');
-    assert.ok(deal, 'deal harus dibuat (happy path tidak rusak oleh cek baru)');
+    assert.ok(deal, 'the deal must be created (the happy path is not broken by the new check)');
     assert.strictEqual(deal.buyerId, 'buyer1');
     assert.strictEqual(deal.sellerId, 'seller1');
     assert.strictEqual(deal.state, 'WAITING_AGREE');
     const last = i3._replies[i3._replies.length - 1];
-    assert.match(last.content, /Deal rekber dibuat/);
+    assert.match(last.content, /Escrow deal created/);
 });
 
 // ====================================================
-// === 8. saveTranscript — tidak ada chunk kosong ===
+// === 8. saveTranscript — no empty chunks ===
 // ====================================================
 
-test('saveTranscript v3.9.37: baris hard-split sisa tepat 1900 char tidak menghasilkan chunk kosong', async () => {
+test('saveTranscript v3.9.37: hard-split lines with exactly 1900 chars left do not produce an empty chunk', async () => {
     const { saveTranscript } = require('../../src/data/ticketManager');
     resetDataFile('config.json', { channels: { transcript: 'ch_transcript' } });
 
-    // Satu pesan user yang panjang: baris transcript-nya harus > CHUNK_SIZE
-    // supaya jalur hard-split jalan. Sisa slice dibuat GENAP 1900 + header
-    // kecil → kondisi yang dulu menghasilkan chunk '' (code block blank).
+    // One long user message: its transcript line must be > CHUNK_SIZE so the
+    // hard-split path runs. The slice remainder is made EXACTLY 1900 + a small
+    // header → the condition that used to produce a '' chunk (blank code block).
     const ts = 1700000000000;
     const author = 'Tester#0001';
-    const time = new Date(ts).toLocaleString('id-ID');
+    const time = new Date(ts).toLocaleString('en-US');
     const prefix = `[${time}] ${author}: `;
-    // 2×1900 supaya while loop hard-split dua kali, sisa persis 1900.
+    // 2×1900 so the hard-split while loop runs twice, remainder exactly 1900.
     const contentLen = 3 * 1900 - prefix.length;
     const content = 'X'.repeat(contentLen);
 
@@ -543,14 +547,14 @@ test('saveTranscript v3.9.37: baris hard-split sisa tepat 1900 char tidak mengha
     };
 
     const ok = await saveTranscript(ticketChannel, { userId: 'u1', productName: 'P', category: 'transaction' }, { tag: 'A#1', id: 'a1' }, true);
-    assert.ok(ok, 'transcript terkirim');
+    assert.ok(ok, 'transcript sent');
 
-    // Kirim pertama = embed summary; sisanya chunk code block.
+    // First send = summary embed; the rest are code block chunks.
     const chunkSends = sent.slice(1);
-    assert.ok(chunkSends.length >= 2, 'pesan panjang harus dipecah jadi beberapa chunk');
+    assert.ok(chunkSends.length >= 2, 'a long message must be split into several chunks');
     for (const s of chunkSends) {
         const m = s.content.match(/```\n([\s\S]*?)\n```/);
-        assert.ok(m, 'format code block utuh');
-        assert.ok(m[1].trim().length > 0, `chunk tidak boleh kosong (dapat: ${JSON.stringify(s.content.slice(0, 40))})`);
+        assert.ok(m, 'code block format intact');
+        assert.ok(m[1].trim().length > 0, `chunk must not be empty (got: ${JSON.stringify(s.content.slice(0, 40))})`);
     }
 });

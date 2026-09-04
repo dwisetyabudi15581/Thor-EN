@@ -1,16 +1,16 @@
 /**
- * ClientReady handler — dipanggil saat bot berhasil login ke Discord.
+ * ClientReady handler — called when the bot successfully logs in to Discord.
  *
- * Tugas:
- *   1. Log bot online status.
- *   2. Cleanup global slash commands (anti duplikat dari versi lama).
- *   3. Register slash commands ke guild spesifik (instan) atau global (1 jam).
- *   4. Cleanup expired keys + process expired role schedules (offline catch-up).
- *   5. Start auto-backup + auto-flush stats cache.
- *   6. Reconcile temp voice registry (cleanup zombie + detect orphan).
- *   6b. Reconcile deal rekber zombie (cleanup meta deal tanpa channel).
- *   7. Init statsManager dengan default guild untuk migrasi legacy entries.
- *   8. Start main scheduler loop (60s interval).
+ * Tasks:
+ *   1. Log the bot's online status.
+ *   2. Clean up global slash commands (anti-duplicate from old versions).
+ *   3. Register slash commands to a specific guild (instant) or globally (1 hour).
+ *   4. Clean up expired keys + process expired role schedules (offline catch-up).
+ *   5. Start auto-backup + auto-flush of the stats cache.
+ *   6. Reconcile the temp voice registry (clean up zombies + detect orphans).
+ *   6b. Reconcile zombie escrow deals (clean up deal metadata without a channel).
+ *   7. Initialize statsManager with the default guild for legacy entry migration.
+ *   8. Start the main scheduler loop (60s interval).
  */
 
 const { Events } = require('discord.js');
@@ -34,76 +34,77 @@ const tempVoiceManager = require('../../data/tempVoiceManager');
 const GUILD_ID = process.env.GUILD_ID || null;
 
 async function onReady(client) {
-    console.log(`✅ Bot online sebagai ${client.user.tag}`);
+    console.log(`✅ Bot online as ${client.user.tag}`);
 
-    // v3.9.24 FIX: urutan dibalik — daftar command ke guild DULU, baru bersihkan
-    // command global. Sebelumnya wipe global jalan duluan; kalau registrasi guild
-    // gagal setelahnya, bot jadi ZERO command di mana-mana sampai restart sukses.
-    // (Wipe global tetap perlu supaya gak duplikat versi lama yang pernah global.)
+    // v3.9.24 FIX: order reversed — register commands to the guild FIRST, then clean
+    // up global commands. Previously the global wipe ran first; if guild
+    // registration failed afterwards, the bot had ZERO commands everywhere until
+    // a successful restart. (The global wipe is still needed so old versions that
+    // were once global don't get duplicated.)
 
-    // === 1. Register slash commands ke guild spesifik (instan) ===
+    // === 1. Register slash commands to a specific guild (instant) ===
     let registeredToGuild = false;
     try {
         if (!GUILD_ID) {
-            console.warn('⚠️ GUILD_ID belum di-set di .env. Bot fallback ke global commands.');
-            console.warn('   Set GUILD_ID di file .env untuk registrasi instan (1 detik vs 1 jam).');
-            // set() mengganti SELURUH daftar global sekaligus — tidak perlu pre-wipe.
+            console.warn('⚠️ GUILD_ID is not set in .env. The bot falls back to global commands.');
+            console.warn('   Set GUILD_ID in the .env file for instant registration (1 second vs 1 hour).');
+            // set() replaces the ENTIRE global list at once — no pre-wipe needed.
             await client.application.commands.set(getCommands());
         } else {
             const guild = client.guilds.cache.get(GUILD_ID);
             if (!guild) {
                 console.warn(
-                    `⚠️ Guild dengan ID ${GUILD_ID} tidak ditemukan. Pastikan bot sudah di-invite ke server itu.`
+                    `⚠️ Guild with ID ${GUILD_ID} not found. Make sure the bot has been invited to that server.`
                 );
-                console.warn('   Sementara fallback ke global commands (perlu ~1 jam untuk muncul).');
+                console.warn('   Temporarily falling back to global commands (takes ~1 hour to appear).');
                 await client.application.commands.set(getCommands());
             } else {
                 await guild.commands.set(getCommands());
                 registeredToGuild = true;
-                console.log(`✅ Slash Commands terdaftar ke guild: ${guild.name} (instan!)`);
+                console.log(`✅ Slash Commands registered to guild: ${guild.name} (instant!)`);
             }
         }
     } catch (err) {
-        console.error('Gagal daftar slash command:', err);
+        console.error('Failed to register slash commands:', err);
     }
 
-    // === 1b. Cleanup global slash commands (anti duplikat) — hanya kalau guild sukses ===
+    // === 1b. Cleanup global slash commands (anti-duplicate) — only if guild registration succeeded ===
     if (registeredToGuild) {
         try {
             const globalCmds = await client.application.commands.fetch();
             if (globalCmds.size > 0) {
-                console.log(`🧹 Menghapus ${globalCmds.size} command global yang tersisa (anti duplikat)...`);
+                console.log(`🧹 Removing ${globalCmds.size} leftover global command(s) (anti-duplicate)...`);
                 await client.application.commands.set([]);
-                console.log('✅ Command global dibersihkan.');
+                console.log('✅ Global commands cleaned up.');
             }
         } catch (e) {
-            console.warn('⚠️ Gagal bersihkan command global:', e.message);
+            console.warn('⚠️ Failed to clean up global commands:', e.message);
         }
     }
 
-    // v3.9.24 FIX (PENTING): langkah-langkah startup di bawah sebelumnya dibungkus
-    // SATU try/catch raksasa. Kalau langkah awal throw (mis. removeExpiredKeys →
-    // saveKeys → disk full), maka auto-backup, auto-flush, dan SELURUH scheduler
-    // 60-detik TIDAK JALAN SAMA SEKALI — bot online tapi zombie (tidak expire
-    // role, tidak end giveaway, tidak kirim announcement) dengan satu baris log
-    // "Error re-schedule role:" yang tidak menjelaskan apa-apa. Sekarang tiap
-    // langkah punya try/catch sendiri — gagal satu, sisanya tetap jalan.
+    // v3.9.24 FIX (IMPORTANT): the startup steps below were previously wrapped in
+    // ONE giant try/catch. If an early step threw (e.g. removeExpiredKeys →
+    // saveKeys → disk full), then auto-backup, auto-flush, and the ENTIRE 60-second
+    // scheduler NEVER RAN AT ALL — the bot was online but a zombie (no role expiry,
+    // no giveaway endings, no announcements) with a single log line
+    // "Error re-schedule role:" that explained nothing. Now each step has its own
+    // try/catch — if one fails, the rest still run.
 
     // === 2. Cleanup expired keys (offline catch-up) ===
     try {
         const removedKeys = removeExpiredKeys();
         if (removedKeys > 0) {
-            console.log(`🧹 Membersihkan ${removedKeys} key expired dari keys.json.`);
+            console.log(`🧹 Cleaning up ${removedKeys} expired key(s) from keys.json.`);
         }
     } catch (err) {
         console.error('Startup: removeExpiredKeys error:', err.message);
     }
 
-    // === 3. Re-schedule auto-remove role (offline catch-up) ===
+    // === 3. Re-schedule auto-remove roles (offline catch-up) ===
     try {
         const expired = getExpired();
         if (expired.length > 0) {
-            console.log(`⏰ Ditemukan ${expired.length} role yang harus diproses (schedule expired saat bot offline).`);
+            console.log(`⏰ Found ${expired.length} role(s) to process (schedules expired while the bot was offline).`);
             for (const entry of expired) {
                 try {
                     await processExpiredRole(client, entry);
@@ -114,7 +115,7 @@ async function onReady(client) {
         }
         const active = getAllActive();
         if (active.length > 0) {
-            console.log(`📋 ${active.length} auto-role terjadwal aktif.`);
+            console.log(`📋 ${active.length} active scheduled auto-role(s).`);
         }
     } catch (err) {
         console.error('Startup: offline catch-up role error:', err.message);
@@ -135,58 +136,58 @@ async function onReady(client) {
     }
 
     // === 6. Reconcile temp voice registry ===
-    // Cleanup zombie entries (channel sudah dihapus admin) & detect orphan channels.
+    // Clean up zombie entries (channels already deleted by an admin) & detect orphan channels.
     try {
         for (const [gid] of client.guilds.cache) {
             const r = tempVoiceManager.reconcileGuild(client, gid);
             if (r.zombiesRemoved > 0 || r.orphansDetected > 0) {
                 console.log(
-                    `🧹 Temp voice reconcile ${gid}: ${r.zombiesRemoved} zombie dihapus, ${r.orphansDetected} orphan terdeteksi.`
+                    `🧹 Temp voice reconcile ${gid}: ${r.zombiesRemoved} zombie(s) removed, ${r.orphansDetected} orphan(s) detected.`
                 );
             }
         }
     } catch (err) {
-        console.warn('⚠️ Gagal reconcile temp voice:', err.message);
+        console.warn('⚠️ Failed to reconcile temp voice:', err.message);
     }
 
-    // === 6b. Reconcile deal rekber zombie (v3.9.37) ===
-    // Deal non-terminal yang channel-nya dihapus manual → meta dibersihkan,
-    // supaya pembeli/penjual gak terkunci selamanya (mirror self-healing
-    // tiket di findActiveTicketFor). Tick scheduler juga jalanin harian.
+    // === 6b. Reconcile zombie escrow deals (v3.9.37) ===
+    // Non-terminal deals whose channel was deleted manually → metadata cleaned
+    // up, so the buyer/seller aren't locked forever (mirrors the ticket
+    // self-healing in findActiveTicketFor). The scheduler tick also runs this daily.
     try {
         const zombies = await reconcileZombieDeals(client);
-        if (zombies > 0) console.log(`🧹 Startup: ${zombies} zombie deal rekber dibersihkan.`);
+        if (zombies > 0) console.log(`🧹 Startup: ${zombies} zombie escrow deal(s) cleaned up.`);
     } catch (err) {
-        console.warn('⚠️ Gagal reconcile deal rekber:', err.message);
+        console.warn('⚠️ Failed to reconcile escrow deals:', err.message);
     }
 
-    // === 7. Init statsManager dengan default guild untuk migrasi legacy ===
+    // === 7. Init statsManager with the default guild for legacy migration ===
     const defaultStatsGuildId = GUILD_ID || (client.guilds.cache.size > 0 ? client.guilds.cache.first().id : null);
     if (defaultStatsGuildId) {
         try {
             initStats(defaultStatsGuildId);
         } catch (err) {
-            console.warn('⚠️ Gagal init statsManager:', err.message);
+            console.warn('⚠️ Failed to init statsManager:', err.message);
         }
     }
 
-    // === 8. Start main scheduler loop (60s) ===
-    // Guard overlap: skip tick kalau sebelumnya belum selesai (anti double-DM).
-    // Setiap item di-wrap try/catch sendiri (1 throw gak abort sisa loop).
+    // === 8. Start the main scheduler loop (60s) ===
+    // Overlap guard: skip a tick if the previous one hasn't finished (anti double-DM).
+    // Each item is wrapped in its own try/catch (1 throw doesn't abort the rest of the loop).
     try {
         let schedulerRunning = false;
-        // Simpen reference + .unref() biar interval gak nge-block graceful shutdown.
-        // Kalau gak, process bisa jadi zombie kalo gracefulShutdown gagal reach process.exit.
+        // Keep the reference + .unref() so the interval doesn't block graceful shutdown.
+        // Otherwise the process could become a zombie if gracefulShutdown fails to reach process.exit.
         const schedulerInterval = setInterval(async () => {
             if (schedulerRunning) {
-                console.log('⏭️ Scheduler tick di-skip (iterasi sebelumnya masih jalan).');
+                console.log('⏭️ Scheduler tick skipped (previous iteration still running).');
                 return;
             }
             schedulerRunning = true;
             try {
                 try {
                     const removed = removeExpiredKeys();
-                    if (removed > 0) console.log(`🧹 ${removed} key expired dihapus.`);
+                    if (removed > 0) console.log(`🧹 ${removed} expired key(s) removed.`);
                 } catch (err) {
                     console.error('Scheduler: removeExpiredKeys error:', err.message);
                 }
@@ -218,16 +219,17 @@ async function onReady(client) {
                     }
                 }
 
-                // v3.9.26: GC harian — giveaway/poll/announcement lama (internal
-                // guard per-hari, jadi efektif jalan 1x/hari saja).
+                // v3.9.26: daily GC — old giveaways/polls/announcements (internal
+                // per-day guard, so it effectively runs only 1x/day).
                 try {
                     pruneStaleData();
                 } catch (err) {
                     console.error('Scheduler: pruneStaleData error:', err.message);
                 }
 
-                // v3.9.37: reconcile harian deal rekber zombie (channel dihapus
-                // manual selagi bot jalan — startup check gak meliputi kasus ini).
+                // v3.9.37: daily reconcile of zombie escrow deals (channel deleted
+                // manually while the bot was running — the startup check doesn't
+                // cover this case).
                 try {
                     await reconcileZombieDealsDaily(client);
                 } catch (err) {
@@ -241,7 +243,7 @@ async function onReady(client) {
         }, 60 * 1000);
         if (typeof schedulerInterval.unref === 'function') schedulerInterval.unref();
     } catch (err) {
-        console.error('Startup: gagal start scheduler loop:', err);
+        console.error('Startup: failed to start scheduler loop:', err);
     }
 }
 

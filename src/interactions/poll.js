@@ -1,24 +1,24 @@
 /**
  * Poll domain handler — button `poll_vote:*` & modal `poll_modal_create:*`.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — just moved to a new file.
  *
- * Helper `handlePollButton`, `handlePollModalCreate`, `updatePollVoteMessage`
- * jadi LOCAL function di file ini.
+ * Helpers `handlePollButton`, `handlePollModalCreate`, `updatePollVoteMessage`
+ * are LOCAL functions in this file.
  *
- * Router (src/interactions/index.js) sudah apply:
+ * The router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
  *   - routing by customId prefix
- * Jadi domain handler fokus ke logic-nya saja.
+ * So the domain handler can focus on its logic alone.
  */
 
 const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
 const { logAudit, withUserLock, safeEditReply } = require('../commands/_shared');
 // votePoll / getPollByMessage / removePoll / getPollSession / deletePollSession
-// tidak di-export _shared, import langsung dari pollManager.
+// are not exported from _shared — import them directly from pollManager.
 const {
     get: getPoll,
     vote: votePoll,
@@ -56,30 +56,30 @@ async function handlePollButton(interaction) {
         const pollId = parts[1];
         const optionIndex = parseInt(parts[2]);
 
-        // Pre-check cepat untuk feedback instan (tanpa lock)
+        // Quick pre-check for instant feedback (without a lock)
         const pollPre = getPoll(pollId);
         if (!pollPre) {
-            return interaction.reply({ content: '❌ Poll tidak ditemukan.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Poll not found.', flags: MessageFlags.Ephemeral });
         }
         if (pollPre.closed) {
-            return interaction.reply({ content: '❌ Poll sudah ditutup.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ This poll is already closed.', flags: MessageFlags.Ephemeral });
         }
 
-        // v3.9.2 FIX: per-user lock untuk mencegah TOCTOU race condition.
-        // Sebelumnya, 2 klik cepat di option yang sama (multiple=false)
-        // bisa: klik-1 toggle ON, klik-2 toggle OFF. Hasil: vote hilang
-        // padahal user merasa sudah vote. Lock memaksa klik-2 baca data
-        // terbaru setelah klik-1 selesai.
+        // v3.9.2 FIX: per-user lock to prevent a TOCTOU race condition.
+        // Previously, 2 quick clicks on the same option (multiple=false)
+        // could go: click-1 toggles ON, click-2 toggles OFF. Result: the vote
+        // disappears even though the user thinks they voted. The lock forces
+        // click-2 to read the latest data after click-1 finishes.
         //
-        // v3.9.17 FIX: bedain lock-failed vs poll-not-found. Sebelumnya,
-        // withUserLock return null kalau lock gagal ATAU fn() return null
-        // (poll tidak ada). User lihat "klik terlalu cepat" padahal poll
-        // sudah dihapus admin. Sekarang: fn() return object { type, poll }
-        // supaya caller bisa bedain.
+        // v3.9.17 FIX: distinguish lock-failed vs poll-not-found. Previously,
+        // withUserLock returned null either when the lock failed OR when fn()
+        // returned null (poll missing). The user saw "clicking too fast" when
+        // the poll had actually been deleted by an admin. Now: fn() returns an
+        // object { type, poll } so the caller can tell them apart.
         const result = await withUserLock('poll', interaction.user.id, () => {
             const r = votePoll(pollId, interaction.user.id, optionIndex);
             if (r === null) {
-                // Poll tidak ada atau option invalid
+                // Poll missing or option invalid
                 return { type: 'notfound_or_invalid' };
             }
             if (r.closed) {
@@ -89,40 +89,40 @@ async function handlePollButton(interaction) {
         });
 
         if (result === null) {
-            // Lock gagal — user klik terlalu cepat
+            // Lock failed — user clicked too fast
             return interaction.reply({
-                content: '⏳ Tunggu sebentar, kamu lagi klik terlalu cepat. Coba lagi dalam 1 detik.',
+                content: '⏳ Hold on, you are clicking too fast. Try again in 1 second.',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (result.type === 'notfound_or_invalid') {
             return interaction.reply({
-                content: '❌ Poll tidak ditemukan atau option tidak valid (mungkin sudah dihapus admin).',
+                content: '❌ Poll not found or the option is invalid (it may have been deleted by an admin).',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (result.type === 'closed') {
-            return interaction.reply({ content: '❌ Poll sudah ditutup.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ This poll is already closed.', flags: MessageFlags.Ephemeral });
         }
         // result.type === 'voted'
         const poll = result.poll;
         await updatePollVoteMessage(interaction, poll);
         const opt = poll.options[optionIndex];
-        // v3.9.38 FIX: cek post-state dari manager — sekarang unvote multi-choice
-        // benar-benar terjadi (toggle di pollManager), jadi cabang "Vote
-        // dibatalkan" reachable untuk poll multi juga (dulu toggle multi =
-        // silent no-op → selalu "Vote tercatat"). Embed re-render di atas
-        // (updatePollVoteMessage) sudah pakai state poll yang sama → bar chart
-        // mengikuti hasil toggle.
+        // v3.9.38 FIX: check the post-state from the manager — multi-choice unvote
+        // now actually happens (toggle in pollManager), so the "Vote cancelled"
+        // branch is reachable for multi polls too (previously the multi toggle
+        // was a silent no-op → always "Vote recorded"). The embed re-render
+        // above (updatePollVoteMessage) already uses the same poll state → the
+        // bar chart follows the toggle result.
         const voted = opt.votes.includes(interaction.user.id);
         return interaction.reply({
-            content: voted ? `✅ Vote tercatat untuk **${opt.label}**!` : `🚪 Vote dibatalkan untuk **${opt.label}**.`,
+            content: voted ? `✅ Vote recorded for **${opt.label}**!` : `🚪 Vote cancelled for **${opt.label}**.`,
             flags: MessageFlags.Ephemeral
         });
     } catch (err) {
         console.error('Poll button error:', err);
         if (interaction.isRepliable() && !interaction.replied) {
-            await interaction.reply({ content: '❌ Terjadi error.', flags: MessageFlags.Ephemeral }).catch(() => {});
+            await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
     }
 }
@@ -148,16 +148,16 @@ async function updatePollVoteMessage(interaction, poll) {
             .setDescription(
                 `${lines}\n\n` +
                     `🗳️ Total votes: **${total}**\n` +
-                    `🔄 Mode: ${poll.multiple ? 'Multi-vote (boleh pilih banyak)' : 'Single-vote (pilih satu)'}\n` +
-                    `⏰ Dibuat: <t:${Math.floor(poll.createdAt / 1000)}:R>\n\n` +
-                    `👇 Klik tombol di bawah untuk vote (toggle)`
+                    `🔄 Mode: ${poll.multiple ? 'Multi-vote (you may pick several)' : 'Single-vote (pick one)'}\n` +
+                    `⏰ Created: <t:${Math.floor(poll.createdAt / 1000)}:R>\n\n` +
+                    `👇 Click the buttons below to vote (toggle)`
             )
             .setColor(0x5865f2)
             .setFooter({ text: `Poll by ${poll.creatorTag} | ID: ${poll.id}` })
             .setTimestamp();
         await msg.edit({ embeds: [embed] });
     } catch (err) {
-        console.warn('Gagal update poll message:', err.message);
+        console.warn('Failed to update poll message:', err.message);
     }
 }
 
@@ -166,24 +166,24 @@ async function updatePollVoteMessage(interaction, poll) {
 // ====================================================
 async function handlePollModalCreate(interaction) {
     try {
-        // v3.9.1 FIX: customId sekarang hanya `poll_modal_create:<sessionId>`.
-        // Data poll (channelId, multiple, question) disimpan di in-memory session
-        // supaya customId tidak overflow 100-char Discord limit kalau question panjang.
+        // v3.9.1 FIX: customId is now just `poll_modal_create:<sessionId>`.
+        // Poll data (channelId, multiple, question) is stored in an in-memory session
+        // so the customId doesn't overflow Discord's 100-char limit on long questions.
         const parts = interaction.customId.split(':');
         const sessionId = parts[1];
         const session = getPollSession(sessionId);
 
         if (!session) {
             return interaction.reply({
-                content: '❌ Session poll sudah expired (lebih dari 5 menit). Jalankan ulang `/poll create`.',
+                content: '❌ The poll session has expired (more than 5 minutes). Run `/poll create` again.',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Defense-in-depth: pastikan user yang submit modal = user yang buat session.
+        // Defense-in-depth: make sure the user submitting the modal is the user who created the session.
         if (session.userId !== interaction.user.id) {
             return interaction.reply({
-                content: '❌ Modal ini bukan milik kamu. Jalankan `/poll create` sendiri.',
+                content: '❌ This modal does not belong to you. Run `/poll create` yourself.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -192,7 +192,7 @@ async function handlePollModalCreate(interaction) {
 
         const optionsRaw = interaction.components[0]?.components?.[0]?.value?.trim() || '';
         if (!optionsRaw) {
-            return interaction.reply({ content: '❌ Options tidak boleh kosong.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Options cannot be empty.', flags: MessageFlags.Ephemeral });
         }
 
         const optionLines = optionsRaw
@@ -200,10 +200,10 @@ async function handlePollModalCreate(interaction) {
             .map(s => s.trim())
             .filter(s => s.length > 0);
         if (optionLines.length < 2) {
-            return interaction.reply({ content: '❌ Minimal 2 options (1 per baris).', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Minimum of 2 options (1 per line).', flags: MessageFlags.Ephemeral });
         }
         if (optionLines.length > 10) {
-            return interaction.reply({ content: '❌ Maksimal 10 options.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Maximum of 10 options.', flags: MessageFlags.Ephemeral });
         }
 
         const options = optionLines.map((label, i) => ({
@@ -211,25 +211,25 @@ async function handlePollModalCreate(interaction) {
             emoji: `${i + 1}️⃣`
         }));
 
-        // Defense-in-depth: command router sudah gate guild-only, tapi cek lagi biar aman
+        // Defense-in-depth: the command router already gates guild-only, but check again to be safe
         if (!interaction.guild) {
-            return interaction.reply({ content: '❌ Poll cuma bisa dibuat di server.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Polls can only be created in a server.', flags: MessageFlags.Ephemeral });
         }
         const channel = interaction.guild.channels.cache.get(channelId);
         if (!channel) {
             deletePollSession(sessionId);
-            return interaction.reply({ content: '❌ Channel tidak ditemukan.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Channel not found.', flags: MessageFlags.Ephemeral });
         }
 
-        // v3.9.26 FIX: BUILD embed + tombol DULU, PERSIST belakangan.
-        // Sebelumnya createPoll() menulis polls.json SEBELUM setTitle() —
-        // question panjang/bentuk aneh membuat setTitle throw (>256) SETELAH
-        // entry tersimpan → zombie poll (messageId:null) + user stuck
-        // "Bot is thinking..." karena catch memanggil reply() setelah deferReply
-        // sukses (InteractionAlreadyAcknowledged, ditelan .catch).
-        // Validasi question sudah di command (/poll create, maks 250), tapi
-        // reorder ini menutup jalur error sisanya + membuat rollback tidak
-        // perlu untuk kasus render-gagal.
+        // v3.9.26 FIX: BUILD the embed + buttons FIRST, PERSIST afterwards.
+        // Previously createPoll() wrote polls.json BEFORE setTitle() — a long or
+        // oddly shaped question made setTitle throw (>256) AFTER the entry was
+        // saved → zombie poll (messageId:null) + user stuck on
+        // "Bot is thinking..." because the catch called reply() after deferReply
+        // had already succeeded (InteractionAlreadyAcknowledged, swallowed by .catch).
+        // Question validation already exists in the command (/poll create, max 250), but
+        // this reordering closes the remaining error path and makes rollback
+        // unnecessary for render-failure cases.
 
         // Build embed + buttons
         const pollId = `poll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -246,15 +246,15 @@ async function handlePollModalCreate(interaction) {
             .setDescription(
                 `${lines}\n\n` +
                     `🗳️ Total votes: **0**\n` +
-                    `🔄 Mode: ${multiple ? 'Multi-vote (boleh pilih banyak)' : 'Single-vote (pilih satu)'}\n` +
-                    `⏰ Dibuat: <t:${Math.floor(createdAt / 1000)}:R>\n\n` +
-                    `👇 Klik tombol di bawah untuk vote (toggle)`
+                    `🔄 Mode: ${multiple ? 'Multi-vote (you may pick several)' : 'Single-vote (pick one)'}\n` +
+                    `⏰ Created: <t:${Math.floor(createdAt / 1000)}:R>\n\n` +
+                    `👇 Click the buttons below to vote (toggle)`
             )
             .setColor(0x5865f2)
             .setFooter({ text: `Poll by ${interaction.user.tag} | ID: ${pollId}` })
             .setTimestamp();
 
-        // Build buttons — 5 per row (Discord limit), wrap to next row if more
+        // Build buttons — 5 per row (Discord limit), wrap to the next row if more
         const rows = [];
         for (let i = 0; i < options.length; i += 5) {
             const row = new ActionRowBuilder();
@@ -271,13 +271,13 @@ async function handlePollModalCreate(interaction) {
             rows.push(row);
         }
 
-        // v3.9.24 FIX: defer SEBELUM channel.send (operasi lambat). Sebelumnya
-        // modal ini tidak pernah defer — kalau send lambat / retry jaringan,
-        // window 3-detik ack Discord terlewati → "This interaction failed".
-        // Validasi di atas cepat (in-memory), jadi defer di titik ini pas.
+        // v3.9.24 FIX: defer BEFORE channel.send (a slow operation). Previously
+        // this modal never deferred — if send was slow / the network retried,
+        // Discord's 3-second ack window passed → "This interaction failed".
+        // The validations above are fast (in-memory), so deferring at this point is right.
         await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
 
-        // Persist poll entry SETELAH render sukses (v3.9.26)
+        // Persist the poll entry AFTER a successful render (v3.9.26)
         const poll = createPoll({
             id: pollId,
             guildId: interaction.guild.id,
@@ -290,42 +290,42 @@ async function handlePollModalCreate(interaction) {
         });
 
         const msg = await channel
-            .send({ embeds: [embed], components: rows, content: `📊 **POLL BARU** oleh ${interaction.user}` })
+            .send({ embeds: [embed], components: rows, content: `📊 **NEW POLL** by ${interaction.user}` })
             .catch(() => null);
         if (!msg) {
-            // P0-5 FIX: rollback poll entry yang sudah tersimpan kalau gagal kirim message.
+            // P0-5 FIX: roll back the saved poll entry if sending the message fails.
             try {
                 removePoll(poll.id);
             } catch (_) {}
             deletePollSession(sessionId);
             return safeEditReply(interaction, {
-                content: `❌ Gagal kirim poll ke ${channel}. Cek permission bot. Entry di-rollback.`
+                content: `❌ Failed to send the poll to ${channel}. Check the bot's permissions. Entry rolled back.`
             });
         }
         setPollMessageId(poll.id, msg.id);
-        // v3.9.1: session sudah dipakai, hapus dari memory.
+        // v3.9.1: the session has been used, remove it from memory.
         deletePollSession(sessionId);
-        // P1-10 FIX: tambah audit log untuk POLL_CREATE (sebelumnya missing).
+        // P1-10 FIX: add an audit log for POLL_CREATE (previously missing).
         try {
             await logAudit(interaction.client, {
                 action: 'POLL_CREATE',
                 actorId: interaction.user.id,
                 actorTag: interaction.user.tag,
-                details: `Buat poll **${question}** (${poll.options.length} options, ${multiple ? 'multi' : 'single'}-vote) di ${channel}`,
+                details: `Create poll **${question}** (${poll.options.length} options, ${multiple ? 'multi' : 'single'}-vote) in ${channel}`,
                 guildId: interaction.guild.id
             });
         } catch (_) {}
         return safeEditReply(interaction, {
-            content: `✅ Poll dibuat di ${channel}!\n🆔 \`${poll.id}\`\n💡 Tutup pakai \`/poll close id:${poll.id}\``
+            content: `✅ Poll created in ${channel}!\n🆔 \`${poll.id}\`\n💡 Close it with \`/poll close id:${poll.id}\``
         });
     } catch (err) {
         console.error('Poll modal create error:', err);
-        // v3.9.26 FIX: pakai safeEditReply, bukan reply(). deferReply sudah jalan
-        // di jalur sukses → reply() throw InteractionAlreadyAcknowledged (ditelan
-        // .catch) → user stuck "Bot is thinking..." 15 menit tanpa pesan error.
-        // safeEditReply handle kasus deferred/replied/belum-apa-apa dengan benar.
+        // v3.9.26 FIX: use safeEditReply, not reply(). deferReply has already run
+        // on the success path → reply() throws InteractionAlreadyAcknowledged (swallowed
+        // by .catch) → the user is stuck on "Bot is thinking..." for 15 minutes with no
+        // error message. safeEditReply handles the deferred/replied/nothing-yet cases correctly.
         await safeEditReply(interaction, {
-            content: '❌ Terjadi error saat membuat poll: ' + (err.message || 'unknown')
+            content: '❌ An error occurred while creating the poll: ' + (err.message || 'unknown')
         }).catch(() => {});
     }
 }

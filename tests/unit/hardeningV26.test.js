@@ -1,16 +1,16 @@
 /**
- * v3.9.26 HARDENING TESTS — regression test untuk perbaikan audit single-guild:
+ * v3.9.26 HARDENING TESTS — regression tests for the single-guild audit fixes:
  *   1. isValidEmoji (anti poison config)
- *   2. claimGiveawayDismissed (anti resurrection kategori)
- *   3. Migrasi v1→v2 preserve field modern
- *   4. Karantina file korup (quarantineCorruptFile)
+ *   2. claimGiveawayDismissed (anti category resurrection)
+ *   3. v1→v2 migration preserves modern fields
+ *   4. Corrupt file quarantine (quarantineCorruptFile)
  *   5. GC prune (giveaway/poll/announcement)
  *   6. Read-through cache + invalidateCache (automod/afk)
  *   7. /giveaway list & /poll list bounding
- *   8. /poll create validasi question + /giveaway subcommand hint
+ *   8. /poll create question validation + /giveaway subcommand hint
  *   9. Panel patch contract (imageUrl/thumbnailUrl/footerText)
  *
- * Sandbox: snapshot/restore semua file data yang disentuh (pola v3.9.24).
+ * Sandbox: snapshot/restore every data file touched (v3.9.24 pattern).
  */
 
 const test = require('node:test');
@@ -59,7 +59,7 @@ function readDataJSON(name) {
 }
 
 function clearQuarantineArtifacts() {
-    // Hapus sisa file .corrupt-* dari test karantina
+    // Remove leftover .corrupt-* files from the quarantine test
     if (!fs.existsSync(DATA_DIR)) return;
     for (const f of fs.readdirSync(DATA_DIR)) {
         if (f.includes('.corrupt-')) {
@@ -73,7 +73,7 @@ function clearQuarantineArtifacts() {
 const { isValidEmoji } = require('../../src/infra/text');
 const { quarantineCorruptFile } = require('../../src/infra/safeWrite');
 
-test('v3.9.26 isValidEmoji: terima unicode & custom emoji', () => {
+test('v3.9.26 isValidEmoji: accepts unicode & custom emoji', () => {
     assert.strictEqual(isValidEmoji('✅'), true);
     assert.strictEqual(isValidEmoji('🎫'), true);
     assert.strictEqual(isValidEmoji('👍🏽'), true); // skin tone modifier
@@ -82,20 +82,20 @@ test('v3.9.26 isValidEmoji: terima unicode & custom emoji', () => {
     assert.strictEqual(isValidEmoji(':name:12345'), true);
 });
 
-test('v3.9.26 isValidEmoji: tolak string yang akan meracuni setEmoji()', () => {
+test('v3.9.26 isValidEmoji: rejects strings that would poison setEmoji()', () => {
     assert.strictEqual(isValidEmoji('notanemoji'), false);
     assert.strictEqual(isValidEmoji('a'.repeat(200)), false);
     assert.strictEqual(isValidEmoji('hello world'), false);
     assert.strictEqual(isValidEmoji(''), false);
     assert.strictEqual(isValidEmoji(null), false);
     assert.strictEqual(isValidEmoji(42), false);
-    // Angka ASCII murni bukan emoji (walau non-printable check lolos)
+    // Pure ASCII digits are not emoji (even though they pass the non-printable check)
     assert.strictEqual(isValidEmoji('123'), false);
 });
 
-test('v3.9.26 claim_giveaway: flag dismissed mencegah resurrection', () => {
+test('v3.9.26 claim_giveaway: dismissed flag prevents resurrection', () => {
     const { getConfig } = require('../../src/data/configManager');
-    // Tulis config TANPA claim_giveaway + dengan flag dismissed
+    // Write a config WITHOUT claim_giveaway + WITH the dismissed flag
     writeDataJSON('config.json', {
         roles: { admin: 'r_admin' },
         ticketCategories: [
@@ -108,29 +108,29 @@ test('v3.9.26 claim_giveaway: flag dismissed mencegah resurrection', () => {
 
     const config = getConfig();
     const ids = config.ticketCategories.map(c => c.id);
-    assert.ok(!ids.includes('claim_giveaway'), 'claim_giveaway TIDAK boleh ditambah ulang kalau dismissed');
-    // Field custom harus preserve
+    assert.ok(!ids.includes('claim_giveaway'), 'claim_giveaway must NOT be re-added when dismissed');
+    // Custom fields must be preserved
     assert.strictEqual(config.customFieldAdmin, 'jangan-hilang');
 });
 
-test('v3.9.26 claim_giveaway: tanpa flag, migration tetap nambah (backward compat)', () => {
+test('v3.9.26 claim_giveaway: without the flag, the migration still adds it (backward compat)', () => {
     const { getConfig } = require('../../src/data/configManager');
     writeDataJSON('config.json', {
         roles: { admin: 'r_admin' },
         ticketCategories: [
             { id: 'transaction', label: 'Beli Key', emoji: '🛒', style: 'Primary', requiresKey: true, isDefault: true }
         ]
-        // claimGiveawayDismissed TIDAK di-set
+        // claimGiveawayDismissed NOT set
     });
     const config = getConfig();
     const ids = config.ticketCategories.map(c => c.id);
-    assert.ok(ids.includes('claim_giveaway'), 'tanpa flag, kategori contoh tetap ditambah (perilaku lama)');
+    assert.ok(ids.includes('claim_giveaway'), 'without the flag, the sample category is still added (old behavior)');
 });
 
-test('v3.9.26 migrasi v1→v2: field modern tidak lagi DROPPED', () => {
+test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
     const { getConfig } = require('../../src/data/configManager');
-    // Config CAMPURAN: sisa flat key v1 + field modern v2 — sebelumnya auto-save
-    // migrasi cuma nulis 5 key utama → ticketCategories/leveling hilang dari disk.
+    // MIXED config: leftover v1 flat keys + v2 modern fields — previously the
+    // auto-save migration only wrote the 5 main keys → ticketCategories/leveling were lost from disk.
     writeDataJSON('config.json', {
         verifiedRoleId: 'r_verified_old',
         invoiceChannelId: 'c_invoice_old',
@@ -146,50 +146,50 @@ test('v3.9.26 migrasi v1→v2: field modern tidak lagi DROPPED', () => {
     });
 
     const config = getConfig();
-    // Flat v1 → dipindah ke nested
+    // Flat v1 → moved into nested
     assert.strictEqual(config.roles.verified, 'r_verified_old');
     assert.strictEqual(config.channels.invoice, 'c_invoice_old');
-    // Field modern harus ada di hasil merge
+    // Modern fields must be present in the merged result
     assert.strictEqual(config.leveling.enabled, true);
     assert.strictEqual(config.verifyButton.label, 'Klik Aku');
     assert.strictEqual(config.customFieldAdmin, 'preserve-me');
     const ids = config.ticketCategories.map(c => c.id);
-    assert.ok(ids.includes('jasa'), 'ticketCategories custom harus preserve');
+    assert.ok(ids.includes('jasa'), 'custom ticketCategories must be preserved');
 
-    // Dan yang tersimpan di disk harus BEBAS flat key v1 (idempotent)
+    // And what is saved to disk must be FREE of v1 flat keys (idempotent)
     const saved = readDataJSON('config.json');
-    assert.strictEqual(saved.verifiedRoleId, undefined, 'flat key v1 harus hilang dari disk setelah migrasi');
+    assert.strictEqual(saved.verifiedRoleId, undefined, 'v1 flat keys must be gone from disk after the migration');
     assert.ok(Array.isArray(saved.ticketCategories));
 });
 
-test('v3.9.26 quarantineCorruptFile: file korup di-rename, bukan ditimpa', () => {
+test('v3.9.26 quarantineCorruptFile: corrupt file is renamed, not overwritten', () => {
     const target = path.join(DATA_DIR, 'levels.json');
     writeDataJSON('levels.json', { 'g:u': { xp: 100 } });
-    // Korupin file
+    // Corrupt the file
     fs.writeFileSync(target, '{ ini bukan json valid !!!');
 
-    // invalidate cache dulu (levelManager cache 15s)
+    // invalidate the cache first (levelManager caches for 15s)
     const levelManager = require('../../src/data/levelManager');
     levelManager.invalidateCache();
 
-    // getUser → load gagal parse → karantina → return default user (bukan crash)
+    // getUser → parse fails → quarantine → returns a default user (no crash)
     const user = levelManager.getUser('g_quar', 'u_quar');
-    assert.ok(user && typeof user === 'object', 'getUser harus return default object, bukan throw');
+    assert.ok(user && typeof user === 'object', 'getUser must return a default object, not throw');
     assert.strictEqual(user.xp, 0);
 
-    // File korup harus sudah di-rename jadi .corrupt-<ts>
+    // The corrupt file must have been renamed to .corrupt-<ts>
     const leftovers = fs.readdirSync(DATA_DIR).filter(f => f.startsWith('levels.json.corrupt-'));
-    assert.strictEqual(leftovers.length, 1, 'harus ada tepat 1 file karantina');
+    assert.strictEqual(leftovers.length, 1, 'there must be exactly 1 quarantine file');
     assert.ok(fs.readFileSync(path.join(DATA_DIR, leftovers[0]), 'utf8').includes('ini bukan json'));
-    // File asli tidak ada lagi (akan ditulis ulang fresh oleh save berikutnya)
+    // The original file is gone (the next save will rewrite it fresh)
     assert.strictEqual(fs.existsSync(target), false);
 
-    // Tulis ulang supaya manager lain (save) tidak bingung — file fresh
+    // Rewrite it fresh so other managers (save) aren't confused
     writeDataJSON('levels.json', {});
     levelManager.invalidateCache();
 });
 
-test('v3.9.26 GC prune: giveaway ended >30 hari dihapus, aktif & baru tetap', () => {
+test('v3.9.26 GC prune: giveaways ended >30 days ago are deleted, active & recent stay', () => {
     const { pruneEndedOlderThan, invalidateCacheNoop } = {
         pruneEndedOlderThan: require('../../src/data/giveawayManager').pruneEndedOlderThan,
         invalidateCacheNoop: null
@@ -214,16 +214,16 @@ test('v3.9.26 GC prune: giveaway ended >30 hari dihapus, aktif & baru tetap', ()
             participantIds: []
         },
         { id: 'gw_active', ended: false, endsAt: now + 5 * DAY, winnerIds: [], participantIds: [] },
-        { id: 'gw_old_active', ended: false, endsAt: now - 40 * DAY, winnerIds: [], participantIds: [] } // aneh tapi aktif → JANGAN dihapus
+        { id: 'gw_old_active', ended: false, endsAt: now - 40 * DAY, winnerIds: [], participantIds: [] } // odd but active → must NOT be deleted
     ]);
 
     const removed = pruneEndedOlderThan(30 * DAY);
-    assert.strictEqual(removed, 1, 'cuma gw_old_ended yang boleh kehapus');
+    assert.strictEqual(removed, 1, 'only gw_old_ended may be deleted');
     const remaining = readDataJSON('giveaways.json').map(g => g.id);
     assert.deepStrictEqual(remaining.sort(), ['gw_active', 'gw_new_ended', 'gw_old_active']);
 });
 
-test('v3.9.26 GC prune: poll closed >30 hari dihapus', () => {
+test('v3.9.26 GC prune: polls closed >30 days ago are deleted', () => {
     const { pruneClosedOlderThan } = require('../../src/data/pollManager');
     const DAY = 86400000;
     const now = Date.now();
@@ -238,7 +238,7 @@ test('v3.9.26 GC prune: poll closed >30 hari dihapus', () => {
     assert.deepStrictEqual(remaining.sort(), ['p_new', 'p_open']);
 });
 
-test('v3.9.26 GC prune: announcement terkirim >30 hari dihapus, pending tetap', () => {
+test('v3.9.26 GC prune: announcements sent >30 days ago are deleted, pending stay', () => {
     const { pruneSentOlderThan } = require('../../src/data/scheduledAnnouncements');
     const DAY = 86400000;
     const now = Date.now();
@@ -253,31 +253,31 @@ test('v3.9.26 GC prune: announcement terkirim >30 hari dihapus, pending tetap', 
     assert.deepStrictEqual(remaining.sort(), ['a_pending', 'a_recent']);
 });
 
-test('v3.9.26 cache: automod update-on-save — read berikutnya lihat data baru', () => {
+test('v3.9.26 cache: automod update-on-save — the next read sees the new data', () => {
     const automodManager = require('../../src/data/automodManager');
     automodManager.invalidateCache();
     const gid = `test_guild_v26_${Date.now()}`;
 
     automodManager.setGuildConfig(gid, { enabled: true, spamThreshold: 3 });
-    // Tanpa sleep — cache harus sudah sinkron dengan save terbaru (update-on-save)
+    // No sleep — the cache must already be in sync with the latest save (update-on-save)
     const cfg = automodManager.getGuildConfig(gid);
     assert.strictEqual(cfg.enabled, true);
     assert.strictEqual(cfg.spamThreshold, 3);
 
-    // invalidateCache → read fresh dari disk
+    // invalidateCache → fresh read from disk
     automodManager.setGuildConfig(gid, { spamThreshold: 9 });
     automodManager.invalidateCache();
     const cfg2 = automodManager.getGuildConfig(gid);
     assert.strictEqual(cfg2.spamThreshold, 9);
 
-    // Cleanup entry test
+    // Cleanup the test entry
     const data = readDataJSON('automod.json');
     delete data[gid];
     writeDataJSON('automod.json', data);
     automodManager.invalidateCache();
 });
 
-test('v3.9.26 cache: afkManager getAFKBatch — satu load untuk semua mention', () => {
+test('v3.9.26 cache: afkManager getAFKBatch — one load for all mentions', () => {
     const afkManager = require('../../src/data/afkManager');
     afkManager.invalidateCache();
     const gid = `test_guild_v26_afk_${Date.now()}`;
@@ -295,7 +295,7 @@ test('v3.9.26 cache: afkManager getAFKBatch — satu load untuk semua mention', 
     afkManager.clearAFK(gid, 'u2');
 });
 
-test('v3.9.26 /giveaway list: dibatasi 15 terbaru kalau data banyak', async () => {
+test('v3.9.26 /giveaway list: bounded to the 15 latest when there is a lot of data', async () => {
     const giveawayHandler = require('../../src/commands/giveaway');
     const DAY = 86400000;
     const now = Date.now();
@@ -334,17 +334,17 @@ test('v3.9.26 /giveaway list: dibatasi 15 terbaru kalau data banyak', async () =
     };
     await giveawayHandler(interaction);
 
-    assert.ok(replyPayload && replyPayload.embeds, 'harus membalas embed');
+    assert.ok(replyPayload && replyPayload.embeds, 'must reply with an embed');
     const desc = replyPayload.embeds[0].data.description;
-    assert.ok(desc.includes('Total **30** giveaway'), 'header harus menyebut total');
-    assert.ok(desc.includes('terbaru'), 'harus ada indikator bounding');
-    assert.ok(desc.includes('15 terbaru'), 'menampilkan 15 terbaru');
-    assert.ok(!desc.includes('gw_list_0'), 'entry paling lama (0) disembunyikan');
-    assert.ok(desc.includes('gw_list_29'), 'entry terbaru (29) tampil');
-    assert.ok(desc.length <= 4096, 'description harus dalam limit Discord');
+    assert.ok(desc.includes('Total **30** giveaway'), 'the header must mention the total');
+    assert.ok(desc.includes('latest'), 'a bounding indicator must be present');
+    assert.ok(desc.includes('15 latest'), 'displays the 15 latest');
+    assert.ok(!desc.includes('gw_list_0'), 'the oldest entry (0) is hidden');
+    assert.ok(desc.includes('gw_list_29'), 'the newest entry (29) is displayed');
+    assert.ok(desc.length <= 4096, 'description must be within the Discord limit');
 });
 
-test('v3.9.26 /giveaway polos (tanpa subcommand): hint penggunaan, bukan crash', async () => {
+test('v3.9.26 bare /giveaway (no subcommand): usage hint, not a crash', async () => {
     const giveawayHandler = require('../../src/commands/giveaway');
     let replyPayload = null;
     const interaction = {
@@ -359,11 +359,11 @@ test('v3.9.26 /giveaway polos (tanpa subcommand): hint penggunaan, bukan crash',
         }
     };
     await giveawayHandler(interaction);
-    assert.ok(replyPayload, 'harus membalas hint');
+    assert.ok(replyPayload, 'must reply with a hint');
     assert.ok(replyPayload.content.includes('subcommand'));
 });
 
-test('v3.9.26 /poll create: question > 250 char ditolak SEBELUM modal/persist', async () => {
+test('v3.9.26 /poll create: question > 250 chars rejected BEFORE modal/persist', async () => {
     const pollHandler = require('../../src/commands/poll');
     let replyPayload = null;
     let showModalCalled = false;
@@ -387,12 +387,12 @@ test('v3.9.26 /poll create: question > 250 char ditolak SEBELUM modal/persist', 
         }
     };
     await pollHandler(interaction);
-    assert.ok(replyPayload, 'harus membalas error validasi');
+    assert.ok(replyPayload, 'must reply with a validation error');
     assert.ok(replyPayload.content.includes('250'));
-    assert.strictEqual(showModalCalled, false, 'modal TIDAK boleh dibuka untuk input invalid');
+    assert.strictEqual(showModalCalled, false, 'the modal must NOT open for invalid input');
 });
 
-test('v3.9.26 /poll create: channel voice ditolak dengan pesan jelas', async () => {
+test('v3.9.26 /poll create: voice channel rejected with a clear message', async () => {
     const pollHandler = require('../../src/commands/poll');
     let replyPayload = null;
     const interaction = {
@@ -416,13 +416,13 @@ test('v3.9.26 /poll create: channel voice ditolak dengan pesan jelas', async () 
     assert.ok(replyPayload.content.includes('text channel'));
 });
 
-test('v3.9.26 panel patch contract: imageUrl/thumbnailUrl/footerText sampai ke builder', () => {
+test('v3.9.26 panel patch contract: imageUrl/thumbnailUrl/footerText reach the builder', () => {
     const panelManager = require('../../src/data/panelManager');
     const { buildTicketPanel } = require('../../src/commands/panels');
     panelManager.invalidateCache();
 
     const panelId = `tp_test_v26_${Date.now()}`;
-    // Simulasi hasil /update-panel SETELAH fix mapping: patch pakai key penyimpanan
+    // Simulate /update-panel output AFTER the mapping fix: the patch uses storage keys
     panelManager.upsertPanel({
         id: panelId,
         guildId: 'g_test',
@@ -439,16 +439,16 @@ test('v3.9.26 panel patch contract: imageUrl/thumbnailUrl/footerText sampai ke b
     assert.strictEqual(
         patched.imageUrl,
         'https://example.com/new.png',
-        'patch imageUrl harus tersimpan di key yang benar'
+        'patch imageUrl must be saved under the correct key'
     );
 
-    // Builder harus ME-LOAD nilai yang sama (inilah bug v3.9.26: patch lama nulis
-    // `image` tapi builder baca `imageUrl` → no-op diam-diam)
+    // The builder must LOAD the same value (this was the v3.9.26 bug: the old patch
+    // wrote `image` but the builder read `imageUrl` → a silent no-op)
     const built = buildTicketPanel(patched, {
         guild: { name: 'Test Guild', members: { me: { id: 'bot' } } },
         client: { user: { username: 'Thor', displayAvatarURL: () => 'https://example.com/a.png' } }
     });
-    // buildTicketPanel return { embed, components } (bukan EmbedBuilder langsung)
+    // buildTicketPanel returns { embed, components } (not an EmbedBuilder directly)
     const embedData = built.embed.data;
     assert.strictEqual(embedData.image.url, 'https://example.com/new.png');
     assert.strictEqual(embedData.thumbnail.url, 'https://example.com/thumb.png');
@@ -459,7 +459,7 @@ test('v3.9.26 panel patch contract: imageUrl/thumbnailUrl/footerText sampai ke b
     panelManager.invalidateCache();
 });
 
-// --- teardown global: restore semua file + buang artefak karantina ---
+// --- global teardown: restore all files + discard quarantine artifacts ---
 test('v3.9.26 teardown: restore sandbox', () => {
     restoreSandbox();
     clearQuarantineArtifacts();

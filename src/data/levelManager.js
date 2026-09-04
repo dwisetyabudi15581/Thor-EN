@@ -6,23 +6,23 @@
  *   "<guildId>:<userId>": {
  *     "xp": 1250,
  *     "level": 5,
- *     "lastMessageAt": 1735689600000,    // untuk cooldown anti-spam XP
- *     "totalXp": 1250,                   // total XP yang pernah didapat (tidak berkurang)
+ *     "lastMessageAt": 1735689600000,    // for the anti-spam XP cooldown
+ *     "totalXp": 1250,                   // total XP ever earned (never decreases)
  *     "guildId": "...",
  *     "userId": "..."
  *   }
  * }
  *
- * Level config di config.json (config.leveling):
+ * Level config in config.json (config.leveling):
  * {
  *   "leveling": {
  *     "enabled": true,
  *     "xpPerMessage": 15,
- *     "cooldownMs": 60000,               // 1 menit antara XP gain
- *     "announceLevelUp": true,           // ping user di channel saat level up
- *     "levelUpChannel": null             // null = channel tempat user chat. ID = specific channel
+ *     "cooldownMs": 60000,               // 1 minute between XP gains
+ *     "announceLevelUp": true,           // ping the user in chat on level up
+ *     "levelUpChannel": null             // null = channel where the user chatted. ID = specific channel
  *   },
- *   "levelRoles": [                      // auto-assign role saat cap level
+ *   "levelRoles": [                      // auto-assigned role at level cap
  *     { "level": 10, "roleId": "123" },
  *     { "level": 50, "roleId": "456" }
  *   ]
@@ -42,11 +42,12 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'levels.json');
 
-// v3.9.26: read-through cache (pola panelManager). addXp dibaca + full-file
-// rewrite di messageCreate PER PESAN dengan XP (leveling on) — sebelumnya itu
-// readFileSync + writeFileSync O(total user) per grant. Cache 15s TTL +
-// update-on-save tetap nge-write per grant (durability), tapi read-nya murah;
-// efek terbesar: pesan tanpa XP (cooldown aktif) tidak lagi baca disk.
+// v3.9.26: read-through cache (panelManager pattern). addXp does a read +
+// full-file rewrite in messageCreate PER MESSAGE that earns XP (with leveling
+// on) — previously that was readFileSync + writeFileSync O(total users) per
+// grant. A 15s TTL cache + update-on-save still writes per grant (durability),
+// but reads are cheap; biggest effect: messages without an XP grant (cooldown
+// active) no longer hit the disk.
 const CACHE_TTL_MS = 15 * 1000;
 let _cache = null; // { data, at }
 
@@ -61,7 +62,7 @@ function load() {
         _cache = { data, at: Date.now() };
         return data;
     } catch (_err) {
-        // v3.9.26: karantina file korup SEBELUM fallback (lihat safeWrite.js).
+        // v3.9.26: quarantine the corrupt file BEFORE falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         _cache = { data: {}, at: Date.now() };
         return _cache.data;
@@ -70,11 +71,11 @@ function load() {
 
 function save(data) {
     safeWriteJSON(filePath, data);
-    // v3.9.26: update cache supaya read berikutnya konsisten dengan yang baru di-write
+    // v3.9.26: update the cache so the next read is consistent with what was just written
     _cache = { data, at: Date.now() };
 }
 
-/** v3.9.26: paksa read fresh berikutnya (restore backup / test). */
+/** v3.9.26: force the next read to be fresh (backup restore / tests). */
 function invalidateCache() {
     _cache = null;
 }
@@ -84,15 +85,15 @@ function keyFor(guildId, userId) {
 }
 
 /**
- * Hitung XP yang dibutuhkan untuk mencapai level tertentu.
- * Total XP cumulative dari level 0 ke level N.
+ * Calculate the XP required to reach a given level.
+ * Total cumulative XP from level 0 to level N.
  */
 function xpForLevel(level) {
     return 50 * level * (level + 1);
 }
 
 /**
- * Hitung level dari total XP.
+ * Calculate the level from total XP.
  * Inverse of xpForLevel: 50 * L * (L+1) = totalXp
  * L^2 + L - 2*totalXp/50 = 0  →  L = (-1 + sqrt(1 + 4*totalXp/50)) / 2
  */
@@ -103,7 +104,7 @@ function levelFromXp(totalXp) {
 }
 
 /**
- * XP yang dibutuhkan untuk naik dari level saat ini ke level berikutnya.
+ * XP required to go from the current level to the next level.
  */
 function xpToNextLevel(currentLevel) {
     return xpForLevel(currentLevel + 1) - xpForLevel(currentLevel);
@@ -117,7 +118,7 @@ function getUser(guildId, userId) {
     const k = keyFor(guildId, userId);
     return (
         all[k] || {
-            xp: 0, // XP di level saat ini (reset tiap level up)
+            xp: 0, // XP at the current level (reset on every level up)
             level: 0,
             lastMessageAt: null,
             totalXp: 0,
@@ -128,20 +129,20 @@ function getUser(guildId, userId) {
 }
 
 /**
- * Tambah XP ke user. Return { leveledUp: boolean, newLevel: number, oldLevel: number }.
+ * Add XP to a user. Returns { leveledUp: boolean, newLevel: number, oldLevel: number }.
  *
  * @param {string} guildId
  * @param {string} userId
- * @param {number} xpGain - XP yang akan ditambahkan
- * @param {Object} config - config.leveling (untuk cek cooldown)
+ * @param {number} xpGain - XP to add
+ * @param {Object} config - config.leveling (for the cooldown check)
  * @returns {{ leveledUp, newLevel, oldLevel, user }}
  */
 function addXp(guildId, userId, xpGain, config) {
     const all = load();
     const k = keyFor(guildId, userId);
     const now = Date.now();
-    // v3.9.38 FIX: cooldownMs 0 = XP di TIAP pesan (sesuai dokumentasi config).
-    // `||` menelan 0 → diam-diam jadi 60000; nullish coalescing menjaga 0 tetap 0.
+    // v3.9.38 FIX: cooldownMs 0 = XP on EVERY message (per the config docs).
+    // `||` swallowed 0 → silently became 60000; nullish coalescing keeps 0 as 0.
     const cooldownMs = config?.cooldownMs ?? 60000;
 
     if (!all[k]) {
@@ -157,10 +158,10 @@ function addXp(guildId, userId, xpGain, config) {
 
     const user = all[k];
 
-    // Cooldown check — kalau masih dalam cooldown, skip XP gain.
-    // v3.9.38 FIX: gate `cooldownMs > 0` supaya 0 = tanpa cooldown (explicit,
-    // juga aman kalau clock-skew bikin lastMessageAt > now) — sebelumnya 0
-    // sudah diubah jadi 60000 oleh `||`, jadi opsi ini gak pernah bisa dipakai.
+    // Cooldown check — if still on cooldown, skip the XP gain.
+    // v3.9.38 FIX: `cooldownMs > 0` gate so 0 = no cooldown (explicit, and also
+    // safe if clock skew makes lastMessageAt > now) — previously 0 was already
+    // turned into 60000 by `||`, so this option could never be used.
     if (cooldownMs > 0 && user.lastMessageAt && now - user.lastMessageAt < cooldownMs) {
         return { leveledUp: false, newLevel: user.level, oldLevel: user.level, user, onCooldown: true };
     }
@@ -170,7 +171,7 @@ function addXp(guildId, userId, xpGain, config) {
     user.xp = user.totalXp - xpForLevel(oldLevel);
     user.lastMessageAt = now;
 
-    // Cek level up
+    // Check for level up
     const newLevel = levelFromXp(user.totalXp);
     user.level = newLevel;
     const leveledUp = newLevel > oldLevel;
@@ -198,24 +199,25 @@ function getTopUsers(guildId, limit = 10) {
 }
 
 /**
- * Get level roles dari config (untuk auto-assign).
+ * Get level roles from the config (for auto-assignment).
  */
 function getLevelRoles(config) {
     return config?.levelRoles || [];
 }
 
 /**
- * Cek role mana yang harus dikasih ke user yang cap level tertentu.
- * Return array of roleIds (semua role yang level-nya ≤ user level).
- * Support stacking — user level 50 dapet role level 10, 20, 50 sekaligus.
+ * Check which roles should be given to a user who reached a given level.
+ * Returns an array of roleIds (all roles whose level is ≤ the user's level).
+ * Supports stacking — a level 50 user gets the level 10, 20, and 50 roles all
+ * at once.
  *
  * @param {number} level
  * @param {Object} config
- * @returns {string[]} array of roleIds (kosong kalau gak ada yang match)
+ * @returns {string[]} array of roleIds (empty if none match)
  */
 function getRoleForLevel(level, config) {
     const roles = getLevelRoles(config);
-    // Ambil semua role dengan level <= user level, urut ascending by level
+    // Take all roles with level <= user level, sorted ascending by level
     return roles
         .filter(r => r.level <= level)
         .sort((a, b) => a.level - b.level)

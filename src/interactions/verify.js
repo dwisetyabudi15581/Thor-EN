@@ -1,51 +1,51 @@
 /**
- * Verify domain handler — tombol `btn_verify`.
+ * Verify domain handler — the `btn_verify` button.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — just moved to a new file.
  *
- * Router (src/interactions/index.js) sudah apply:
+ * The router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
  *   - routing by customId prefix
- * Jadi domain handler fokus ke logic-nya saja.
+ * So the domain handler can focus on its logic alone.
  */
 
 const { MessageFlags } = require('discord.js');
 const { getConfig } = require('../commands/_shared');
 
 module.exports = async function (interaction) {
-    // Router memanggil handler ini HANYA untuk customId === 'btn_verify'.
+    // The router calls this handler ONLY for customId === 'btn_verify'.
     const config = getConfig();
 
     if (!config.roles.verified) {
         return interaction.reply({
-            content: '❌ Role Verified belum di-set. Minta admin jalankan `/set-role verified @role`.',
+            content: '❌ The Verified role is not set yet. Ask an admin to run `/set-role verified @role`.',
             flags: MessageFlags.Ephemeral
         });
     }
-    // v3.9.17 FIX: guard member.roles akses (partial member / user leave saat klik).
+    // v3.9.17 FIX: guard the member.roles access (partial member / user left before clicking).
     if (!interaction.member?.roles?.cache) {
         return interaction.reply({
-            content: '❌ Data member tidak lengkap. Coba lagi sebentar.',
+            content: '❌ Incomplete member data. Try again in a moment.',
             flags: MessageFlags.Ephemeral
         });
     }
     if (interaction.member.roles.cache.has(config.roles.verified)) {
-        return interaction.reply({ content: '✅ Kamu sudah terverifikasi!', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '✅ You are already verified!', flags: MessageFlags.Ephemeral });
     }
     try {
         await interaction.member.roles.add(config.roles.verified);
     } catch (err) {
-        console.error('Gagal add role verified:', err.message);
+        console.error('Failed to add the verified role:', err.message);
         return interaction.reply({
-            content: '❌ Bot tidak bisa memberi role Verified. Pastikan role bot ada di ATAS role Verified.',
+            content: '❌ The bot cannot give you the Verified role. Make sure the bot\'s role is ABOVE the Verified role.',
             flags: MessageFlags.Ephemeral
         });
     }
-    // v3.9.17 FIX: track apakah unverified role berhasil dihapus. Sebelumnya,
-    // pesan selalu bilang "role Unverified telah dihapus" padahal bisa gagal.
+    // v3.9.17 FIX: track whether the unverified role was actually removed. Previously,
+    // the message always said "the Unverified role has been removed" even when it failed.
     let unverifiedRemoved = false;
     let unverifiedNote = '';
     if (config.roles.unverified) {
@@ -53,20 +53,20 @@ module.exports = async function (interaction) {
             await interaction.member.roles.remove(config.roles.unverified);
             unverifiedRemoved = true;
         } catch (err) {
-            console.error('Gagal hapus role unverified:', err.message);
+            console.error('Failed to remove the unverified role:', err.message);
             unverifiedNote =
-                '\n⚠️ Bot tidak bisa menghapus role Unverified. Pastikan role bot ada di ATAS role Unverified. Hubungi admin untuk hapus manual.';
+                '\n⚠️ The bot cannot remove the Unverified role. Make sure the bot\'s role is ABOVE the Unverified role. Contact an admin to remove it manually.';
         }
     } else {
-        // unverified role belum di-set di config — bukan error, tapi pesan jangan bilang "dihapus".
-        unverifiedNote = '\nℹ️ Role Unverified belum di-set di config — hanya role Verified yang diberikan.';
+        // unverified role not set in config — not an error, but the message shouldn't claim it was "removed".
+        unverifiedNote = '\nℹ️ The Unverified role is not set in config — only the Verified role was given.';
     }
     return interaction.reply({
         content:
-            '✅ Verifikasi berhasil! Role Verified telah diberikan.' +
+            '✅ Verification successful! The Verified role has been given to you.' +
             (config.roles.unverified
                 ? unverifiedRemoved
-                    ? ' Role Unverified telah dihapus.'
+                    ? ' The Unverified role has been removed.'
                     : unverifiedNote
                 : unverifiedNote),
         flags: MessageFlags.Ephemeral

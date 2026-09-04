@@ -1,20 +1,21 @@
 /**
- * Unit tests v3.9.28 — KEAMANAN MENAMBAH KATEGORI BARU.
+ * Unit tests v3.9.28 — SAFETY OF ADDING A NEW CATEGORY.
  *
- * Pertanyaan user: "Bagaimana jika saya menambahkan kategori baru seperti
- * akun ML atau lisensi key — apakah sudah aman?"
+ * User question: "What if I add a new category like ML accounts or key
+ * licenses — is it already safe?"
  *
- * Jawaban yang dibuktikan test ini:
- *   1. classifyProduct(): SEMUA kategori baru (id ≠ 'help'/'report') otomatis
- *      diklasifikasi TRANSAKSI — tidak perlu ubah code sama sekali.
- *      - 'akun_ml' + requiresKey: false  → TRANSAKSI + tombol 📦 Kirim Pesanan
- *      - 'lisensi_key' + requiresKey: true → TRANSAKSI + tombol 🔑 Set Key
- *   2. Roundtrip data: classifyProduct → setTicketMeta → getTicketMeta →
- *      resolveTicketType → keputusan tombol yang benar.
- *   3. /add-product: produk mewarisi requiresKey dari kategori (admin tidak
- *      perlu set requires_key per produk kalau kategorinya sudah benar).
- *   4. panels.js dropdown: deskripsi menghitung produk key/non-key aktual
- *      (kategori campur → "N tanpa key / M pakai key").
+ * The answer proven by these tests:
+ *   1. classifyProduct(): ALL new categories (id ≠ 'help'/'report') are
+ *      automatically classified as a TRANSACTION — no code change needed.
+ *      - 'akun_ml' + requiresKey: false  → TRANSACTION + 📦 Deliver Order button
+ *      - 'lisensi_key' + requiresKey: true → TRANSACTION + 🔑 Set Key button
+ *   2. Data roundtrip: classifyProduct → setTicketMeta → getTicketMeta →
+ *      resolveTicketType → the correct button decision.
+ *   3. /add-product: the product inherits requiresKey from the category (the
+ *      admin doesn't need to set requires_key per product if the category is
+ *      already correct).
+ *   4. panels.js dropdown: the description counts actual key/non-key products
+ *      (mixed category → "N without keys / M with keys").
  */
 
 const test = require('node:test');
@@ -28,7 +29,7 @@ const ticketsPath = path.join(DATA_DIR, 'tickets.json');
 
 // ====================================================
 // === Sandbox: snapshot & restore config.json + tickets.json ===
-// === (file produksi ada — pola ticketNonKey.test.js)         ===
+// === (production files exist — pattern from ticketNonKey.test.js) ===
 // ====================================================
 const SANDBOX_FILES = ['config.json', 'tickets.json'];
 const backups = new Map();
@@ -53,7 +54,7 @@ process.on('exit', () => {
     }
 });
 
-/** Tulis config.json terkontrol untuk test (tanpa audit channel → logAudit skip). */
+/** Write a controlled config.json for the test (no audit channel → logAudit skips). */
 function writeTestConfig(cfg) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
@@ -72,11 +73,11 @@ const {
 } = require('../../src/data/ticketManager');
 
 // ====================================================
-// === 1. classifyProduct — skenario kategori BARU ===
-// === (pertanyaan user: akun ML & lisensi key)     ===
+// === 1. classifyProduct — NEW category scenarios ===
+// === (user question: ML accounts & key licenses) ===
 // ====================================================
 
-test('classifyProduct: kategori baru "akun_ml" produk non-key → TRANSAKSI tanpa key', () => {
+test('classifyProduct: new category "akun_ml" with a non-key product → TRANSACTION without keys', () => {
     // /add-category id:akun_ml requires_key:false → /add-product value:ml_legend requires_key:false
     const t = classifyProduct({
         label: 'Akun ML Mythic',
@@ -85,11 +86,11 @@ test('classifyProduct: kategori baru "akun_ml" produk non-key → TRANSAKSI tanp
         category: 'akun_ml',
         requiresKey: false
     });
-    assert.strictEqual(t.isTransaction, true, 'akun_ml HARUS transaksi (bukan bantuan)');
-    assert.strictEqual(t.requiresKey, false, 'produk akun tidak pakai key');
+    assert.strictEqual(t.isTransaction, true, 'akun_ml MUST be a transaction (not support)');
+    assert.strictEqual(t.requiresKey, false, 'account products don\'t use keys');
 });
 
-test('classifyProduct: kategori baru "lisensi_key" produk key → TRANSAKSI pakai key', () => {
+test('classifyProduct: new category "lisensi_key" with a key product → TRANSACTION with keys', () => {
     const t = classifyProduct({
         label: 'Windows 11 Pro OEM',
         value: 'win11_pro',
@@ -97,51 +98,51 @@ test('classifyProduct: kategori baru "lisensi_key" produk key → TRANSAKSI paka
         category: 'lisensi_key',
         requiresKey: true
     });
-    assert.strictEqual(t.isTransaction, true, 'lisensi_key HARUS transaksi');
-    assert.strictEqual(t.requiresKey, true, 'lisensi pakai key');
+    assert.strictEqual(t.isTransaction, true, 'lisensi_key MUST be a transaction');
+    assert.strictEqual(t.requiresKey, true, 'licenses use keys');
 });
 
-test('classifyProduct: produk di kategori baru TANPA flag requiresKey → default pakai key (gotcha)', () => {
-    // Admin lupa set requires_key di kategori DAN produk → default true.
-    // Ini PERILAKU BERDASARKAN (bukan bug): produk transaksi dianggap pakai key
-    // sampai admin eksplisit bilang tidak. Admin akun ML wajib set requires_key:false.
+test('classifyProduct: product in a new category WITHOUT a requiresKey flag → defaults to using keys (gotcha)', () => {
+    // Admin forgot to set requires_key on both the category AND the product → defaults to true.
+    // This is INTENTIONAL behavior (not a bug): a transaction product is assumed to use
+    // keys until the admin explicitly says otherwise. ML account admins must set requires_key:false.
     const t = classifyProduct({ label: 'Akun ML', value: 'ml1', price: 'x', category: 'akun_ml' });
     assert.strictEqual(t.isTransaction, true);
-    assert.strictEqual(t.requiresKey, true, 'tanpa flag → default pakai key (Set Key)');
+    assert.strictEqual(t.requiresKey, true, 'no flag → defaults to using keys (Set Key)');
 });
 
-test('classifyProduct: hanya id "help"/"report" yang spesial — id lain apa pun = transaksi', () => {
-    // Kategori custom apa pun (jasa, topup, event, konsultasi, ...) → transaksi.
+test('classifyProduct: only the ids "help"/"report" are special — any other id = transaction', () => {
+    // Any custom category (jasa, topup, event, konsultasi, ...) → transaction.
     for (const catId of ['jasa', 'topup', 'event', 'bantuan_premium', 'konsultasi', 'Akun_ML-1']) {
         const t = classifyProduct({ label: 'X', value: 'x', price: 'x', category: catId, requiresKey: false });
-        assert.strictEqual(t.isTransaction, true, `kategori "${catId}" harus transaksi`);
+        assert.strictEqual(t.isTransaction, true, `category "${catId}" must be a transaction`);
     }
-    // 'bantuan_premium' ≠ 'help' → tetap transaksi (tidak ada magic-string prefix).
+    // 'bantuan_premium' ≠ 'help' → still a transaction (no magic-string prefix).
 });
 
-test('classifyProduct: kategori help/report/isHelp → BANTUAN (bukan transaksi)', () => {
+test('classifyProduct: help/report/isHelp category → SUPPORT (not a transaction)', () => {
     for (const product of [
         { label: 'Help', category: 'help', isHelp: true, requiresKey: false },
         { label: 'Report', category: 'report', isHelp: true, requiresKey: false },
-        { label: 'Custom', category: 'event', isHelp: true, requiresKey: false } // objek sintetis kategori tanpa produk
+        { label: 'Custom', category: 'event', isHelp: true, requiresKey: false } // synthetic object of a category without products
     ]) {
         const t = classifyProduct(product);
-        assert.strictEqual(t.isTransaction, false, `${product.label} harus bantuan`);
+        assert.strictEqual(t.isTransaction, false, `${product.label} must be support`);
         assert.strictEqual(t.requiresKey, false);
     }
 });
 
-test('classifyProduct: null/undefined product → aman (bukan transaksi)', () => {
+test('classifyProduct: null/undefined product → safe (not a transaction)', () => {
     assert.deepStrictEqual(classifyProduct(null), { isTransaction: false, requiresKey: false });
     assert.deepStrictEqual(classifyProduct(undefined), { isTransaction: false, requiresKey: false });
 });
 
 // ====================================================
-// === 2. Roundtrip: meta tiket kategori baru → resolveTicketType ===
-// === (menjamin tombol close/deliver/set_key benar)              ===
+// === 2. Roundtrip: new-category ticket meta → resolveTicketType ===
+// === (guarantees the correct close/deliver/set_key buttons)      ===
 // ====================================================
 
-test('roundtrip: tiket akun_ml (non-key) → Kirim Pesanan diizinkan, Set Key ditolak', () => {
+test('roundtrip: akun_ml ticket (non-key) → Deliver Order allowed, Set Key rejected', () => {
     resetTicketsFile();
     const product = {
         label: 'Akun ML Mythic',
@@ -150,7 +151,7 @@ test('roundtrip: tiket akun_ml (non-key) → Kirim Pesanan diizinkan, Set Key di
         category: 'akun_ml',
         requiresKey: false
     };
-    // createTicket (v3.9.27+) menyimpan hasil classifyProduct ke meta:
+    // createTicket (v3.9.27+) stores the classifyProduct result in the meta:
     const { isTransaction, requiresKey } = classifyProduct(product);
     setTicketMeta('ch_akun_ml_1', {
         userId: 'user_ml',
@@ -164,22 +165,22 @@ test('roundtrip: tiket akun_ml (non-key) → Kirim Pesanan diizinkan, Set Key di
 
     const meta = getTicketMeta('ch_akun_ml_1', '');
     const type = resolveTicketType(meta);
-    assert.strictEqual(type.isTransaction, true, 'tiket akun ML = transaksi');
+    assert.strictEqual(type.isTransaction, true, 'an ML account ticket = a transaction');
     assert.strictEqual(type.requiresKey, false);
 
-    // Matriks tombol (mirror logic ticket.js):
-    // - ticket_deliver: butuh isTransaction && !requiresKey && !isCompleted → ALLOW
+    // Button matrix (mirrors the ticket.js logic):
+    // - ticket_deliver: needs isTransaction && !requiresKey && !isCompleted → ALLOW
     const deliverAllowed = type.isTransaction && !type.requiresKey && !type.isCompleted;
-    assert.strictEqual(deliverAllowed, true, 'tombol 📦 Kirim Pesanan harus aktif');
-    // - ticket_set_key: ditolak untuk non-key (defense-in-depth)
+    assert.strictEqual(deliverAllowed, true, 'the 📦 Deliver Order button must be active');
+    // - ticket_set_key: rejected for non-key (defense-in-depth)
     const setKeyAllowed = type.isTransaction && type.requiresKey;
-    assert.strictEqual(setKeyAllowed, false, 'tombol 🔑 Set Key harus ditolak');
-    // - close: non-key + belum dikirim → "Pesanan Sukses" muncul
+    assert.strictEqual(setKeyAllowed, false, 'the 🔑 Set Key button must be rejected');
+    // - close: non-key + not delivered yet → "Order Successful" is shown
     const showOrderSuccess = type.isTransaction && !type.requiresKey && !type.isCompleted;
-    assert.strictEqual(showOrderSuccess, true, 'tombol ✅ Pesanan Sukses harus muncul');
+    assert.strictEqual(showOrderSuccess, true, 'the ✅ Order Successful button must be shown');
 });
 
-test('roundtrip: tiket lisensi_key → Set Key diizinkan, Kirim Pesanan ditolak', () => {
+test('roundtrip: lisensi_key ticket → Set Key allowed, Deliver Order rejected', () => {
     resetTicketsFile();
     const product = {
         label: 'Windows 11 Pro OEM',
@@ -203,12 +204,12 @@ test('roundtrip: tiket lisensi_key → Set Key diizinkan, Kirim Pesanan ditolak'
     assert.strictEqual(type.isTransaction, true);
     assert.strictEqual(type.requiresKey, true);
     const setKeyAllowed = type.isTransaction && type.requiresKey;
-    assert.strictEqual(setKeyAllowed, true, 'tombol 🔑 Set Key harus aktif');
+    assert.strictEqual(setKeyAllowed, true, 'the 🔑 Set Key button must be active');
     const deliverAllowed = type.isTransaction && !type.requiresKey && !type.isCompleted;
-    assert.strictEqual(deliverAllowed, false, 'tombol 📦 Kirim Pesanan harus ditolak');
+    assert.strictEqual(deliverAllowed, false, 'the 📦 Deliver Order button must be rejected');
 });
 
-test('roundtrip: setelah Kirim Pesanan (isCompleted) → close gaya "Selesai", deliver ditolak', () => {
+test('roundtrip: after Deliver Order (isCompleted) → "Done"-style close, deliver rejected', () => {
     resetTicketsFile();
     setTicketMeta('ch_ml_2', {
         userId: 'u9',
@@ -224,12 +225,12 @@ test('roundtrip: setelah Kirim Pesanan (isCompleted) → close gaya "Selesai", d
     const type = resolveTicketType(getTicketMeta('ch_ml_2', ''));
     assert.strictEqual(type.isCompleted, true);
     const deliverAllowed = type.isTransaction && !type.requiresKey && !type.isCompleted;
-    assert.strictEqual(deliverAllowed, false, 'Kirim Pesanan kedua kali harus ditolak (anti-dobel)');
+    assert.strictEqual(deliverAllowed, false, 'a second Deliver Order must be rejected (anti-double)');
 });
 
 // ====================================================
-// === 3. /add-product — pewarisan requiresKey dari kategori ===
-// === (jalankan handler ASLI dengan mock interaction)        ===
+// === 3. /add-product — requiresKey inherited from the category ===
+// === (runs the REAL handler with a mock interaction)            ===
 // ====================================================
 
 function makeAddProductInteraction({ label, value, price, category, requiresKey }) {
@@ -268,16 +269,16 @@ function makeAddProductInteraction({ label, value, price, category, requiresKey 
     };
 }
 
-test('add-product: produk di kategori non-key mewarisi requiresKey:false tanpa opsi eksplisit', async () => {
+test('add-product: a product in a non-key category inherits requiresKey:false without an explicit option', async () => {
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
-    // Setup: kategori baru "akun_ml" requiresKey:false (dari /add-category).
+    // Setup: new category "akun_ml" requiresKey:false (from /add-category).
     const cfg = getConfig();
     const originalCategories = cfg.ticketCategories || [];
     const originalProducts = cfg.products || [];
     const originalChannels = { ...(cfg.channels || {}) };
-    delete originalChannels['audit-log']; // logAudit silent-skip
+    delete originalChannels['audit-log']; // logAudit silently skips
     cfg.channels = originalChannels;
     cfg.ticketCategories = [
         ...originalCategories.filter(c => c.id !== 'akun_ml'),
@@ -286,7 +287,7 @@ test('add-product: produk di kategori non-key mewarisi requiresKey:false tanpa o
     cfg.products = originalProducts.filter(p => p.value !== 'ml_test_1');
     saveConfig(cfg);
 
-    // Admin TIDAK set requires_key (null) → harus mewarisi false dari kategori.
+    // The admin did NOT set requires_key (null) → must inherit false from the category.
     const interaction = makeAddProductInteraction({
         label: 'Akun ML Mythic',
         value: 'ml_test_1',
@@ -297,18 +298,18 @@ test('add-product: produk di kategori non-key mewarisi requiresKey:false tanpa o
     await productsHandler(interaction);
 
     const saved = getConfig().products.find(p => p.value === 'ml_test_1');
-    assert.ok(saved, 'produk harus tersimpan');
+    assert.ok(saved, 'the product must be saved');
     assert.strictEqual(saved.category, 'akun_ml');
-    assert.strictEqual(saved.requiresKey, false, 'mewarisi requiresKey:false dari kategori akun_ml');
+    assert.strictEqual(saved.requiresKey, false, 'inherits requiresKey:false from the akun_ml category');
     assert.match(interaction._replies[interaction._replies.length - 1].opts.content, /Requires Key: No/);
 
-    // Klasifikasi akhir produk tersimpan → transaksi non-key.
+    // Final classification of the saved product → non-key transaction.
     const t = classifyProduct(saved);
     assert.strictEqual(t.isTransaction, true);
     assert.strictEqual(t.requiresKey, false);
 });
 
-test('add-product: kategori tidak dikenal → DITOLAK (anti typo id)', async () => {
+test('add-product: unknown category → REJECTED (anti id-typo)', async () => {
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
@@ -321,18 +322,18 @@ test('add-product: kategori tidak dikenal → DITOLAK (anti typo id)', async () 
         label: 'Akun Typo',
         value: 'ml_typo_1',
         price: 'Rp 1',
-        category: 'akun_ML', // salah kapital — id kategori exact-match
+        category: 'akun_ML', // wrong capitalization — category ids are exact-match
         requiresKey: null
     });
     await productsHandler(interaction);
 
     const saved = getConfig().products.find(p => p.value === 'ml_typo_1');
-    assert.ok(!saved, 'produk dengan kategori typo TIDAK boleh tersimpan');
+    assert.ok(!saved, 'a product with a typo category must NOT be saved');
     const last = interaction._replies[interaction._replies.length - 1].opts.content;
-    assert.match(last, /tidak ditemukan/);
+    assert.match(last, /not found/);
 });
 
-test('add-product: requires_key eksplisit menimpa kategori (produk key di kategori non-key)', async () => {
+test('add-product: an explicit requires_key overrides the category (key product in a non-key category)', async () => {
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
@@ -341,30 +342,30 @@ test('add-product: requires_key eksplisit menimpa kategori (produk key di katego
     cfg.products = originalProducts.filter(p => p.value !== 'ml_topup_1');
     saveConfig(cfg);
 
-    // Kategori akun_ml requiresKey:false, tapi produk ini top-up pakai voucher key.
+    // The akun_ml category is requiresKey:false, but this product is a top-up using voucher keys.
     const interaction = makeAddProductInteraction({
         label: 'Top Up 350 Diamond',
         value: 'ml_topup_1',
         price: 'Rp 75.000',
         category: 'akun_ml',
-        requiresKey: true // eksplisit menimpa kategori
+        requiresKey: true // explicit, overrides the category
     });
     await productsHandler(interaction);
 
     const saved = getConfig().products.find(p => p.value === 'ml_topup_1');
     assert.ok(saved);
-    assert.strictEqual(saved.requiresKey, true, 'flag produk menimpa flag kategori');
+    assert.strictEqual(saved.requiresKey, true, 'the product flag overrides the category flag');
     const t = classifyProduct(saved);
     assert.strictEqual(t.isTransaction, true);
     assert.strictEqual(t.requiresKey, true);
 });
 
 // ====================================================
-// === 4. panels.js dropdown — deskripsi kategori campur ===
-// === (v3.9.28: hitung dari produk aktual)              ===
+// === 4. panels.js dropdown — mixed category description ===
+// === (v3.9.28: counted from actual products)             ===
 // ====================================================
 
-test('panels dropdown: kategori campur → "N tanpa key / M pakai key" (dari produk aktual)', () => {
+test('panels dropdown: mixed category → "N without keys / M with keys" (from actual products)', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
     const panel = {
         title: 'X',
@@ -378,8 +379,8 @@ test('panels dropdown: kategori campur → "N tanpa key / M pakai key" (dari pro
         client: { user: { username: 'B', displayAvatarURL: () => 'http://x' } },
         config: {
             ticketCategories: [
-                // Flag kategori true TAPI isi 2 dari 3 produk non-key — deskripsi
-                // v3.9.27 (pakai flag kategori) akan bohong bilang "pakai key".
+                // The category flag is true BUT 2 of its 3 products are non-key — the
+                // v3.9.27 description (which uses the category flag) would lie "with keys".
                 { id: 'akun_ml', label: 'Akun ML', emoji: '🎮', style: 'Success', requiresKey: true },
                 { id: 'lisensi_key', label: 'Lisensi Key', emoji: '🔑', style: 'Primary', requiresKey: true }
             ],
@@ -397,13 +398,13 @@ test('panels dropdown: kategori campur → "N tanpa key / M pakai key" (dari pro
     const opts = menu.options;
     const getDesc = o => o.data?.description || o.description;
 
-    // akun_ml: 2 non-key + 1 key → campur (deskripsi dari PRODUK, bukan flag kategori)
-    assert.strictEqual(getDesc(opts[0]), 'Transaksi — 3 produk (2 tanpa key / 1 pakai key)');
-    // lisensi_key: semua pakai key
-    assert.strictEqual(getDesc(opts[1]), 'Transaksi — 1 produk (pakai key)');
+    // akun_ml: 2 non-key + 1 key → mixed (description from the PRODUCTS, not the category flag)
+    assert.strictEqual(getDesc(opts[0]), 'Transaction — 3 products (2 without keys / 1 with keys)');
+    // lisensi_key: all use keys
+    assert.strictEqual(getDesc(opts[1]), 'Transaction — 1 products (with keys)');
 });
 
-test('panels dropdown: kategori baru tanpa produk → "Bantuan / buka tiket langsung"', () => {
+test('panels dropdown: new category without products → "Support / open a ticket directly"', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
     const { components } = buildTicketPanel(
         { title: 'X', body: 'X', color: null, categoryIds: [], useDropdown: true },
@@ -421,5 +422,5 @@ test('panels dropdown: kategori baru tanpa produk → "Bantuan / buka tiket lang
     );
     const menu = components[0].components[0];
     const getDesc = o => o.data?.description || o.description;
-    assert.strictEqual(getDesc(menu.options[0]), 'Bantuan / buka tiket langsung');
+    assert.strictEqual(getDesc(menu.options[0]), 'Support / open a ticket directly');
 });

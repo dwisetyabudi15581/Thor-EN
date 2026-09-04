@@ -1,17 +1,18 @@
 /**
- * AFK Manager — track user yang lagi AFK + auto-reply saat di-mention.
+ * AFK Manager — track users who are AFK + auto-reply when mentioned.
  *
  * File: data/afk.json
  * {
  *   "<guildId>:<userId>": {
- *     "reason": "Makan dulu",
+ *     "reason": "Grabbing food",
  *     "since": 1735689600000,
  *     "guildId": "...",
  *     "userId": "..."
  *   }
  * }
  *
- * Composite key supaya AFK scoped per guild (user bisa AFK di guild A tapi aktif di guild B).
+ * Composite key so AFK is scoped per guild (a user can be AFK in guild A but
+ * active in guild B).
  */
 
 const fs = require('fs');
@@ -20,10 +21,10 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'afk.json');
 
-// v3.9.26: read-through cache (pola panelManager). messageCreate membaca
-// afk.json per pesan + per mention — sebelumnya itu 1+N readFileSync sync
-// per pesan. Cache 15s TTL + update-on-save; invalidasi manual via
-// invalidateCache() (dipakai restore backup & test cleanup).
+// v3.9.26: read-through cache (panelManager pattern). messageCreate reads
+// afk.json per message + per mention — previously that was 1+N sync
+// readFileSync calls per message. 15s TTL cache + update-on-save; manual
+// invalidation via invalidateCache() (used by backup restore & test cleanup).
 const CACHE_TTL_MS = 15 * 1000;
 let _cache = null; // { data, at }
 
@@ -38,8 +39,9 @@ function load() {
         _cache = { data, at: Date.now() };
         return data;
     } catch (_err) {
-        // v3.9.26: karantina file korup SEBELUM fallback — tanpa ini, save()
-        // berikutnya menimpa isi file korup dengan state kosong (data hilang permanen).
+        // v3.9.26: quarantine the corrupt file BEFORE falling back — without
+        // this, the next save() overwrites the corrupt file with empty state
+        // (data lost permanently).
         quarantineCorruptFile(filePath);
         _cache = { data: {}, at: Date.now() };
         return _cache.data;
@@ -48,11 +50,11 @@ function load() {
 
 function save(data) {
     safeWriteJSON(filePath, data);
-    // v3.9.26: update cache supaya read berikutnya konsisten dengan yang baru di-write
+    // v3.9.26: update the cache so the next read is consistent with what was just written
     _cache = { data, at: Date.now() };
 }
 
-/** v3.9.26: paksa read fresh berikutnya (restore backup / test). */
+/** v3.9.26: force the next read to be fresh (backup restore / tests). */
 function invalidateCache() {
     _cache = null;
 }
@@ -93,13 +95,13 @@ function isAFK(guildId, userId) {
 }
 
 /**
- * v3.9.26: Batch check AFK untuk banyak user SEKALI load.
- * messageCreate dulu manggil getAFK() per mention (1+N read per pesan yang
- * ada mention). Sekarang satu load → semua mention ke-cover.
+ * v3.9.26: Batch-check AFK for many users with a SINGLE load.
+ * messageCreate used to call getAFK() per mention (1+N reads per message
+ * containing mentions). Now one load covers all mentions.
  *
  * @param {string} guildId
  * @param {string[]} userIds
- * @returns {Object<string, {reason, since, guildId, userId}>} map userId → data AFK (hanya yang AFK)
+ * @returns {Object<string, {reason, since, guildId, userId}>} map of userId → AFK data (only those who are AFK)
  */
 function getAFKBatch(guildId, userIds) {
     if (!Array.isArray(userIds) || userIds.length === 0) return {};
@@ -113,7 +115,7 @@ function getAFKBatch(guildId, userIds) {
 }
 
 /**
- * Format duration AFK (mis. "5 menit lalu", "2 jam lalu", "1 hari lalu").
+ * Format the AFK duration (e.g. "5 minutes ago", "2 hours ago", "1 day ago").
  */
 function formatDuration(since, now = Date.now()) {
     const diff = now - since;
@@ -122,15 +124,15 @@ function formatDuration(since, now = Date.now()) {
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `${days} hari lalu`;
-    if (hours > 0) return `${hours} jam lalu`;
-    if (minutes > 0) return `${minutes} menit lalu`;
-    return `${seconds} detik lalu`;
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    return `${seconds} second${seconds > 1 ? 's' : ''} ago`;
 }
 
 /**
- * List semua user AFK di guild tertentu, sorted by since (paling baru duluan).
- * v3.9.17: tambah supaya /afk-list tidak perlu baca afk.json langsung.
+ * List all AFK users in a given guild, sorted by since (most recent first).
+ * v3.9.17: added so /afk-list doesn't need to read afk.json directly.
  *
  * @param {string} guildId
  * @returns {Array<{userId, reason, since, guildId}>}
@@ -143,13 +145,14 @@ function listGuildAFK(guildId) {
 }
 
 /**
- * v3.9.38 FIX (GC): hapus entry AFK yang lebih tua dari `maxAgeMs`.
- * afk.json sebelumnya TIDAK PERNAH di-GC — user yang leave guild / lupa clear
- * tetap tercatat AFK selamanya (auto-reply terus menyebut user yang sudah lama
- * pergi + file tumbuh pelan tanpa batas). Entry lama TANPA field `since`
- * (format pra-v3.9.x) di-keep — umurnya tidak bisa ditentukan, jangan di-break.
- * Dipanggil scheduler harian (pruneStaleData di schedulerTasks.js).
- * Return jumlah entry yang dihapus.
+ * v3.9.38 FIX (GC): delete AFK entries older than `maxAgeMs`.
+ * afk.json was previously NEVER garbage-collected — users who left the guild /
+ * forgot to clear stayed marked AFK forever (auto-replies kept mentioning
+ * long-gone users + the file grew slowly without bound). Old entries WITHOUT
+ * a `since` field (pre-v3.9.x format) are kept — their age can't be determined,
+ * don't break them.
+ * Called by the daily scheduler (pruneStaleData in schedulerTasks.js).
+ * Returns the number of entries removed.
  */
 function pruneOldAFK(maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
     const all = load();
@@ -157,7 +160,7 @@ function pruneOldAFK(maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
     let removed = 0;
     for (const [k, entry] of Object.entries(all)) {
         if (!entry || typeof entry !== 'object') continue;
-        // Entry tanpa `since` (bukan number) → keep, jangan break data lama.
+        // Entry without `since` (not a number) → keep, don't break old data.
         if (typeof entry.since !== 'number' || Number.isNaN(entry.since)) continue;
         if (entry.since < cutoff) {
             delete all[k];

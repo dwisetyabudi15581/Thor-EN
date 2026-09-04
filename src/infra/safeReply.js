@@ -1,86 +1,86 @@
 /**
  * Safe interaction reply helpers.
  *
- * Masalah yang dipecahkan:
- * - Setelah `interaction.deferReply()`, bot melakukan task lama (hapus banyak
- *   channel, restore backup, dll), lalu memanggil `interaction.editReply()`.
- * - Kalau user menutup pesan ephemeral "Bot is thinking..." sebelum editReply
- *   jalan, Discord kembalikan `DiscordAPIError[10008]: Unknown Message`.
- * - Sebelum v3.9.4, error ini gaib ke global error handler dan muncul sebagai
- *   stack trace penuh di log — padahal user-nya yang dismiss.
+ * Problems solved:
+ * - After `interaction.deferReply()`, the bot does a long task (deleting many
+ *   channels, restoring a backup, etc.), then calls `interaction.editReply()`.
+ * - If the user dismisses the ephemeral "Bot is thinking..." message before
+ *   editReply runs, Discord returns `DiscordAPIError[10008]: Unknown Message`.
+ * - Before v3.9.4, this error vanished into the global error handler and showed
+ *   up as a full stack trace in the logs — even though the user simply dismissed it.
  *
- * Solusi:
- * - `safeEditReply` mencoba editReply; kalau dapat 10008/10062, fallback ke
- *   `followUp` (yang bikin pesan baru di channel yang sama).
- * - v3.9.7: kalau dapat `InteractionNotReplied` (deferReply gagal secara
- *   senyap — mis. interaction token expired saat modal masih terbuka),
- *   fallback ke `reply()` supaya pesan error tetap sampai ke user.
- * - `safeFollowUp` sama, tapi untuk followUp yang dipakai langsung tanpa
- *   editReply dulu.
+ * Solutions:
+ * - `safeEditReply` tries editReply; on 10008/10062 it falls back to
+ *   `followUp` (which creates a new message in the same channel).
+ * - v3.9.7: on `InteractionNotReplied` (deferReply failed silently — e.g. the
+ *   interaction token expired while a modal was still open), fall back to
+ *   `reply()` so the error message still reaches the user.
+ * - `safeFollowUp` is the same, but for followUp used directly without a
+ *   preceding editReply.
  *
- * Kapan pakai:
- * - SETIAP command yang deferReply lalu melakukan >1 detik kerjaan API Discord
- *   (hapus multiple channel, kirim banyak DM, restore backup) WAJIB pakai
- *   `safeEditReply` di akhir, bukan `interaction.editReply` langsung.
+ * When to use:
+ * - EVERY command that deferReply's and then does >1 second of Discord API work
+ *   (deleting multiple channels, sending many DMs, restoring a backup) MUST use
+ *   `safeEditReply` at the end, not `interaction.editReply` directly.
  *
- * Kapan TIDAK perlu pakai:
- * - Command sinkron cepat (<1s) tanpa deferReply → interaction.reply() cukup.
- * - Handler yang sudah pakai .catch(()=>{}) di editReply dan tidak peduli
- *   konfirmasinya sampe atau tidak.
+ * When NOT needed:
+ * - Fast synchronous commands (<1s) without deferReply → interaction.reply() is enough.
+ * - Handlers that already use .catch(()=>{}) on editReply and don't care whether
+ *   the confirmation arrives.
  */
 
 const { MessageFlags } = require('discord.js');
 
 /**
- * Discord error codes yang berarti "original reply tidak bisa di-edit":
- * - 10008: Unknown Message (user dismissed ephemeral, atau message dihapus)
- * - 10062: Unknown Interaction (token interaction expired, >15 menit)
+ * Discord error codes that mean "the original reply can no longer be edited":
+ * - 10008: Unknown Message (user dismissed the ephemeral, or the message was deleted)
+ * - 10062: Unknown Interaction (interaction token expired, >15 minutes)
  * - 40060: Interaction has already been acknowledged (race condition)
  */
 const IGNORABLE_REPLY_CODES = new Set([10008, 10062, 40060]);
 
 /**
- * v3.9.17: dead code removed. IGNORABLE_REPLY_STRING_CODES tidak pernah dipakai —
- * cek 'InteractionNotReplied' di safeEditReply pakai direct string comparison.
+ * v3.9.17: dead code removed. IGNORABLE_REPLY_STRING_CODES was never used —
+ * the 'InteractionNotReplied' check in safeEditReply uses direct string comparison.
  */
 
 /**
- * Edit interaction reply dengan fallback ke followUp kalau original hilang.
+ * Edit an interaction reply with a followUp fallback if the original is gone.
  *
  * @param {import('discord.js').BaseInteraction} interaction
- * @param {import('discord.js').InteractionReplyOptions} options - sama seperti options untuk editReply
- * @returns {Promise<import('discord.js').Message|null>} Message kalau sukses, null kalau gagal total (silent)
+ * @param {import('discord.js').InteractionReplyOptions} options - same as the options for editReply
+ * @returns {Promise<import('discord.js').Message|null>} Message on success, null on total failure (silent)
  */
 async function safeEditReply(interaction, options) {
     try {
         return await interaction.editReply(options);
     } catch (err) {
-        // v3.9.7: InteractionNotReplied — deferReply gagal senyap (mis. token
-        // expired). Interaction belum di-acknowledge sama sekali, jadi kita
-        // masih bisa reply() (selama token belum expired total).
+        // v3.9.7: InteractionNotReplied — deferReply failed silently (e.g. token
+        // expired). The interaction hasn't been acknowledged at all yet, so we
+        // can still reply() (as long as the token isn't fully expired).
         if (err.code === 'InteractionNotReplied') {
             try {
-                // Default ke ephemeral karena semua caller safeEditReply di
-                // codebase ini pakai deferReply ephemeral. Kalau options sudah
-                // specify flags, hormati itu.
+                // Default to ephemeral because all safeEditReply callers in this
+                // codebase use ephemeral deferReply. If options already
+                // specify flags, respect that.
                 const replyOptions = { ...options };
                 if (replyOptions.flags === undefined) {
                     replyOptions.flags = MessageFlags.Ephemeral;
                 }
                 return await interaction.reply(replyOptions);
             } catch (_) {
-                // reply() juga gagal — kemungkinan token benar-benar expired.
-                // Tidak ada yang bisa dilakukan; silent return.
+                // reply() also failed — the token is probably fully expired.
+                // Nothing we can do; return silently.
                 return null;
             }
         }
 
         if (!IGNORABLE_REPLY_CODES.has(err.code)) {
-            throw err; // unexpected error — re-throw supaya caller tau
+            throw err; // unexpected error — re-throw so the caller knows
         }
 
-        // Original reply hilang. Coba followUp (bikin pesan baru).
-        // Preserve ephemeral flag kalau original deferReply ephemeral.
+        // Original reply is gone. Try followUp (creates a new message).
+        // Preserve the ephemeral flag if the original deferReply was ephemeral.
         const wasEphemeral =
             interaction.ephemeral === true || options?.flags === MessageFlags.Ephemeral || options?.flags === 64;
 
@@ -90,17 +90,17 @@ async function safeEditReply(interaction, options) {
                 ...(wasEphemeral ? { flags: MessageFlags.Ephemeral } : {})
             });
         } catch (_) {
-            // followUp juga gagal — kemungkinan interaction token expired (>15 menit).
-            // Tidak ada yang bisa dilakukan; silent return.
+            // followUp also failed — likely the interaction token expired (>15 minutes).
+            // Nothing we can do; return silently.
             return null;
         }
     }
 }
 
 /**
- * Follow up interaction dengan handling error silent.
- * Pakai kalau caller tidak peduli apakah followUp sampe atau tidak (e.g., notifikasi
- * opsional setelah command utama selesai).
+ * Follow up an interaction with silent error handling.
+ * Use when the caller doesn't care whether the followUp arrives (e.g., an optional
+ * notification after the main command finishes).
  *
  * @param {import('discord.js').BaseInteraction} interaction
  * @param {import('discord.js').InteractionReplyOptions} options
@@ -118,8 +118,8 @@ async function safeFollowUp(interaction, options) {
 }
 
 /**
- * Reply interaction dengan handling error silent.
- * Pakai untuk initial reply kalau kemungkinan interaction sudah expired (jarang).
+ * Reply to an interaction with silent error handling.
+ * Used for the initial reply when the interaction may already be expired (rare).
  *
  * @param {import('discord.js').BaseInteraction} interaction
  * @param {import('discord.js').InteractionReplyOptions} options

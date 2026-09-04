@@ -1,8 +1,9 @@
 /**
- * Unit tests untuk v3.9.14 — multi-panel ticket flexibility (panelManager + buildTicketPanel).
+ * Unit tests for v3.9.14 — multi-panel ticket flexibility (panelManager + buildTicketPanel).
  *
- * Test yang butuh discord.js di-mock manual. Test panelManager (persistence)
- * test secara langsung karena tidak ada dependensi discord.js di file itu.
+ * Tests that need discord.js are mocked manually. The panelManager
+ * (persistence) tests are run directly because that file has no discord.js
+ * dependency.
  */
 
 const test = require('node:test');
@@ -14,11 +15,12 @@ const path = require('path');
 const panelsPath = path.join(__dirname, '..', '..', 'data', 'panels.json');
 
 // ====================================================
-// === v3.9.24 FIX: panels.json produksi di-snapshot & restore ===
+// === v3.9.24 FIX: production panels.json is snapshotted & restored ===
 // ====================================================
-// resetPanelsFile() di bawah MENGHAPUS data/panels.json tanpa backup — kalau
-// npm test dijalankan di instance live, SEMUA panel tiket hilang. Sekarang:
-// file asli di-copy ke backup sebelum test, di-restore saat process exit.
+// resetPanelsFile() below DELETES data/panels.json without a backup — if
+// npm test runs on a live instance, ALL ticket panels are lost. Now:
+// the original file is copied to a backup before the test and restored at
+// process exit.
 const panelsBackupPath = panelsPath + '.test-backup';
 let panelsBackedUp = false;
 if (fs.existsSync(panelsPath)) {
@@ -26,13 +28,13 @@ if (fs.existsSync(panelsPath)) {
     panelsBackedUp = true;
 }
 process.on('exit', () => {
-    // Harus sync (dalam exit handler).
+    // Must be sync (inside an exit handler).
     try {
         if (panelsBackedUp) {
             fs.copyFileSync(panelsBackupPath, panelsPath);
             fs.rmSync(panelsBackupPath, { force: true });
         } else if (fs.existsSync(panelsPath)) {
-            // Tidak ada file asli → hapus file hasil test supaya checkout bersih.
+            // No original file → delete the test output so the checkout stays clean.
             fs.unlinkSync(panelsPath);
         }
     } catch (_) {}
@@ -177,8 +179,9 @@ test('panelManager: handles corrupted panels.json gracefully', () => {
     const all = loadPanels();
     assert.strictEqual(typeof all, 'object');
     assert.strictEqual(Object.keys(all).length, 0);
-    // v3.9.26: load sekarang mengkarantina file korup (rename .corrupt-<ts>)
-    // supaya isi lama tidak ditimpa diam-diam — bersihkan artefaknya setelah assert.
+    // v3.9.26: load now quarantines a corrupt file (renames it .corrupt-<ts>)
+    // so the old contents aren't silently overwritten — clean up the artifacts
+    // after asserting.
     for (const f of fs.readdirSync(path.dirname(panelsPath))) {
         if (f.startsWith('panels.json.corrupt-')) {
             try {
@@ -196,7 +199,7 @@ test('panelManager: handles invalid format (array) panels.json gracefully', () =
     const all = loadPanels();
     assert.strictEqual(typeof all, 'object');
     assert.strictEqual(Array.isArray(all), false);
-    // v3.9.26: idem — bersihkan artefak karantina (valid JSON tapi struktur salah).
+    // v3.9.26: same — clean up the quarantine artifacts (valid JSON but wrong structure).
     for (const f of fs.readdirSync(path.dirname(panelsPath))) {
         if (f.startsWith('panels.json.corrupt-')) {
             try {
@@ -236,9 +239,9 @@ test('panels.parseColor: returns null for null/empty', () => {
 
 test('panels.parseColor: throws on invalid format', () => {
     const { parseColor } = require('../../src/commands/panels');
-    assert.throws(() => parseColor('not-a-color'), /Format color tidak valid/);
-    assert.throws(() => parseColor('#xyz'), /Format color tidak valid/);
-    assert.throws(() => parseColor('#12345'), /Format color tidak valid/);
+    assert.throws(() => parseColor('not-a-color'), /Invalid color format/);
+    assert.throws(() => parseColor('#xyz'), /Invalid color format/);
+    assert.throws(() => parseColor('#12345'), /Invalid color format/);
 });
 
 // === validateUrl tests ===
@@ -602,11 +605,11 @@ test('help.js: help embed mentions new v3.9.14+ commands', async () => {
     assert.match(allText, /update-panel/);
     assert.match(allText, /refresh-panel/);
     assert.match(allText, /use_dropdown/);
-    // v3.9.37: versi di help kini dinamis dari package.json (anti-stale) —
-    // assert-nya menyamakan dengan package.json, bukan literal hardcode.
+    // v3.9.37: the version in help is now dynamic from package.json (anti-stale) —
+    // the assertion compares against package.json, not a hardcoded literal.
     const { version: pkgVersion } = require('../../package.json');
     assert.match(allText, new RegExp(`v${pkgVersion.replace(/\./g, '\\.')}`));
-    assert.doesNotMatch(allText, /v3\.9\.26/); // literal lama tidak boleh muncul lagi
+    assert.doesNotMatch(allText, /v3\.9\.26/); // the old literal must not appear anymore
 });
 
 // === Router test ===
@@ -615,9 +618,9 @@ test('commands/index.js: routes new panel-mgmt commands', () => {
     assert.strictEqual(typeof router, 'function');
 });
 
-// === v3.9.18 tests: rename Bantuan→Help, Laporkan→Report, tambah claim_giveaway ===
+// === v3.9.18 tests: rename Bantuan→Help, Laporkan→Report, add claim_giveaway ===
 
-test('configManager.DEFAULTS: ticketCategories pakai label "Help" & "Report" (bukan "Bantuan Staff")', () => {
+test('configManager.DEFAULTS: ticketCategories use "Help" & "Report" labels (not "Bantuan Staff")', () => {
     const { DEFAULTS } = require('../../src/data/configManager');
     const help = DEFAULTS.ticketCategories.find(c => c.id === 'help');
     const report = DEFAULTS.ticketCategories.find(c => c.id === 'report');
@@ -625,12 +628,12 @@ test('configManager.DEFAULTS: ticketCategories pakai label "Help" & "Report" (bu
     assert.ok(report, 'report category should exist in DEFAULTS');
     assert.strictEqual(help.label, 'Help', 'help.label should be "Help"');
     assert.strictEqual(report.label, 'Report', 'report.label should be "Report"');
-    // Pastikan label lama sudah tidak dipakai
+    // Make sure the old labels are no longer used
     assert.notStrictEqual(help.label, 'Bantuan Staff');
     assert.notStrictEqual(report.label, 'Laporkan Member');
 });
 
-test('configManager.DEFAULTS: claim_giveaway ada sebagai contoh kategori custom', () => {
+test('configManager.DEFAULTS: claim_giveaway exists as an example custom category', () => {
     const { DEFAULTS } = require('../../src/data/configManager');
     const claimGiveaway = DEFAULTS.ticketCategories.find(c => c.id === 'claim_giveaway');
     assert.ok(claimGiveaway, 'claim_giveaway category should exist in DEFAULTS');
@@ -638,11 +641,11 @@ test('configManager.DEFAULTS: claim_giveaway ada sebagai contoh kategori custom'
     assert.strictEqual(claimGiveaway.emoji, '🎁');
     assert.strictEqual(claimGiveaway.style, 'Success');
     assert.strictEqual(claimGiveaway.requiresKey, false);
-    // isDefault=false supaya admin bisa /remove-category kalau tidak mau
+    // isDefault=false so admins can /remove-category if they don't want it
     assert.strictEqual(claimGiveaway.isDefault, false);
 });
 
-test('configManager.getConfig: migration rename label "Bantuan Staff" → "Help"', () => {
+test('configManager.getConfig: migration renames label "Bantuan Staff" → "Help"', () => {
     const fs = require('fs');
     const path = require('path');
     const configPath = path.join(__dirname, '..', '..', 'data', 'config.json');
@@ -707,7 +710,7 @@ test('configManager.getConfig: migration rename label "Bantuan Staff" → "Help"
     }
 });
 
-test('configManager.getConfig: migration TIDAK ubah label yang sudah di-customize admin', () => {
+test('configManager.getConfig: migration does NOT touch admin-customized labels', () => {
     const fs = require('fs');
     const path = require('path');
     const configPath = path.join(__dirname, '..', '..', 'data', 'config.json');
@@ -765,7 +768,7 @@ test('configManager.getConfig: migration TIDAK ubah label yang sudah di-customiz
     }
 });
 
-test('panels.buildTicketPanel: kategori requiresKey=false (claim_giveaway) tetap di-render sebagai button', () => {
+test('panels.buildTicketPanel: requiresKey=false category (claim_giveaway) is still rendered as a button', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
     const panel = {
         title: 'X',
@@ -799,7 +802,7 @@ test('panels.buildTicketPanel: kategori requiresKey=false (claim_giveaway) tetap
     assert.strictEqual(claimBtn.data.label, 'Claim Giveaway');
 });
 
-test('panels.buildTicketPanel: dropdown description berbasis konten kategori (v3.9.27)', () => {
+test('panels.buildTicketPanel: dropdown description based on category content (v3.9.27)', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
     const panel = {
         title: 'X',
@@ -814,8 +817,8 @@ test('panels.buildTicketPanel: dropdown description berbasis konten kategori (v3
         config: {
             ticketCategories: [
                 { id: 'transaction', label: 'Beli', emoji: '🔑', style: 'Primary', requiresKey: true },
-                // v3.9.27: kategori non-key yang PUNYA produk (jual akun/jasa) —
-                // tadinya salah dilabeli "Bantuan / non-transaksi".
+                // v3.9.27: a non-key category that HAS products (account/service
+                // sales) — previously mislabeled as "Support / non-transaction".
                 { id: 'jual_akun', label: 'Jual Akun', emoji: '📦', style: 'Success', requiresKey: false },
                 { id: 'claim_giveaway', label: 'Claim Giveaway', emoji: '🎁', style: 'Success', requiresKey: false }
             ],
@@ -842,14 +845,14 @@ test('panels.buildTicketPanel: dropdown description berbasis konten kategori (v3
     const menu = components[0].components[0];
     const opts = menu.options;
     assert.strictEqual(opts.length, 3);
-    // discord.js v14: option data disimpan di .data.description (bukan .description langsung)
+    // discord.js v14: option data is stored in .data.description (not directly in .description)
     const getDesc = o => o.data?.description || o.description;
-    // Kategori key DENGAN produk → jumlah produk + status key
-    assert.strictEqual(getDesc(opts[0]), 'Transaksi — 1 produk (pakai key)');
-    // Kategori non-key DENGAN produk → TRANSAKSI (bukan "Bantuan" — bug fix v3.9.27)
-    assert.strictEqual(getDesc(opts[1]), 'Transaksi — 1 produk (tanpa key)');
-    // Kategori TANPA produk → tiket langsung
-    assert.strictEqual(getDesc(opts[2]), 'Bantuan / buka tiket langsung');
+    // Key category WITH products → product count + key status
+    assert.strictEqual(getDesc(opts[0]), 'Transaction — 1 products (with keys)');
+    // Non-key category WITH products → TRANSACTION (not "Support" — v3.9.27 bug fix)
+    assert.strictEqual(getDesc(opts[1]), 'Transaction — 1 products (without keys)');
+    // Category WITHOUT products → direct ticket
+    assert.strictEqual(getDesc(opts[2]), 'Support / open a ticket directly');
 });
 
 // === v3.9.19 tests: flexibility fix + new commands ===
@@ -908,15 +911,16 @@ test('help.js: mentions /update-category and /update-product', async () => {
 });
 
 // === v3.9.19 integration test: bug fix behavior ===
-// Verify: kategori requiresKey=false TAPI punya produk → seharusnya dropdown produk.
-// Ini scenario "Jasa" dengan beberapa jasa non-key.
-// Note: test ini tidak bisa langsung test handler ticket.js karena butuh mock
-// Discord interaction yang kompleks. Tapi kita bisa verify logic-nya via
-// config structure — kalau kategori jasa punya produk, behavior akan jadi dropdown.
+// Verify: a requiresKey=false category that HAS products → should be a product
+// dropdown. This is the "Jasa" scenario with several non-key services.
+// Note: this test can't exercise the ticket.js handler directly because it
+// needs a complex Discord interaction mock. But we can verify the logic via
+// the config structure — if the jasa category has products, the behavior
+// becomes a dropdown.
 
-test('v3.9.19: kategori jasa dengan produk non-key → seharusnya jadi dropdown (bukan direct ticket)', () => {
-    // Verify struktur config: kategori "jasa" punya produk terkait.
-    // Logic di ticket.js v3.9.19: cek productsInCat.length > 0 → tampilkan dropdown.
+test('v3.9.19: jasa category with non-key products → should become a dropdown (not a direct ticket)', () => {
+    // Verify the config structure: the "jasa" category has related products.
+    // Logic in ticket.js v3.9.19: check productsInCat.length > 0 → show a dropdown.
     const config = {
         ticketCategories: [
             { id: 'jasa', label: 'Jasa', emoji: '🛠️', style: 'Primary', requiresKey: false, isDefault: false }
@@ -931,7 +935,7 @@ test('v3.9.19: kategori jasa dengan produk non-key → seharusnya jadi dropdown 
     assert.strictEqual(productsInCat.length > 0, true, 'should show dropdown (not direct ticket)');
 });
 
-test('v3.9.19: kategori help tanpa produk → seharusnya langsung create ticket', () => {
+test('v3.9.19: help category without products → should directly create the ticket', () => {
     const config = {
         ticketCategories: [
             { id: 'help', label: 'Help', emoji: '📞', style: 'Secondary', requiresKey: false, isDefault: true }
@@ -943,7 +947,7 @@ test('v3.9.19: kategori help tanpa produk → seharusnya langsung create ticket'
     assert.strictEqual(productsInCat.length === 0, true, 'should direct create ticket (no dropdown)');
 });
 
-test('v3.9.19: kategori transaction campur key & non-key → semua muncul di dropdown', () => {
+test('v3.9.19: transaction category mixing key & non-key → all appear in the dropdown', () => {
     const config = {
         ticketCategories: [
             { id: 'transaction', label: 'Beli', emoji: '🔑', style: 'Primary', requiresKey: true, isDefault: true }
@@ -975,9 +979,9 @@ test('v3.9.19: kategori transaction campur key & non-key → semua muncul di dro
     assert.strictEqual(nonKeyProducts.length, 2, '2 non-key products (Joki, Booster)');
 });
 
-// === v3.9.20 tests: Set Key tidak auto-close, DM HP-friendly, isCompleted flag ===
+// === v3.9.20 tests: Set Key no auto-close, mobile-friendly DM, isCompleted flag ===
 
-test('ticketManager: patchTicketMeta melakukan partial update tanpa overwrite field lain', () => {
+test('ticketManager: patchTicketMeta does a partial update without overwriting other fields', () => {
     const fs = require('fs');
     const path = require('path');
     const ticketsPath = path.join(__dirname, '..', '..', 'data', 'tickets.json');
@@ -994,7 +998,7 @@ test('ticketManager: patchTicketMeta melakukan partial update tanpa overwrite fi
             getTicketMeta,
             invalidateCache
         } = require('../../src/data/ticketManager');
-        // invalidateCache tidak ada — tidak masalah, ticketsManager pakai readFileSync fresh
+        // invalidateCache doesn't exist — no problem, ticketManager uses a fresh readFileSync
         // Set initial meta
         setTicketMeta('ch-1', {
             userId: 'user-1',
@@ -1012,7 +1016,7 @@ test('ticketManager: patchTicketMeta melakukan partial update tanpa overwrite fi
         assert.strictEqual(before.isCompleted, false);
         assert.strictEqual(before.keySetAt, null);
 
-        // Patch hanya isCompleted, keySetAt, keySetBy
+        // Patch only isCompleted, keySetAt, keySetBy
         const patched = patchTicketMeta('ch-1', {
             isCompleted: true,
             keySetAt: 1700000000000,
@@ -1041,7 +1045,7 @@ test('ticketManager: patchTicketMeta melakukan partial update tanpa overwrite fi
     }
 });
 
-test('ticketManager: patchTicketMeta returns false kalau channel tidak ada di meta', () => {
+test('ticketManager: patchTicketMeta returns false when the channel is not in meta', () => {
     const fs = require('fs');
     const path = require('path');
     const ticketsPath = path.join(__dirname, '..', '..', 'data', 'tickets.json');
@@ -1063,7 +1067,7 @@ test('ticketManager: patchTicketMeta returns false kalau channel tidak ada di me
     }
 });
 
-test('ticketManager exports: patchTicketMeta di-export', () => {
+test('ticketManager exports: patchTicketMeta is exported', () => {
     const ticketManager = require('../../src/data/ticketManager');
     assert.strictEqual(typeof ticketManager.patchTicketMeta, 'function', 'patchTicketMeta should be exported');
 });

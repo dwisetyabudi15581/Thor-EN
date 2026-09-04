@@ -2,17 +2,17 @@
  * Domain: giveaway
  * Slash commands: /giveaway (subcommands: create, list, end, reroll)
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: kelola giveaway (create, list, end, reroll).
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: manage giveaways (create, list, end, reroll).
  *
- * P0-3 FIX: /giveaway end panggil shared processGiveawayEnd supaya message
- *           diupdate + announce winner + DM winner + track stats.
- * P0-4 FIX: /giveaway reroll persist winner baru + announce + DM + track stats.
- * v3.9.1: jangan hardcoded @everyone ping (admin yang mau ping pakai /announce).
- * v3.9.8: validate duration, validate channel type (GuildText), wrap reroll di userLock.
+ * P0-3 FIX: /giveaway end calls the shared processGiveawayEnd so the message
+ *           gets updated + winner announced + winner DMed + stats tracked.
+ * P0-4 FIX: /giveaway reroll persists the new winner + announce + DM + track stats.
+ * v3.9.1: no hardcoded @everyone ping (admins who want to ping use /announce).
+ * v3.9.8: validate duration, validate channel type (GuildText), wrap reroll in userLock.
  */
 
-// v3.9.38 FIX: cek scheduler in-flight — dipakai /giveaway end sebelum lock manual.
+// v3.9.38 FIX: check scheduler in-flight — used by /giveaway end before the manual lock.
 const { isGiveawayProcessing } = require('../services/schedulerTasks');
 
 const {
@@ -41,14 +41,14 @@ module.exports = async function (interaction) {
     // ====================================================
     if (interaction.commandName !== 'giveaway') return;
 
-    // v3.9.26 FIX: getSubcommand(false) — subcommand di registry required:false,
-    // jadi /giveaway polos (tanpa sub) bisa dikirim → getSubcommand() throw
-    // unhandled. Sekarang: hint penggunaan.
+    // v3.9.26 FIX: getSubcommand(false) — the subcommand in the registry is required:false,
+    // so a bare /giveaway (no sub) can be submitted → getSubcommand() throws
+    // unhandled. Now: usage hint.
     const sub = interaction.options.getSubcommand(false);
     if (!sub) {
         return interaction.reply({
             content:
-                '❌ Pakai subcommand: `/giveaway create`, `/giveaway list`, `/giveaway end`, atau `/giveaway reroll`.',
+                '❌ Use a subcommand: `/giveaway create`, `/giveaway list`, `/giveaway end`, or `/giveaway reroll`.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -62,31 +62,31 @@ module.exports = async function (interaction) {
         const durationMin = interaction.options.getInteger('duration');
         const requiredRole = interaction.options.getRole('required_role');
 
-        // v3.9.8 FIX: validate duration — sebelumnya `if (durationMin < 1)` lolos
-        // untuk undefined (undefined < 1 === false), endsAt jadi NaN, giveaway
-        // stuck active forever (NaN <= Date.now() selalu false).
+        // v3.9.8 FIX: validate duration — previously `if (durationMin < 1)` passed
+        // for undefined (undefined < 1 === false), endsAt became NaN, and the giveaway
+        // was stuck active forever (NaN <= Date.now() is always false).
         if (!durationMin || durationMin < 1) {
-            return safeEditReply(interaction, { content: '❌ Durasi wajib diisi, minimal 1 menit.' });
+            return safeEditReply(interaction, { content: '❌ Duration is required, minimum 1 minute.' });
         }
         if (durationMin > 60 * 24 * 30) {
-            // 30 hari maks
-            return safeEditReply(interaction, { content: '❌ Durasi maksimal 30 hari (43200 menit).' });
+            // 30 days max
+            return safeEditReply(interaction, { content: '❌ Maximum duration is 30 days (43200 minutes).' });
         }
         if (winners < 1 || winners > 20) {
-            return safeEditReply(interaction, { content: '❌ Jumlah pemenang harus 1-20.' });
+            return safeEditReply(interaction, { content: '❌ Number of winners must be 1-20.' });
         }
-        // v3.9.26 FIX: validasi prize SEBELUM persist. Prize sangat panjang bikin
-        // setDescription embed throw SETELAH entry tersimpan → zombie + /giveaway
-        // list bengkak. (Registry juga sudah max_length:200 — ini defense layer 2.)
+        // v3.9.26 FIX: validate prize BEFORE persisting. A very long prize made
+        // the embed setDescription throw AFTER the entry was saved → zombie entry + a
+        // bloated /giveaway list. (The registry already has max_length:200 — this is defense layer 2.)
         if (!prize || prize.length > 200) {
             return safeEditReply(interaction, {
-                content: `❌ Prize wajib diisi dan maksimal 200 karakter (dapat: ${prize ? prize.length : 0}).`
+                content: `❌ Prize is required and max 200 characters (got: ${prize ? prize.length : 0}).`
             });
         }
-        // v3.9.8 FIX: validate channel type — sebelumnya admin bisa pick voice/category
-        // channel, channel.send bisa gagal atau kirim ke text-in-voice overlay.
+        // v3.9.8 FIX: validate channel type — previously an admin could pick a voice/category
+        // channel; channel.send could fail or post to the text-in-voice overlay.
         if (!channel || channel.type !== ChannelType.GuildText) {
-            return safeEditReply(interaction, { content: '❌ Channel harus berupa text channel.' });
+            return safeEditReply(interaction, { content: '❌ Channel must be a text channel.' });
         }
 
         const endsAt = Date.now() + durationMin * 60000;
@@ -106,11 +106,11 @@ module.exports = async function (interaction) {
             .setTitle('🎉 GIVEAWAY!')
             .setDescription(
                 `🎁 **Prize:** ${prize}\n\n` +
-                    `👥 **Pemenang:** ${winners}\n` +
-                    `⏰ **Berakhir:** <t:${Math.floor(endsAt / 1000)}:R> (<t:${Math.floor(endsAt / 1000)}:F>)\n` +
-                    `🎟️ **Peserta:** 0\n` +
-                    (requiredRole ? `🔐 **Syarat:** Punya role ${requiredRole}\n` : '') +
-                    `\n👇 Klik tombol **🎉 Join** di bawah untuk ikut!`
+                    `👥 **Winners:** ${winners}\n` +
+                    `⏰ **Ends:** <t:${Math.floor(endsAt / 1000)}:R> (<t:${Math.floor(endsAt / 1000)}:F>)\n` +
+                    `🎟️ **Participants:** 0\n` +
+                    (requiredRole ? `🔐 **Requirement:** Must have the role ${requiredRole}\n` : '') +
+                    `\n👇 Click the **🎉 Join** button below to enter!`
             )
             .setColor(0xf1c40f)
             .setFooter({ text: `Host: ${interaction.user.tag} | ID: ${gw.id}` })
@@ -119,22 +119,22 @@ module.exports = async function (interaction) {
             new ButtonBuilder().setCustomId(`gw_join:${gw.id}`).setLabel('🎉 Join').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId(`gw_leave:${gw.id}`).setLabel('🚪 Leave').setStyle(ButtonStyle.Secondary)
         );
-        // v3.9.1 FIX: jangan hardcoded @everyone ping (terlalu mengganggu member).
-        // Sebelumnya setiap giveaway baru otomatis ping @everyone, yang bisa
-        // menyebabkan member mute / leave server kalau terlalu sering.
-        // Sekarang admin yang mau ping @everyone bisa pakai /announce terpisah
-        // atau edit pesan giveaway setelah dibuat.
+        // v3.9.1 FIX: no hardcoded @everyone ping (too disruptive for members).
+        // Previously every new giveaway auto-pinged @everyone, which could
+        // cause members to mute / leave the server if it happened too often.
+        // Now an admin who wants to ping @everyone can use a separate /announce
+        // or edit the giveaway message after it's created.
         const msg = await channel
-            .send({ embeds: [embed], components: [row], content: '🎉 **GIVEAWAY BARU!**' })
+            .send({ embeds: [embed], components: [row], content: '🎉 **NEW GIVEAWAY!**' })
             .catch(() => null);
         if (!msg) {
-            // P0-5 FIX: rollback giveaway entry yang sudah tersimpan kalau gagal kirim message.
-            // Sebelumnya entry tetap ada dengan messageId=null → zombie giveaway.
+            // P0-5 FIX: roll back the already-saved giveaway entry if the message fails to send.
+            // Previously the entry stayed with messageId=null → zombie giveaway.
             try {
                 removeGiveaway(gw.id);
             } catch (_) {}
             return safeEditReply(interaction, {
-                content: `❌ Gagal kirim giveaway ke ${channel}. Cek permission bot. Entry di-rollback.`
+                content: `❌ Failed to send giveaway to ${channel}. Check bot permissions. Entry rolled back.`
             });
         }
         setGiveawayMessageId(gw.id, msg.id);
@@ -142,11 +142,11 @@ module.exports = async function (interaction) {
             action: 'GIVEAWAY_CREATE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Buat giveaway **${prize}** (${winners} pemenang, ${durationMin}m) di ${channel}`,
+            details: `Create giveaway **${prize}** (${winners} winners, ${durationMin}m) in ${channel}`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ Giveaway dibuat di ${channel}!\n🆔 \`${gw.id}\`\n⏰ Berakhir <t:${Math.floor(endsAt / 1000)}:R>`
+            content: `✅ Giveaway created in ${channel}!\n🆔 \`${gw.id}\`\n⏰ Ends <t:${Math.floor(endsAt / 1000)}:R>`
         });
     }
 
@@ -155,18 +155,18 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const all = getGiveawaysByGuild(interaction.guild.id);
         if (all.length === 0) {
-            return safeEditReply(interaction, { content: '📭 Belum ada giveaway di guild ini.' });
+            return safeEditReply(interaction, { content: '📭 No giveaways in this guild yet.' });
         }
-        // v3.9.26 FIX: bound description. Giveaway ended TIDAK PERNAH dihapus dari
-        // giveaways.json — di ~25-30 giveaway, lines > 4096 → setDescription THROW
-        // → /giveaway list (satu-satunya cara lihat ID untuk /end & /reroll) mati
-        // permanen. Sekarang: 15 terbaru + ringkasan sisanya.
+        // v3.9.26 FIX: bound description. Ended giveaways are NEVER removed from
+        // giveaways.json — at ~25-30 giveaways, lines > 4096 → setDescription THROWS
+        // → /giveaway list (the only way to see IDs for /end & /reroll) goes
+        // permanently dead. Now: latest 15 + summary of the rest.
         const MAX_SHOWN = 15;
         const shown = all.slice(-MAX_SHOWN);
         const hidden = all.length - shown.length;
         const lines = shown
             .map(g => {
-                const status = g.ended ? '✅ Selesai' : g.endsAt <= Date.now() ? '⏳ Proses' : '🟢 Aktif';
+                const status = g.ended ? '✅ Done' : g.endsAt <= Date.now() ? '⏳ Processing' : '🟢 Active';
                 const winnersStr =
                     g.ended && g.winnerIds.length > 0
                         ? g.winnerIds
@@ -174,13 +174,13 @@ module.exports = async function (interaction) {
                               .map(id => `<@${id}>`)
                               .join(', ') + (g.winnerIds.length > 10 ? ` +${g.winnerIds.length - 10}` : '')
                         : '—';
-                return `• **${g.prize}** — ${status}\n  🆔 \`${g.id}\` | 👥 ${g.participantIds.length} peserta | 🏆 ${winnersStr}\n  📍 <#${g.channelId}> | ⏰ <t:${Math.floor(g.endsAt / 1000)}:R>`;
+                return `• **${g.prize}** — ${status}\n  🆔 \`${g.id}\` | 👥 ${g.participantIds.length} participants | 🏆 ${winnersStr}\n  📍 <#${g.channelId}> | ⏰ <t:${Math.floor(g.endsAt / 1000)}:R>`;
             })
             .join('\n\n');
         const embed = new EmbedBuilder()
-            .setTitle('🎉 DAFTAR GIVEAWAY')
+            .setTitle('🎉 GIVEAWAY LIST')
             .setDescription(
-                `Total **${all.length}** giveaway${hidden > 0 ? ` (menampilkan ${shown.length} terbaru — ${hidden} lama disembunyikan)` : ''}.\n\n${lines.slice(0, 3900)}`
+                `Total **${all.length}** giveaways${hidden > 0 ? ` (showing the ${shown.length} latest — ${hidden} older hidden)` : ''}.\n\n${lines.slice(0, 3900)}`
             )
             .setColor(0xf1c40f)
             .setFooter({
@@ -192,36 +192,36 @@ module.exports = async function (interaction) {
     }
 
     // --- /giveaway end ---
-    // P0-3 FIX: sebelumnya hanya pick + persist, TIDAK update message,
-    // TIDAK announce winner, TIDAK DM winner, TIDAK track stats.
-    // Sekarang: panggil processGiveawayEnd (shared dengan auto-end) supaya
-    // message diupdate + announce + DM + track stats.
+    // P0-3 FIX: previously it only picked + persisted, did NOT update the message,
+    // did NOT announce the winner, did NOT DM the winner, did NOT track stats.
+    // Now: call processGiveawayEnd (shared with auto-end) so the
+    // message is updated + announce + DM + stats tracked.
     if (sub === 'end') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const id = interaction.options.getString('id');
         const gw = getGiveaway(id);
-        if (!gw) return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` tidak ditemukan.` });
-        if (gw.ended) return safeEditReply(interaction, { content: `❌ Giveaway sudah berakhir.` });
+        if (!gw) return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` not found.` });
+        if (gw.ended) return safeEditReply(interaction, { content: `❌ This giveaway has already ended.` });
         if (gw.guildId !== interaction.guild.id)
-            return safeEditReply(interaction, { content: '❌ Giveaway ini bukan dari guild ini.' });
+            return safeEditReply(interaction, { content: '❌ This giveaway doesn\'t belong to this guild.' });
 
-        // v3.9.38 FIX: kalau scheduler LAGI memproses natural-end giveaway ini,
-        // tolak dulu — jangan pick winners manual di tengah announce scheduler
-        // (winnerIds bisa tertimpa + announce/DM dobel). Lock manual
-        // (withUserLock 'gw_end') dan lock scheduler (Set processingGiveaways)
-        // tadinya disjoint, interleaving ini gak ke-cover sama sekali.
+        // v3.9.38 FIX: if the scheduler is CURRENTLY processing this giveaway's natural end,
+        // reject first — don't manually pick winners mid-scheduler announce
+        // (winnerIds could get overwritten + double announce/DM). The manual lock
+        // (withUserLock 'gw_end') and the scheduler lock (Set processingGiveaways)
+        // were disjoint before; this interleaving wasn't covered at all.
         if (isGiveawayProcessing(id)) {
             return safeEditReply(interaction, {
                 content:
-                    '⏳ Giveaway ini sedang diproses otomatis oleh scheduler (natural end). Coba lagi beberapa detik lagi.'
+                    '⏳ This giveaway is currently being auto-processed by the scheduler (natural end). Try again in a few seconds.'
             });
         }
 
-        // v3.9.24 FIX: wrap di lock (scope per giveaway ID — pola sama dengan reroll).
-        // Sebelumnya /giveaway end TIDAK di-lock: double-invoke (spam enter /
-        // interaction retry) bisa double-pick winners + double-announce + double-DM.
+        // v3.9.24 FIX: wrap in lock (scoped per giveaway ID — same pattern as reroll).
+        // Previously /giveaway end was NOT locked: a double-invoke (enter spam /
+        // interaction retry) could double-pick winners + double-announce + double-DM.
         const lockResult = await withUserLock('gw_end', id, async () => {
-            // Refresh dari disk di dalam lock — cek state terbaru
+            // Refresh from disk inside the lock — check the latest state
             const gwFresh = getGiveaway(id);
             if (!gwFresh) return { type: 'notfound' };
             if (gwFresh.ended) return { type: 'ended' };
@@ -230,10 +230,10 @@ module.exports = async function (interaction) {
             const winnerIds = pickWinners(gwFresh.participantIds, gwFresh.winnersCount);
             endGiveaway(id, winnerIds);
 
-            // Re-fetch gw yang sudah di-update (winnerIds sudah persist)
+            // Re-fetch the updated gw (winnerIds already persisted)
             const updatedGw = getGiveaway(id);
 
-            // Panggil shared processGiveawayEnd dengan skipPick=true supaya tidak pick 2x
+            // Call the shared processGiveawayEnd with skipPick=true so it doesn't pick 2x
             if (typeof interaction.client.processGiveawayEnd === 'function') {
                 await interaction.client.processGiveawayEnd(interaction.client, updatedGw, { skipPick: true });
             }
@@ -241,14 +241,14 @@ module.exports = async function (interaction) {
         });
 
         if (lockResult === null) {
-            // Lock gagal acquire — end lain untuk giveaway yang sama sedang jalan
-            return safeEditReply(interaction, { content: '⏳ End giveaway sedang diproses — coba lagi sebentar.' });
+            // Lock acquire failed — another end for the same giveaway is running
+            return safeEditReply(interaction, { content: '⏳ Giveaway end is in progress — try again shortly.' });
         }
         if (lockResult.type === 'notfound') {
-            return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` tidak ditemukan.` });
+            return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` not found.` });
         }
         if (lockResult.type === 'ended') {
-            return safeEditReply(interaction, { content: `❌ Giveaway sudah berakhir.` });
+            return safeEditReply(interaction, { content: `❌ This giveaway has already ended.` });
         }
 
         const winnerIds = lockResult.winnerIds;
@@ -258,60 +258,60 @@ module.exports = async function (interaction) {
             action: 'GIVEAWAY_END',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `End giveaway \`${id}\` (${gwEnded.prize}). Winners: ${winnerIds.length > 0 ? winnerIds.map(w => `<@${w}>`).join(', ') : 'tidak ada peserta'}`,
+            details: `End giveaway \`${id}\` (${gwEnded.prize}). Winners: ${winnerIds.length > 0 ? winnerIds.map(w => `<@${w}>`).join(', ') : 'no participants'}`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ Giveaway **${gwEnded.prize}** diakhiri!\n🏆 Winners: ${winnerIds.length > 0 ? winnerIds.map(w => `<@${w}>`).join(', ') : '_(tidak ada peserta)_'}\n\n📢 Pesan giveaway sudah diupdate + winner sudah di-DM + diumumkan ke channel.`
+            content: `✅ Giveaway **${gwEnded.prize}** ended!\n🏆 Winners: ${winnerIds.length > 0 ? winnerIds.map(w => `<@${w}>`).join(', ') : '_(no participants)_'}\n\n📢 The giveaway message has been updated + winners have been DMed + announced in the channel.`
         });
     }
 
     // --- /giveaway reroll ---
-    // P0-4 FIX: sebelumnya hanya return winnerId ke admin (ephemeral).
-    // Sekarang: persist winner baru ke gw.winnerIds, announce ke channel,
-    // DM winner, track stats. Juga exclude winner yang sudah ada supaya
-    // tidak pick orang yang sama 2x.
+    // P0-4 FIX: previously it only returned the winnerId to the admin (ephemeral).
+    // Now: persist the new winner to gw.winnerIds, announce in the channel,
+    // DM the winner, track stats. Also excludes existing winners so
+    // the same person isn't picked 2x.
     if (sub === 'reroll') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const id = interaction.options.getString('id');
         const gw = getGiveaway(id);
-        if (!gw) return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` tidak ditemukan.` });
-        // v3.9.26: guard guild (konsisten dengan /end — sebelumnya reroll bisa
-        // dijalankan dari guild lain untuk giveaway guild ini).
+        if (!gw) return safeEditReply(interaction, { content: `❌ Giveaway \`${id}\` not found.` });
+        // v3.9.26: guard guild (consistent with /end — previously reroll could
+        // be run from another guild for this guild's giveaway).
         if (gw.guildId !== interaction.guild.id) {
-            return safeEditReply(interaction, { content: '❌ Giveaway ini bukan dari guild ini.' });
+            return safeEditReply(interaction, { content: '❌ This giveaway doesn\'t belong to this guild.' });
         }
         if (!gw.ended)
             return safeEditReply(interaction, {
-                content: '❌ Giveaway belum berakhir. End dulu pakai `/giveaway end`.'
+                content: '❌ This giveaway hasn\'t ended yet. End it first with `/giveaway end`.'
             });
 
-        // v3.9.8 FIX: wrap reroll+announce di userLock. Sebelumnya, kalau admin
-        // double-click tombol reroll (atau interaction retry karena network blip),
-        // 2 handler jalan paralel → 2x announce, 2x DM winner, 2x winnerIds entry
-        // (meski winnerIds akhirnya numpuk, user lihat 2 "you won" message).
-        // Lock di-scope per giveaway ID supaya admin berbeda tidak saling block
-        // untuk giveaway berbeda, tapi 2 click ke giveaway yang sama di-serialize.
+        // v3.9.8 FIX: wrap reroll+announce in userLock. Previously, if the admin
+        // double-clicked the reroll button (or an interaction retry due to a network blip),
+        // 2 handlers ran in parallel → 2x announce, 2x winner DM, 2x winnerIds entry
+        // (even though winnerIds eventually piled up, users saw 2 "you won" messages).
+        // The lock is scoped per giveaway ID so different admins don't block each other
+        // on different giveaways, but 2 clicks on the same giveaway are serialized.
         const result = await withUserLock('gw_reroll', gw.id, async () => rerollGiveaway(id));
         if (!result)
             return safeEditReply(interaction, {
-                content: `❌ Giveaway \`${id}\` tidak ditemukan atau belum berakhir. (Atau reroll lain sedang jalan — coba lagi sebentar.)`
+                content: `❌ Giveaway \`${id}\` not found or hasn't ended yet. (Or another reroll is running — try again shortly.)`
             });
-        if (!result.winnerId) return safeEditReply(interaction, { content: '❌ Tidak ada peserta untuk di-reroll.' });
+        if (!result.winnerId) return safeEditReply(interaction, { content: '❌ No participants to reroll.' });
 
-        // Announce winner baru ke channel + DM + track stats
-        // v3.9.8: wrap di try/catch supaya announce failure tidak bikin admin
-        // retry (yang akan pick winner kedua kalinya). Reroll sudah persist winner,
-        // announce gagal tidak perlu abort.
+        // Announce the new winner in the channel + DM + track stats
+        // v3.9.8: wrap in try/catch so an announce failure doesn't make the admin
+        // retry (which would pick a second winner). The reroll already persisted the winner;
+        // a failed announce doesn't need to abort.
         if (typeof interaction.client.announceRerollWinner === 'function') {
             try {
                 await interaction.client.announceRerollWinner(interaction.client, result.gw, result.winnerId);
             } catch (annErr) {
-                console.warn(`⚠️ Reroll announce gagal (winner tetap tersimpan): ${annErr.message}`);
+                console.warn(`⚠️ Reroll announce failed (winner is still saved): ${annErr.message}`);
             }
         }
 
-        const reuseNote = result.reused ? ' _(semua peserta sudah pernah menang, fallback pick random)_' : '';
+        const reuseNote = result.reused ? ' _(all participants have already won, fell back to a random pick)_' : '';
         await logAudit(interaction.client, {
             action: 'GIVEAWAY_REROLL',
             actorId: interaction.user.id,
@@ -320,7 +320,7 @@ module.exports = async function (interaction) {
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `🎲 **Reroll!** Winner baru: <@${result.winnerId}>${reuseNote}\n\n📢 Winner sudah di-DM + diumumkan ke channel giveaway.`
+            content: `🎲 **Reroll!** New winner: <@${result.winnerId}>${reuseNote}\n\n📢 The winner has been DMed + announced in the giveaway channel.`
         });
     }
 };

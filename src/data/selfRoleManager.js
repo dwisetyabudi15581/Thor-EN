@@ -12,27 +12,27 @@ const selfRolesPath = path.join(__dirname, '..', '..', 'data', 'selfRoles.json')
  *     "guildId": "...",
  *     "channelId": "...",
  *     "messageId": "...",
- *     "title": "🎭 Pilih Role Kamu",
- *     "description": "Klik tombol untuk ambil / lepas role.",
- *     "type": "button",           // "button" atau "select"
- *     "exclusive": false,         // true = hanya boleh 1 role pada satu waktu
+ *     "title": "🎭 Pick Your Role",
+ *     "description": "Click a button to get / remove a role.",
+ *     "type": "button",           // "button" or "select"
+ *     "exclusive": false,         // true = only 1 role at a time
  *     "roles": [
  *       {
  *         "roleId": "...",
  *         "label": "Notif",
  *         "emoji": "🔔",
- *         "description": "Dapatkan ping untuk pengumuman"
+ *         "description": "Get pinged for announcements"
  *       }
  *     ],
  *     "createdAt": 1735000000000
  *   }
  * ]
  *
- * === SELF-ROLE FLEKSIBEL ===
- * - Admin bisa bikin banyak panel (tiap channel bisa beda panel)
- * - Tipe: button (≤25 role, 1 row = 5 button) atau select menu (≤25 role)
- * - Mode: multi (boleh ambil banyak) atau exclusive (cuma 1 role pada satu waktu)
- * - Member klik tombol / pilih dropdown → toggle role
+ * === FLEXIBLE SELF-ROLES ===
+ * - Admins can create multiple panels (each channel can have a different panel)
+ * - Type: button (≤25 roles, 1 row = 5 buttons) or select menu (≤25 roles)
+ * - Mode: multi (can take many) or exclusive (only 1 role at a time)
+ * - Member clicks a button / picks from the dropdown → toggles the role
  */
 
 function loadPanels() {
@@ -40,8 +40,8 @@ function loadPanels() {
         if (!fs.existsSync(selfRolesPath)) return [];
         return JSON.parse(fs.readFileSync(selfRolesPath, 'utf8'));
     } catch (err) {
-        console.error('Error load selfRoles.json:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.error('Error loading selfRoles.json:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(selfRolesPath);
         return [];
     }
@@ -53,14 +53,15 @@ function savePanels(list) {
 }
 
 function genId() {
-    // v3.9.8 FIX: tambah Date.now() untuk kurangi collision risk.
-    // Sebelumnya cuma 6 char base36 (~31 bit entropy → ~46k panels untuk 50% collision chance).
-    // Sekarang: timestamp + 6 char random, aman untuk puluhan ribu panel.
+    // v3.9.8 FIX: add Date.now() to reduce collision risk.
+    // Previously only 6 base36 chars (~31 bits of entropy → ~46k panels for a
+    // 50% collision chance). Now: timestamp + 6 random chars, safe for tens of
+    // thousands of panels.
     return `sr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 /**
- * Buat panel baru (belum ada roles, akan diisi via addRoleToPanel).
+ * Create a new panel (no roles yet, they're added via addRoleToPanel).
  */
 function createPanel(data) {
     const list = loadPanels();
@@ -71,7 +72,7 @@ function createPanel(data) {
         channelId: data.channelId,
         messageId: data.messageId || null,
         title: data.title || '🎭 Self Role',
-        description: data.description || 'Klik untuk ambil / lepas role.',
+        description: data.description || 'Click to get / remove a role.',
         type: data.type === 'select' ? 'select' : 'button',
         exclusive: !!data.exclusive,
         roles: [],
@@ -83,7 +84,7 @@ function createPanel(data) {
 }
 
 /**
- * Update messageId (setelah panel message dikirim ke Discord).
+ * Update messageId (after the panel message is sent to Discord).
  */
 function setMessageId(panelId, messageId) {
     const list = loadPanels();
@@ -95,22 +96,22 @@ function setMessageId(panelId, messageId) {
 }
 
 /**
- * Tambah role ke panel.
- * - Maks 25 role per panel (batas Discord).
- * - roleId harus unik per panel.
+ * Add a role to a panel.
+ * - Max 25 roles per panel (Discord limit).
+ * - roleId must be unique per panel.
  *
  * @returns {{ ok: boolean, panel?: Object, error?: string }}
  */
 function addRoleToPanel(panelId, roleData) {
     const list = loadPanels();
     const panel = list.find(p => p.id === panelId);
-    if (!panel) return { ok: false, error: 'Panel tidak ditemukan.' };
+    if (!panel) return { ok: false, error: 'Panel not found.' };
 
     if (panel.roles.length >= 25) {
-        return { ok: false, error: 'Maksimal 25 role per panel (batas Discord).' };
+        return { ok: false, error: 'Maximum 25 roles per panel (Discord limit).' };
     }
     if (panel.roles.some(r => r.roleId === roleData.roleId)) {
-        return { ok: false, error: 'Role sudah ada di panel ini.' };
+        return { ok: false, error: 'This role is already on the panel.' };
     }
 
     panel.roles.push({
@@ -120,8 +121,8 @@ function addRoleToPanel(panelId, roleData) {
         description: (roleData.description || '').slice(0, 100),
         // v3.9.11 Phase 3: per-role button style customization.
         style: ['Primary', 'Secondary', 'Success', 'Danger'].includes(roleData.style) ? roleData.style : 'Secondary',
-        // v3.9.11 Phase 3: conditional role — hanya muncul kalau user sudah punya role ini.
-        // Kalau null/undefined, role tersedia untuk semua user.
+        // v3.9.11 Phase 3: conditional role — only shows if the user already
+        // has this role. If null/undefined, the role is available to everyone.
         requiresRoleId: roleData.requiresRoleId || null
     });
     savePanels(list);
@@ -129,24 +130,24 @@ function addRoleToPanel(panelId, roleData) {
 }
 
 /**
- * Hapus role dari panel.
+ * Remove a role from a panel.
  */
 function removeRoleFromPanel(panelId, roleId) {
     const list = loadPanels();
     const panel = list.find(p => p.id === panelId);
-    if (!panel) return { ok: false, error: 'Panel tidak ditemukan.' };
+    if (!panel) return { ok: false, error: 'Panel not found.' };
 
     const before = panel.roles.length;
     panel.roles = panel.roles.filter(r => r.roleId !== roleId);
     if (panel.roles.length === before) {
-        return { ok: false, error: 'Role tidak ada di panel ini.' };
+        return { ok: false, error: 'This role is not on the panel.' };
     }
     savePanels(list);
     return { ok: true, panel };
 }
 
 /**
- * Ambil panel berdasarkan ID.
+ * Get a panel by ID.
  */
 function getPanel(panelId) {
     const list = loadPanels();
@@ -154,7 +155,7 @@ function getPanel(panelId) {
 }
 
 /**
- * Ambil semua panel di guild tertentu.
+ * Get all panels in a given guild.
  */
 function getPanelsByGuild(guildId) {
     const list = loadPanels();
@@ -162,7 +163,7 @@ function getPanelsByGuild(guildId) {
 }
 
 /**
- * Ambil panel berdasarkan messageId (untuk handle button/select interaction).
+ * Get a panel by messageId (for handling button/select interactions).
  */
 function getPanelByMessage(messageId) {
     const list = loadPanels();
@@ -170,7 +171,7 @@ function getPanelByMessage(messageId) {
 }
 
 /**
- * Update title/description/exclusive panel.
+ * Update a panel's title/description/exclusive.
  */
 function updatePanel(panelId, updates) {
     const list = loadPanels();
@@ -184,7 +185,7 @@ function updatePanel(panelId, updates) {
 }
 
 /**
- * Hapus panel.
+ * Delete a panel.
  */
 function deletePanel(panelId) {
     const list = loadPanels();

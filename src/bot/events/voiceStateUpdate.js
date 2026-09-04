@@ -1,26 +1,26 @@
 /**
- * VoiceStateUpdate handler — manage temp voice channels.
+ * VoiceStateUpdate handler — manages temp voice channels.
  *
  * Logic:
- *   1. Member join trigger channel "🔊 Buat Voice" → bikin voice baru, pindahkan member.
- *   2. Member join/leave channel temp voice → refresh panel global.
- *   3. Member leave channel temp voice:
- *      a. Kalau owner leave & masih ada member lain → auto-transfer ownership.
- *      b. Kalau channel kosong → hapus + refresh panel.
+ *   1. Member joins the "🔊 Create Voice" trigger channel → create a new voice channel, move the member there.
+ *   2. Member joins/leaves a temp voice channel → refresh the global panel.
+ *   3. Member leaves a temp voice channel:
+ *      a. If the owner leaves & other members remain → auto-transfer ownership.
+ *      b. If the channel is empty → delete it + refresh the panel.
  *
  * v3.9.8 FIX:
- *   - Skip bot account (sebelumnya music bot trigger orphan voice channel).
- *   - GRANT owner baru DULU, baru REVOKE owner lama (anti ownerless channel).
- *   - registerChannel di-wrap try/catch (anti orphan Discord channel on file write fail).
- *   - setChannel failure → cleanup orphan channel.
+ *   - Skip bot accounts (previously a music bot could trigger orphan voice channels).
+ *   - GRANT the new owner FIRST, then REVOKE the old owner (prevents ownerless channels).
+ *   - registerChannel wrapped in try/catch (prevents orphan Discord channels on file write failure).
+ *   - setChannel failure → clean up the orphan channel.
  *
  * v3.9.38 FIX:
- *   - Event dari BOT tidak lagi di-skip total. Sebelumnya early-return di awal
- *     bikin channel temp voice yang kosong TIDAK pernah di-cleanup kalau music
- *     bot keluar TERAKHIR (owner sudah pergi duluan, transfer di-skip karena
- *     member tersisa cuma bot) → channel orphan + entry menempel selamanya di
- *     tempVoice.json. Path bot: skip create/transfer/panel, tapi tetap jalankan
- *     cleanup channel kosong untuk oldChannel (lihat handleBotLeaveTempVoice).
+ *   - Events from BOTS are no longer skipped entirely. Previously, the early return
+ *     at the top meant an empty temp voice channel was NEVER cleaned up when a
+ *     music bot left LAST (the owner had already gone, the transfer was skipped
+ *     because the only remaining member was a bot) → orphan channel + an entry
+ *     stuck forever in tempVoice.json. Bot path: skip create/transfer/panel, but
+ *     still run the empty-channel cleanup for oldChannel (see handleBotLeaveTempVoice).
  */
 
 const { Events, PermissionFlagsBits, ChannelType } = require('discord.js');
@@ -29,18 +29,18 @@ const tempVoiceManager = require('../../data/tempVoiceManager');
 async function onVoiceStateUpdate(oldState, newState) {
     try {
         if (!newState.guild) return;
-        // v3.9.26 (single-guild hardening): abaikan voice event dari guild lain —
-        // tanpa ini, member guild kedua yang join trigger channel akan bikin temp
-        // voice ter-register ke tempVoice.json guild kedua (data nyasar).
+        // v3.9.26 (single-guild hardening): ignore voice events from other guilds —
+        // without this, a member of a second guild joining the trigger channel would
+        // register a temp voice into the second guild's tempVoice.json (stray data).
         if (process.env.GUILD_ID && newState.guild.id !== process.env.GUILD_ID) return;
 
         const guildId = newState.guild.id;
         const userId = newState.id;
 
-        // v3.9.38 FIX: event BOT tidak lagi di-skip mentah-mentah. Bot skip
-        // create/transfer/panel logic, TAPI cleanup channel kosong tetap jalan
-        // untuk oldChannel — music bot yang keluar terakhir tidak lagi meninggalkan
-        // channel orphan yang terdaftar selamanya di tempVoice.json.
+        // v3.9.38 FIX: BOT events are no longer bluntly skipped. Bots skip the
+        // create/transfer/panel logic, BUT the empty-channel cleanup still runs
+        // for oldChannel — a music bot leaving last no longer leaves behind an
+        // orphan channel registered forever in tempVoice.json.
         if (newState.member?.user?.bot) {
             await handleBotLeaveTempVoice(oldState, newState, guildId);
             return;
@@ -52,13 +52,13 @@ async function onVoiceStateUpdate(oldState, newState) {
         const oldChannelId = oldState.channelId;
         const newChannelId = newState.channelId;
 
-        // CASE 1: Member join trigger channel → bikin voice baru
+        // CASE 1: Member joins the trigger channel → create a new voice channel
         if (newChannelId === creatorChannelId && oldChannelId !== creatorChannelId) {
             await handleCreateTempVoice(newState);
             return;
         }
 
-        // CASE 2: Member join/leave channel temp voice → refresh panel global
+        // CASE 2: Member joins/leaves a temp voice channel → refresh the global panel
         if (oldChannelId !== newChannelId) {
             const involvedTempVoice =
                 (oldChannelId && tempVoiceManager.getChannel(guildId, oldChannelId)) ||
@@ -68,7 +68,7 @@ async function onVoiceStateUpdate(oldState, newState) {
             }
         }
 
-        // CASE 3: Member leave channel temp voice
+        // CASE 3: Member leaves a temp voice channel
         if (oldChannelId && oldChannelId !== newChannelId) {
             const channelInfo = tempVoiceManager.getChannel(guildId, oldChannelId);
             if (channelInfo) {
@@ -85,9 +85,9 @@ async function onVoiceStateUpdate(oldState, newState) {
                     );
                 }
 
-                // v3.9.38 FIX: blok "hapus channel kosong" di-extract ke
-                // cleanupEmptyTempChannel supaya bisa dipakai juga oleh path BOT
-                // (handleBotLeaveTempVoice) — logika identik dengan kode lama.
+                // v3.9.38 FIX: the "delete empty channel" block was extracted
+                // into cleanupEmptyTempChannel so it can also be used by the BOT
+                // path (handleBotLeaveTempVoice) — identical logic to the old code.
                 await cleanupEmptyTempChannel(newState.guild, guildId, oldChannelId);
                 await refreshGlobalControlPanel(newState.client, guildId);
             }
@@ -98,12 +98,12 @@ async function onVoiceStateUpdate(oldState, newState) {
 }
 
 /**
- * v3.9.38 FIX: path khusus event BOT (mis. music bot disconnect/leave).
- * Mirror dari CASE 3 path human, TANPA transfer ownership (bot tidak pernah
- * jadi owner): kalau oldChannel terdaftar di tempVoiceManager dan sekarang
- * benar-benar kosong → hapus channel + unregister + refresh panel.
- * Skenario yang difix: owner keluar duluan (transfer di-skip — tinggal bot),
- * music bot keluar terakhir → channel kosong tidak pernah kehapus.
+ * v3.9.38 FIX: dedicated path for BOT events (e.g. music bot disconnect/leave).
+ * Mirror of the human CASE 3 path, WITHOUT ownership transfer (bots never become
+ * the owner): if oldChannel is registered in tempVoiceManager and is now
+ * truly empty → delete the channel + unregister + refresh the panel.
+ * Fixed scenario: the owner leaves first (transfer skipped — only a bot left),
+ * the music bot leaves last → the empty channel never gets deleted.
  */
 async function handleBotLeaveTempVoice(oldState, newState, guildId) {
     const oldChannelId = oldState.channelId;
@@ -115,42 +115,42 @@ async function handleBotLeaveTempVoice(oldState, newState, guildId) {
 }
 
 /**
- * v3.9.38 FIX: extract blok "hapus channel temp voice kalau kosong" dari CASE 3
- * jadi helper — dipakai path human DAN path BOT (handleBotLeaveTempVoice).
- * Semantik identik dengan kode lama: channel harus ada di cache guild &
- * members.size === 0. Error handling Discord-code aware tetap sama.
+ * v3.9.38 FIX: extracted the "delete a temp voice channel if empty" block from CASE 3
+ * into a helper — used by both the human path AND the BOT path (handleBotLeaveTempVoice).
+ * Semantics identical to the old code: the channel must exist in the guild cache &
+ * members.size === 0. Discord-code-aware error handling stays the same.
  */
 async function cleanupEmptyTempChannel(guild, guildId, channelId) {
     const oldChannel = guild.channels.cache.get(channelId);
     if (!oldChannel || oldChannel.members.size !== 0) return;
     try {
-        await oldChannel.delete('Temp voice kosong');
+        await oldChannel.delete('Temp voice empty');
         tempVoiceManager.unregisterChannel(guildId, channelId);
-        console.log(`🎤 Temp voice ${channelId} dihapus (kosong).`);
+        console.log(`🎤 Temp voice ${channelId} deleted (empty).`);
     } catch (err) {
-        // Bedain Discord error (numeric code) vs non-Discord error.
-        // err.code undefined = non-Discord error (TypeError, RangeError, dll)
+        // Distinguish Discord errors (numeric code) from non-Discord errors.
+        // err.code undefined = non-Discord error (TypeError, RangeError, etc)
         if (err.code === 10003) {
-            // Unknown Channel — udah ke-delete sebelumnya, aman buat unregister
+            // Unknown Channel — already deleted previously, safe to unregister
             tempVoiceManager.unregisterChannel(guildId, channelId);
         } else if (typeof err.code === 'number') {
-            // Discord error lain (50013 Missing Permissions, 50001 Missing Access, dst).
-            // Channel masih ada di Discord tapi bot gak bisa hapus. JANGAN unregister —
-            // nanti bisa di-retry. Log warning biar admin tau ada channel stuck.
+            // Other Discord error (50013 Missing Permissions, 50001 Missing Access, etc).
+            // The channel still exists on Discord but the bot can't delete it. Do NOT unregister —
+            // it can be retried later. Log a warning so the admin knows there's a stuck channel.
             console.warn(
-                `⚠️ Gagal hapus temp voice ${channelId} (Discord code ${err.code}). Channel masih ada, bot gak punya permission. Entry tetap dipertahankan buat retry.`
+                `⚠️ Failed to delete temp voice ${channelId} (Discord code ${err.code}). Channel still exists, the bot lacks permission. Entry kept for retry.`
             );
         } else {
-            console.error(`❌ Non-Discord error saat hapus temp voice ${channelId}:`, err);
-            // Untuk non-Discord error, uninstall juga biar gak stuck loop
+            console.error(`❌ Non-Discord error while deleting temp voice ${channelId}:`, err);
+            // For non-Discord errors, unregister too so it doesn't get stuck in a loop
             tempVoiceManager.unregisterChannel(guildId, channelId);
         }
     }
 }
 
 /**
- * Auto-transfer ownership saat owner leave voice channel.
- * Pilih member dengan joinedAt paling lama (paling senior).
+ * Auto-transfer ownership when the owner leaves the voice channel.
+ * Picks the member with the earliest joinedAt (most senior).
  */
 async function handleAutoTransferOwnership(client, guildId, channelId, channelInfo, voiceChannel, oldOwnerId) {
     try {
@@ -165,7 +165,7 @@ async function handleAutoTransferOwnership(client, guildId, channelId, channelIn
         const newOwner = sorted[0];
         if (!newOwner) return;
 
-        // v3.9.8: GRANT owner baru DULU, baru REVOKE owner lama.
+        // v3.9.8: GRANT the new owner FIRST, then REVOKE the old owner.
         try {
             await voiceChannel.permissionOverwrites.edit(newOwner.id, {
                 [PermissionFlagsBits.ViewChannel]: true,
@@ -182,7 +182,7 @@ async function handleAutoTransferOwnership(client, guildId, channelId, channelIn
                 [PermissionFlagsBits.DeafenMembers]: false
             });
         } catch (err) {
-            console.warn(`⚠️ Gagal update permission saat auto-transfer: ${err.message}`);
+            console.warn(`⚠️ Failed to update permissions during auto-transfer: ${err.message}`);
             return;
         }
 
@@ -190,9 +190,9 @@ async function handleAutoTransferOwnership(client, guildId, channelId, channelIn
 
         try {
             await newOwner.send(
-                `🎁 **Kamu sekarang owner voice channel: ${voiceChannel.name}**\n\n` +
-                    `Ownership otomatis dipindahkan ke kamu karena owner sebelumnya (<@${oldOwnerId}>) keluar dari voice.\n\n` +
-                    `🎛️ Kamu bisa kontrol channel ini lewat panel global temp voice di server.`
+                `🎁 **You are now the owner of voice channel: ${voiceChannel.name}**\n\n` +
+                    `Ownership was automatically transferred to you because the previous owner (<@${oldOwnerId}>) left the voice channel.\n\n` +
+                    `🎛️ You can control this channel via the global temp voice panel in the server.`
             );
         } catch (_) {}
 
@@ -205,13 +205,13 @@ async function handleAutoTransferOwnership(client, guildId, channelId, channelIn
 }
 
 /**
- * Handle member join trigger channel → bikin voice baru.
+ * Handle a member joining the trigger channel → create a new voice channel.
  *
- * v3.9.17 FIX: tambah per-user lock. Sebelumnya, network jitter/Gateway retry
- * bisa fire 2 voiceStateUpdate event untuk user yang sama dalam <100ms. Kedua
- * event lolos `findChannelByOwner` (return null karena channel belum terdaftar)
- * → kedua-nya `guild.channels.create` → 2 channel terbuat, 1 jadi orphan.
- * Sekarang: lock per-(guildId,userId) di awal, release di finally.
+ * v3.9.17 FIX: added a per-user lock. Previously, network jitter/Gateway retry
+ * could fire 2 voiceStateUpdate events for the same user within <100ms. Both
+ * events passed `findChannelByOwner` (returns null because the channel isn't registered yet)
+ * → both called `guild.channels.create` → 2 channels created, 1 becoming an orphan.
+ * Now: lock per-(guildId,userId) at the start, release in finally.
  */
 const tempVoiceCreateLocks = new Map();
 
@@ -220,7 +220,7 @@ async function handleCreateTempVoice(newState) {
     const member = newState.member;
     const lockKey = `${guild.id}:${member.id}`;
 
-    // v3.9.17: cek lock dulu — kalau sedang diproses, skip.
+    // v3.9.17: check the lock first — if it's currently being processed, skip.
     if (tempVoiceCreateLocks.has(lockKey)) {
         return;
     }
@@ -229,7 +229,7 @@ async function handleCreateTempVoice(newState) {
     try {
         const config = tempVoiceManager.getGuildConfig(guild.id);
         if (!config?.categoryId) {
-            console.warn('⚠️ Temp voice config tidak ada categoryId.');
+            console.warn('⚠️ Temp voice config has no categoryId.');
             return;
         }
 
@@ -243,7 +243,7 @@ async function handleCreateTempVoice(newState) {
                 } catch (_) {}
             } else {
                 tempVoiceManager.unregisterChannel(guild.id, existingChannelId);
-                console.log(`🧹 Temp voice orphan ${existingChannelId} dihapus (channel tidak ada).`);
+                console.log(`🧹 Temp voice orphan ${existingChannelId} removed (channel no longer exists).`);
             }
         }
 
@@ -273,7 +273,7 @@ async function handleCreateTempVoice(newState) {
             tempVoiceManager.registerChannel(guild.id, newChannel.id, member.id, member.user.tag, newChannel.name);
         } catch (regErr) {
             console.error(
-                `❌ Gagal register temp voice ${newChannel.id}, hapus channel untuk cegah orphan:`,
+                `❌ Failed to register temp voice ${newChannel.id}, deleting the channel to prevent an orphan:`,
                 regErr.message
             );
             try {
@@ -285,7 +285,7 @@ async function handleCreateTempVoice(newState) {
         try {
             await member.voice.setChannel(newChannel.id);
         } catch (err) {
-            console.warn(`⚠️ Gagal pindahkan member ke channel baru: ${err.message}. Cleanup orphan channel.`);
+            console.warn(`⚠️ Failed to move member to the new channel: ${err.message}. Cleaning up orphan channel.`);
             try {
                 await newChannel.delete('SetChannel failed — cleanup orphan');
             } catch (_) {}
@@ -296,17 +296,17 @@ async function handleCreateTempVoice(newState) {
         }
 
         await refreshGlobalControlPanel(newState.client, guild.id);
-        console.log(`🎤 Temp voice dibuat: ${newChannel.name} (${newChannel.id}) oleh ${member.user.tag}`);
+        console.log(`🎤 Temp voice created: ${newChannel.name} (${newChannel.id}) by ${member.user.tag}`);
     } catch (err) {
         console.error('Error create temp voice:', err);
     } finally {
-        // v3.9.17: pastikan lock dilepas walau ada error.
+        // v3.9.17: make sure the lock is released even on error.
         tempVoiceCreateLocks.delete(lockKey);
     }
 }
 
 /**
- * Refresh panel kontrol global di control channel.
+ * Refresh the global control panel in the control channel.
  */
 async function refreshGlobalControlPanel(client, guildId) {
     try {
@@ -322,7 +322,7 @@ async function refreshGlobalControlPanel(client, guildId) {
         const panelMsg = await controlChannel.messages.fetch(config.controlMessageId).catch(() => null);
         if (!panelMsg) {
             console.warn(
-                `⚠️ Panel global temp voice untuk guild ${guildId} tidak ditemukan. Jalankan /setup-tempvoice lagi.`
+                `⚠️ Global temp voice panel for guild ${guildId} not found. Run /setup-tempvoice again.`
             );
             return;
         }
@@ -342,16 +342,16 @@ async function refreshGlobalControlPanel(client, guildId) {
         const { embed, components } = buildGlobalControlPanel({ activeOwners, guildName: guild.name });
 
         await panelMsg.edit({ embeds: [embed], components }).catch(err => {
-            console.warn(`⚠️ Gagal refresh panel global temp voice: ${err.message}`);
+            console.warn(`⚠️ Failed to refresh the global temp voice panel: ${err.message}`);
         });
     } catch (err) {
-        console.warn('Gagal refresh panel global:', err.message);
+        console.warn('Failed to refresh global panel:', err.message);
     }
 }
 
 module.exports = {
     name: Events.VoiceStateUpdate,
     execute: onVoiceStateUpdate,
-    // Export refreshGlobalControlPanel supaya interactionHandler bisa panggil.
+    // Export refreshGlobalControlPanel so interactionHandler can call it.
     refreshGlobalControlPanel
 };

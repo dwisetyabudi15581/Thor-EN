@@ -3,12 +3,12 @@
  * Slash commands: /set-verify-button, /setup-ticket-panel
  *
  * v3.9.11 Phase 1: verify button customization
- * v3.9.11 Phase 3: multi-panel ticket + transcript channel (command-nya sejak
- *          v3.9.30 digabung ke /set-channel tipe:transcript — domain config)
+ * v3.9.11 Phase 3: multi-panel ticket + transcript channel (the command was
+ *          merged into /set-channel tipe:transcript as of v3.9.30 — config domain)
  * v3.9.14: persistent panel storage (panels.json) + full customization per panel
  *          (title, body, color, image, thumbnail, footer, layout, channel target).
- *          New shared builder: buildTicketPanel(panel, ctx) supaya
- *          /setup-ticket-panel & /refresh-panel bisa reuse code yang sama.
+ *          New shared builder: buildTicketPanel(panel, ctx) so that
+ *          /setup-ticket-panel & /refresh-panel can reuse the same code.
  */
 
 const {
@@ -27,9 +27,9 @@ const {
 
 const { fillTemplate } = require('../data/configManager');
 const { upsertPanel } = require('../data/panelManager');
-// v3.9.17: shared parseColor + parseColorOrError supaya konsisten di seluruh codebase.
+// v3.9.17: shared parseColor + parseColorOrError for consistency across the whole codebase.
 const { parseColorOrError } = require('../infra/colors');
-// v3.9.24: normalisasi \n literal → newline asli (input command di PC tidak bisa Enter).
+// v3.9.24: normalize literal \n → real newline (command input on PC can't press Enter).
 const { normalizeNewlines, isValidEmoji } = require('../infra/text');
 
 const VALID_STYLES = ['Primary', 'Secondary', 'Success', 'Danger'];
@@ -45,11 +45,11 @@ const MAX_BUTTONS_PER_ROW = 5;
 const MAX_ROWS = 5;
 
 /**
- * v3.9.17: parseColor local ini di-keep untuk backward compat (dipakai di
- * panels-mgmt.js dan tests). Behavior tetap sama: THROW kalau invalid.
- * Tapi sekarang delegate ke shared `parseColorOrError` di infra/colors.js
- * supaya logic tidak duplikat. Caller baru sebaiknya pakai `parseColorOrError`
- * langsung dari `infra/colors.js`.
+ * v3.9.17: this local parseColor is kept for backward compat (used in
+ * panels-mgmt.js and tests). Behavior stays the same: THROW when invalid.
+ * But it now delegates to the shared `parseColorOrError` in infra/colors.js
+ * so the logic isn't duplicated. New callers should use `parseColorOrError`
+ * directly from `infra/colors.js`.
  *
  * @deprecated Use `parseColorOrError` from `infra/colors.js` instead.
  */
@@ -62,7 +62,7 @@ function parseColor(input) {
 }
 
 /**
- * Validate URL format (http/https). Return null kalau invalid.
+ * Validate URL format (http/https). Returns null if invalid.
  */
 function validateUrl(input) {
     if (input === null || input === undefined || input === '') return null;
@@ -77,25 +77,25 @@ function validateUrl(input) {
 }
 
 /**
- * v3.9.29: Safety-net — deteksi kategori di panel yang TIDAK punya produk.
+ * v3.9.29: Safety net — detect categories in the panel that DON'T have products.
  *
- * Kenapa penting: kategori tanpa produk → klik tombolnya membuka tiket
- * BANTUAN langsung (bukan transaksi — bukan bug, fitur "quick action").
- * Tapi kalau admin baru bikin kategori jualan (mis. `akun_ml`) dan lupa
- * tambah produk, tiket pembeli diam-diam jadi bantuan tanpa admin sadar.
- * Helper ini kasih visibilitas di /refresh-panel & /setup-ticket-panel.
+ * Why it matters: a category without products → clicking its button opens a
+ * SUPPORT ticket directly (not a transaction — not a bug, it's the "quick action" feature).
+ * But if an admin just created a sales category (e.g. `akun_ml`) and forgot to
+ * add products, buyer tickets silently become support tickets without the admin noticing.
+ * This helper surfaces it in /refresh-panel & /setup-ticket-panel.
  *
- * Kategori `help`/`report` di-skip — memang quick-action (selalu kosong,
- * warning-nya cuma jadi noise).
- * v3.9.37: kategori `midman` juga di-skip — klik tombolnya membuka modal
- * deal rekber (bukan tiket), jadi "belum punya produk" bukan masalah sama
- * sekali (produk di kategori midman bahkan tidak akan pernah tampil — klik
- * tetap di-route ke alur deal).
+ * The `help`/`report` categories are skipped — they're quick actions by design
+ * (always empty, the warning would just be noise).
+ * v3.9.37: the `midman` category is also skipped — clicking its button opens the
+ * escrow deal modal (not a ticket), so "no products yet" isn't a problem at all
+ * (products in the midman category will never even be shown — the click is
+ * always routed to the deal flow).
  *
- * @param {Object} panel - panel metadata (categoryIds dipakai, mirror logic
- *   buildTicketPanel: kosong = semua kategori)
- * @param {Object} config - config global (ticketCategories + products)
- * @returns {string[]} baris warning (kosong = tidak ada masalah)
+ * @param {Object} panel - panel metadata (categoryIds is used, mirrors the
+ *   buildTicketPanel logic: empty = all categories)
+ * @param {Object} config - global config (ticketCategories + products)
+ * @returns {string[]} warning lines (empty = no issues)
  */
 function findEmptyCategoryWarnings(panel, config) {
     const allCategories = config.ticketCategories || [];
@@ -107,21 +107,21 @@ function findEmptyCategoryWarnings(panel, config) {
     const products = config.products || [];
     const lines = [];
     for (const cat of categoriesToShow) {
-        if (!cat || cat.id === 'help' || cat.id === 'report' || cat.id === 'midman') continue; // quick-action default / deal rekber
+        if (!cat || cat.id === 'help' || cat.id === 'report' || cat.id === 'midman') continue; // default quick-action / escrow deal
         const hasProducts = products.some(p => (p.category || 'transaction') === cat.id);
         if (hasProducts) continue;
         if (cat.requiresKey !== false) {
             lines.push(
-                `⚠️ **${cat.label || cat.id}** (\`${cat.id}\`) — di-set *pakai key* tapi belum punya produk. ` +
-                    `Klik tombolnya membuka tiket **BANTUAN** (bukan transaksi). ` +
-                    `Tambah produk: \`/add-product category:${cat.id} requires_key:true\``
+                `⚠️ **${cat.label || cat.id}** (\`${cat.id}\`) — set to *use keys* but has no products yet. ` +
+                    `Clicking its button opens a **SUPPORT** ticket (not a transaction). ` +
+                    `Add products: \`/add-product category:${cat.id} requires_key:true\``
             );
         } else {
             lines.push(
-                `ℹ️ **${cat.label || cat.id}** (\`${cat.id}\`) — tanpa produk, klik tombolnya membuka tiket **BANTUAN** langsung. ` +
+                `ℹ️ **${cat.label || cat.id}** (\`${cat.id}\`) — no products, clicking its button opens a **SUPPORT** ticket directly. ` +
                     (cat.isDefault === false
-                        ? `Kalau ini kategori jualan, tambah produk dulu: \`/add-product category:${cat.id} requires_key:false\``
-                        : `Normal kalau memang quick-action.`)
+                        ? `If this is a sales category, add products first: \`/add-product category:${cat.id} requires_key:false\``
+                        : `Normal if it's meant to be a quick action.`)
             );
         }
     }
@@ -129,11 +129,11 @@ function findEmptyCategoryWarnings(panel, config) {
 }
 
 /**
- * Build embed + components untuk panel tiket.
- * Dipakai /setup-ticket-panel (buat baru) & /refresh-panel (re-render existing).
+ * Build the embed + components for a ticket panel.
+ * Used by /setup-ticket-panel (create new) & /refresh-panel (re-render existing).
  *
- * @param {Object} panel - panel metadata (liat panelManager.js schema)
- * @param {Object} ctx - { guild, client, config } (guild dipakai untuk {server} template)
+ * @param {Object} panel - panel metadata (see the panelManager.js schema)
+ * @param {Object} ctx - { guild, client, config } (guild is used for the {server} template)
  * @returns {{embed: EmbedBuilder, components: ActionRowBuilder[]}}
  */
 function buildTicketPanel(panel, ctx) {
@@ -141,16 +141,16 @@ function buildTicketPanel(panel, ctx) {
     const allCategories = config.ticketCategories || [];
     const categoryIds = Array.isArray(panel.categoryIds) ? panel.categoryIds : [];
 
-    // Pilih kategori yang akan ditampilkan.
-    // - Kalau categoryIds kosong → tampilkan semua.
-    // - Kalau ada → filter by id.
+    // Pick which categories to display.
+    // - If categoryIds is empty → show all.
+    // - If present → filter by id.
     let categoriesToShow;
     if (categoryIds.length === 0) {
         categoriesToShow = allCategories;
     } else {
         categoriesToShow = allCategories.filter(c => categoryIds.includes(c.id));
-        // Kalau filter hasil 0 (semua id invalid), fallback ke semua biar panel
-        // tidak kosong. Admin tetap lihat warning di reply.
+        // If the filter yields 0 (all ids invalid), fall back to all so the panel
+        // isn't empty. The admin still sees the warning in the reply.
         if (categoriesToShow.length === 0) {
             categoriesToShow = allCategories;
         }
@@ -170,19 +170,19 @@ function buildTicketPanel(panel, ctx) {
         priceListByCategory[cat.id] =
             prods.length > 0
                 ? prods.map(p => `• **${p.label}** — ${p.price}`).join('\n')
-                : `_(belum ada produk di kategori ini)_`;
+                : `_(no products in this category yet)_`;
     }
 
     const priceList =
         productsInCategories.length > 0
             ? productsInCategories.map(p => `• **${p.label}** — ${p.price}`).join('\n')
-            : '_(belum ada produk — pakai `/add-product`)_';
+            : '_(no products yet — use `/add-product`)_';
 
     const categoriesListStr = categoriesToShow.map(c => `${c.emoji || '🎫'} **${c.label}**`).join(' • ');
 
     const priceHeader = config.messages?.ticketPriceHeader || '💰 PRICE LIST 💰';
 
-    // Body: pakai panel.body kalau di-override, else config.messages.ticketBody.
+    // Body: use panel.body if overridden, else config.messages.ticketBody.
     const bodyTemplate = panel.body != null && panel.body !== '' ? panel.body : config.messages.ticketBody;
 
     const renderedBody = fillTemplate(bodyTemplate, {
@@ -193,17 +193,17 @@ function buildTicketPanel(panel, ctx) {
         priceListByCategory
     });
 
-    // Title: pakai panel.title kalau di-override, else config default.
+    // Title: use panel.title if overridden, else the config default.
     const title = panel.title != null && panel.title !== '' ? panel.title : config.messages.ticketTitle;
 
-    // Color: parse dulu (bisa hex string dari JSON), fallback ke default orange.
+    // Color: parse first (can be a hex string from JSON), fall back to the default orange.
     let color = 0xe67e22;
     if (panel.color != null) {
         try {
             const parsed = parseColor(panel.color);
             if (parsed !== null) color = parsed;
         } catch (_) {
-            // ignore parse error di build time, default dipakai.
+            // ignore parse errors at build time, the default is used.
         }
     }
 
@@ -215,7 +215,7 @@ function buildTicketPanel(panel, ctx) {
     const thumbUrl = validateUrl(panel.thumbnailUrl);
     if (thumbUrl) embed.setThumbnail(thumbUrl);
 
-    // Footer: pakai panel.footerText kalau di-override, else bot username.
+    // Footer: use panel.footerText if overridden, else the bot username.
     const footerText =
         panel.footerText != null && panel.footerText !== ''
             ? panel.footerText
@@ -226,41 +226,41 @@ function buildTicketPanel(panel, ctx) {
     });
     embed.setTimestamp();
 
-    // === Build components: buttons (default) atau dropdown select menu ===
+    // === Build components: buttons (default) or dropdown select menu ===
     const components = [];
     if (panel.useDropdown) {
         // Select menu — 1 row, 1 menu, max 25 options.
-        // v3.9.27 FIX (bug user-reported): deskripsi option tidak lagi memakai
-        // requiresKey sebagai proxy "transaksi vs bantuan" — kategori non-key
-        // (jual akun, jasa) tadinya dilabeli "Bantuan / non-transaksi" padahal
-        // itu kategori jual-beli. Sekarang deskripsi berbasis KONTEN kategori:
-        //   - punya produk → "Transaksi — N produk (pakai/tanpa key)"
-        //   - tanpa produk → "Bantuan / buka tiket langsung" (help/report/custom)
-        // v3.9.28 FIX: hitung key dari PRODUK aktual, bukan flag kategori —
-        // kategori boleh campur (mis. "Akun ML" berisi 2 akun non-key + 1
-        // top-up pakai key). Flag kategori hanya fallback kalau gak ada produk
-        // key/non-key yang bisa disimpulkan.
-        // v3.9.37 FIX: kategori midman selalu "deal rekber" — deskripsi lama
-        // "Bantuan / buka tiket langsung" menyesatkan end user (klik tombolnya
-        // membuka formulir deal escrow, bukan tiket bantuan).
+        // v3.9.27 FIX (user-reported bug): option descriptions no longer use
+        // requiresKey as a "transaction vs support" proxy — non-key categories
+        // (account sales, services) used to be labeled "Support / non-transaction" even though
+        // they're sales categories. Descriptions are now based on category CONTENT:
+        //   - has products → "Transaction — N products (with/without keys)"
+        //   - no products → "Support / open a ticket directly" (help/report/custom)
+        // v3.9.28 FIX: count keys from the ACTUAL products, not the category flag —
+        // categories can be mixed (e.g. "Akun ML" containing 2 non-key accounts + 1
+        // key-based top-up). The category flag is only a fallback when no key/non-key
+        // products can be inferred.
+        // v3.9.37 FIX: the midman category is always an "escrow deal" — the old
+        // "Support / open a ticket directly" description misled end users (clicking its
+        // button opens the escrow deal form, not a support ticket).
         const options = categoriesToShow.map(cat => {
             const prods = productsInCategories.filter(p => (p.category || 'transaction') === cat.id);
             let desc;
             if (cat.id === 'midman') {
-                desc = 'Deal escrow rekber — 3 pihak';
+                desc = '3-party escrow deal';
             } else if (prods.length > 0) {
                 const nonKeyCount = prods.filter(p => p.requiresKey === false).length;
                 let keyInfo;
                 if (nonKeyCount === 0) {
-                    keyInfo = 'pakai key';
+                    keyInfo = 'with keys';
                 } else if (nonKeyCount === prods.length) {
-                    keyInfo = 'tanpa key';
+                    keyInfo = 'without keys';
                 } else {
-                    keyInfo = `${nonKeyCount} tanpa key / ${prods.length - nonKeyCount} pakai key`;
+                    keyInfo = `${nonKeyCount} without keys / ${prods.length - nonKeyCount} with keys`;
                 }
-                desc = `Transaksi — ${prods.length} produk (${keyInfo})`;
+                desc = `Transaction — ${prods.length} products (${keyInfo})`;
             } else {
-                desc = 'Bantuan / buka tiket langsung';
+                desc = 'Support / open a ticket directly';
             }
             return {
                 label: (cat.label || cat.id).slice(0, 100),
@@ -270,13 +270,13 @@ function buildTicketPanel(panel, ctx) {
             };
         });
         if (options.length === 0) {
-            // Tidak ada kategori → fallback ke single disabled button biar
-            // panel tetap punya 1 komponen (Discord gak allow 0 komponen
-            // kalau message udah di-set ada components).
+            // No categories → fall back to a single disabled button so the
+            // panel still has 1 component (Discord doesn't allow 0 components
+            // once a message already has components set).
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_noop')
-                    .setLabel('Tidak ada kategori')
+                    .setLabel('No categories')
                     .setStyle(ButtonStyle.Secondary)
                     .setDisabled(true)
             );
@@ -284,12 +284,12 @@ function buildTicketPanel(panel, ctx) {
         } else {
             const menu = new StringSelectMenuBuilder()
                 .setCustomId('ticket_cat_select')
-                .setPlaceholder('Pilih kategori tiket...')
+                .setPlaceholder('Select a ticket category...')
                 .addOptions(options);
             components.push(new ActionRowBuilder().addComponents(menu));
         }
     } else {
-        // Buttons — auto-wrap ke row baru tiap 5 button.
+        // Buttons — auto-wrap into a new row every 5 buttons.
         let currentRow = new ActionRowBuilder();
         let btnCount = 0;
         for (const cat of categoriesToShow) {
@@ -330,16 +330,16 @@ module.exports = async function (interaction) {
         // Validate style
         if (style && !VALID_STYLES.includes(style)) {
             return safeEditReply(interaction, {
-                content: '❌ `style` tidak valid. Pilih: Primary, Secondary, Success, Danger.'
+                content: '❌ Invalid `style`. Choose: Primary, Secondary, Success, Danger.'
             });
         }
 
-        // v3.9.26: validasi emoji SEBELUM save (anti poison config). Emoji string
-        // bebas yang tersimpan bikin setEmoji() throw di /setup-verify nanti —
-        // panel verifikasi mati sampai config diperbaiki manual.
+        // v3.9.26: validate the emoji BEFORE saving (anti poison config). A free-form
+        // emoji string that gets stored makes setEmoji() throw later in /setup-verify —
+        // the verification panel stays dead until the config is fixed manually.
         if (emoji && !isValidEmoji(emoji)) {
             return safeEditReply(interaction, {
-                content: '❌ `emoji` tidak valid. Pakai emoji unicode (mis. ✅) atau custom emoji format `<:nama:id>`.'
+                content: '❌ Invalid `emoji`. Use a unicode emoji (e.g. ✅) or a custom emoji in the format `<:name:id>`.'
             });
         }
 
@@ -372,7 +372,7 @@ module.exports = async function (interaction) {
         const previewRow = new ActionRowBuilder().addComponents(previewBtn);
 
         return safeEditReply(interaction, {
-            content: '✅ Verify button di-update!\n\n**Preview:**',
+            content: '✅ Verify button updated!\n\n**Preview:**',
             components: [previewRow]
         });
     }
@@ -381,17 +381,17 @@ module.exports = async function (interaction) {
     if (interaction.commandName === 'setup-ticket-panel') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        // v3.9.17 FIX: validasi roles.admin di awal (sama seperti /setup-ticket).
+        // v3.9.17 FIX: validate roles.admin up front (same as /setup-ticket).
         if (!config.roles.admin) {
             return safeEditReply(interaction, {
-                content: '❌ Role Admin belum di-set. Pakai `/set-role admin @role` dulu sebelum setup panel tiket.'
+                content: '❌ Admin role not set yet. Use `/set-role admin @role` first before setting up the ticket panel.'
             });
         }
 
         const customTitle = interaction.options.getString('title');
         const categoriesFilter = interaction.options.getString('categories');
-        // v3.9.24: dukung \n literal → newline asli di body panel (multi-line
-        // price list / instruksi). Footer tetap 1 baris (Discord render footer flat).
+        // v3.9.24: support literal \n → real newline in the panel body (multi-line
+        // price list / instructions). Footer stays 1 line (Discord renders footers flat).
         const customBody = normalizeNewlines(interaction.options.getString('body'));
         const colorInput = interaction.options.getString('color');
         const imageUrlInput = interaction.options.getString('image');
@@ -404,11 +404,11 @@ module.exports = async function (interaction) {
         if (allCategories.length === 0) {
             return safeEditReply(interaction, {
                 content:
-                    '❌ Belum ada kategori. Tambah dulu pakai `/add-category`, atau pakai `/setup-ticket` untuk default.'
+                    '❌ No categories yet. Add one first with `/add-category`, or use `/setup-ticket` for the defaults.'
             });
         }
 
-        // Filter categories by IDs (kalau di-specify), else pakai semua
+        // Filter categories by IDs (if specified), else use all
         let categoriesToShow = allCategories;
         const missingCategoryIds = [];
         if (categoriesFilter) {
@@ -419,10 +419,10 @@ module.exports = async function (interaction) {
             categoriesToShow = allCategories.filter(c => requestedIds.includes(c.id));
             if (categoriesToShow.length === 0) {
                 return safeEditReply(interaction, {
-                    content: `❌ Tidak ada kategori yang match dengan: \`${categoriesFilter}\`. Pakai /list-categories untuk lihat daftar.`
+                    content: `❌ No categories match: \`${categoriesFilter}\`. Use /list-categories to see the list.`
                 });
             }
-            // Warning kalau ada id yang diminta tapi gak ketemu
+            // Warn if a requested id wasn't found
             for (const req of requestedIds) {
                 if (!allCategories.find(c => c.id === req)) missingCategoryIds.push(req);
             }
@@ -442,37 +442,37 @@ module.exports = async function (interaction) {
         const imageUrl = validateUrl(imageUrlInput);
         if (imageUrlInput && !imageUrl) {
             return safeEditReply(interaction, {
-                content: '❌ URL image tidak valid. Harus format http(s)://...'
+                content: '❌ Invalid image URL. Must be in http(s)://... format'
             });
         }
         const thumbnailUrl = validateUrl(thumbnailInput);
         if (thumbnailInput && !thumbnailUrl) {
             return safeEditReply(interaction, {
-                content: '❌ URL thumbnail tidak valid. Harus format http(s)://...'
+                content: '❌ Invalid thumbnail URL. Must be in http(s)://... format'
             });
         }
-        // v3.9.29: guard panjang 2048 (limit URL embed Discord) — tanpa ini,
-        // URL panjang baru gagal belakangan saat send (error 50035 kurang jelas).
+        // v3.9.29: 2048 length guard (the Discord embed URL limit) — without this,
+        // long URLs only fail later at send time (with a vague 50035 error).
         if (imageUrl && imageUrl.length > 2048) {
             return safeEditReply(interaction, {
-                content: `❌ URL image terlalu panjang (${imageUrl.length} char, maks 2048). Pakai link lebih pendek.`
+                content: `❌ Image URL is too long (${imageUrl.length} char, max 2048). Use a shorter link.`
             });
         }
         if (thumbnailUrl && thumbnailUrl.length > 2048) {
             return safeEditReply(interaction, {
-                content: `❌ URL thumbnail terlalu panjang (${thumbnailUrl.length} char, maks 2048). Pakai link lebih pendek.`
+                content: `❌ Thumbnail URL is too long (${thumbnailUrl.length} char, max 2048). Use a shorter link.`
             });
         }
 
-        // Tentukan channel target
+        // Determine the target channel
         const targetChannel = channelOption || interaction.channel;
         if (!targetChannel || targetChannel.type !== ChannelType.GuildText) {
             return safeEditReply(interaction, {
-                content: '❌ Channel target harus berupa text channel.'
+                content: '❌ The target channel must be a text channel.'
             });
         }
 
-        // Build panel metadata object (belum ada messageId — di-set setelah send)
+        // Build the panel metadata object (no messageId yet — set after sending)
         const panelMeta = {
             guildId: interaction.guild.id,
             channelId: targetChannel.id,
@@ -497,18 +497,18 @@ module.exports = async function (interaction) {
             });
         } catch (buildErr) {
             return safeEditReply(interaction, {
-                content: `❌ Gagal build panel: ${buildErr.message}`
+                content: `❌ Failed to build the panel: ${buildErr.message}`
             });
         }
 
-        // Kirim panel ke channel target
+        // Send the panel to the target channel
         try {
             const sent = await targetChannel.send({
                 embeds: [build.embed],
                 components: build.components
             });
 
-            // Simpan panel ke panels.json (dengan messageId baru)
+            // Save the panel to panels.json (with the new messageId)
             const saved = upsertPanel({
                 ...panelMeta,
                 messageId: sent.id
@@ -518,42 +518,42 @@ module.exports = async function (interaction) {
                 action: 'SETUP_TICKET_PANEL',
                 actorId: interaction.user.id,
                 actorTag: interaction.user.tag,
-                details: `Pasang panel tiket \`${saved.id}\` di ${targetChannel} — ${categoriesToShow.length} kategori, ${panelMeta.useDropdown ? 'dropdown' : 'buttons'}`,
+                details: `Installed ticket panel \`${saved.id}\` in ${targetChannel} — ${categoriesToShow.length} categories, ${panelMeta.useDropdown ? 'dropdown' : 'buttons'}`,
                 guildId: interaction.guild.id
             });
 
             const missing =
                 missingCategoryIds.length > 0
-                    ? `\n\n⚠️ Kategori ID tidak ditemukan (diabaikan): \`${missingCategoryIds.join(', ')}\``
+                    ? `\n\n⚠️ Category IDs not found (ignored): \`${missingCategoryIds.join(', ')}\``
                     : '';
 
-            // v3.9.29: safety-net — kategori tanpa produk = klik tombol buka
-            // tiket BANTUAN. Kasih tahu admin SEKARANG, bukan setelah pembeli
-            // komplain kenapa ordernya masuk kategori bantuan.
+            // v3.9.29: safety net — a category without products = its button opens a
+            // SUPPORT ticket. Tell the admin NOW, not after buyers
+            // complain their order landed in the support category.
             const emptyWarnings = findEmptyCategoryWarnings(panelMeta, config);
             const emptyWarn =
                 emptyWarnings.length > 0
-                    ? `\n\n🔮 **Kategori tanpa produk** (klik = tiket BANTUAN langsung):\n${emptyWarnings.map(l => `• ${l}`).join('\n')}`
+                    ? `\n\n🔮 **Categories without products** (click = instant SUPPORT ticket):\n${emptyWarnings.map(l => `• ${l}`).join('\n')}`
                     : '';
 
             return safeEditReply(interaction, {
                 content:
-                    `✅ Panel tiket dipasang di ${targetChannel}!\n\n` +
-                    `🆔 Panel ID: \`${saved.id}\` (simpan untuk /update-panel, /delete-panel, /refresh-panel)\n` +
-                    `🎫 Kategori: ${categoriesToShow.map(c => `\`${c.id}\``).join(', ')} (${categoriesToShow.length})\n` +
+                    `✅ Ticket panel installed in ${targetChannel}!\n\n` +
+                    `🆔 Panel ID: \`${saved.id}\` (save this for /update-panel, /delete-panel, /refresh-panel)\n` +
+                    `🎫 Categories: ${categoriesToShow.map(c => `\`${c.id}\``).join(', ')} (${categoriesToShow.length})\n` +
                     `🎨 Layout: ${panelMeta.useDropdown ? 'Dropdown Select Menu' : 'Buttons'}${missing}${emptyWarn}`
             });
         } catch (sendErr) {
             return safeEditReply(interaction, {
-                content: `❌ Gagal kirim panel tiket ke ${targetChannel}: ${sendErr.message}\n\nPastikan bot punya permission **Send Messages** dan **Embed Links** di channel tersebut.`
+                content: `❌ Failed to send the ticket panel to ${targetChannel}: ${sendErr.message}\n\nMake sure the bot has **Send Messages** and **Embed Links** permissions in that channel.`
             });
         }
     }
 };
 
-// Export shared builder supaya /refresh-panel & /update-panel bisa reuse.
+// Export the shared builder so /refresh-panel & /update-panel can reuse it.
 module.exports.buildTicketPanel = buildTicketPanel;
 module.exports.parseColor = parseColor;
 module.exports.validateUrl = validateUrl;
-// v3.9.29: safety-net kategori kosong (dipakai panels-mgmt.js + unit test).
+// v3.9.29: empty-category safety net (used by panels-mgmt.js + unit test).
 module.exports.findEmptyCategoryWarnings = findEmptyCategoryWarnings;

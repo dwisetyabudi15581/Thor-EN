@@ -1,50 +1,50 @@
 /**
- * Handler pas ada pesan masuk. Jalanin 4 fitur community:
- *   1. Auto-Responder — kalo ada yang ketik trigger keyword, bot auto-reply
- *   2. Anti-Spam & Auto-Mod — deteksi spam/link/kata kasar/mass-mention
- *   3. AFK System — auto-reply pas ada yang mention user AFK + clear AFK pas user AFK balik chat
- *   4. Leveling System — kasih XP per pesan + announce level up
+ * Handler for incoming messages. Runs 4 community features:
+ *   1. Auto-Responder — when someone types a trigger keyword, the bot auto-replies
+ *   2. Anti-Spam & Auto-Mod — detects spam/links/blocked words/mass-mentions
+ *   3. AFK System — auto-replies when someone mentions an AFK user + clears AFK when the AFK user chats again
+ *   4. Leveling System — grants XP per message + announces level ups
  *
- * Urutan: anti-spam duluan (soalnya kalo pesan ke-delete, hook lainnya gak usah jalan).
+ * Order: anti-spam first (because if the message gets deleted, the other hooks don't need to run).
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
 const { incrementMessages: trackMessage } = require('../../data/statsManager');
 const { getConfig } = require('../../data/configManager');
 
-// Data managers untuk fitur baru
+// Data managers for the new features
 const responderManager = require('../../data/responderManager');
 const automodManager = require('../../data/automodManager');
 const afkManager = require('../../data/afkManager');
 const levelManager = require('../../data/levelManager');
 
-// Buat nge-warning admin kalo lupa enable Message Content Intent.
-// Discord bakal kirim message.content kosong kalo intentnya belum di-on.
-// Akibatnya: auto-responder, anti-spam, AFK reply gak jalan.
-// Set ini cuma buat nge-warning sekali per server biar console gak kebanjiran.
+// For warning the admin when they forget to enable the Message Content Intent.
+// Discord sends an empty message.content when the intent isn't enabled yet.
+// Result: auto-responder, anti-spam, and AFK replies don't work.
+// This Set only warns once per server so the console doesn't get flooded.
 //
-// v3.9.17 FIX: cleanup periodic. Sebelumnya, Set tumbuh terus selama process
-// lifetime (untuk bot yang sering join/leave guild). Sekarang: cleanup tiap
-// 24 jam, hapus guild yang sudah >24 jam tidak terdeteksi lagi.
-const _intentWarnedGuilds = new Map(); // guildId → timestamp terakhir warning
-const INTENT_WARN_TTL_MS = 24 * 60 * 60 * 1000; // 24 jam
+// v3.9.17 FIX: periodic cleanup. Previously, the Set kept growing for the whole
+// process lifetime (for bots that frequently join/leave guilds). Now: cleanup every
+// 24 hours, removing guilds not detected for more than 24 hours.
+const _intentWarnedGuilds = new Map(); // guildId → timestamp of the last warning
+const INTENT_WARN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 function debugLogIntentMissing(message) {
     const gid = message.guild.id;
     const now = Date.now();
     if (_intentWarnedGuilds.has(gid)) {
-        // Update timestamp supaya gak di-cleanup selama masih aktif.
+        // Update the timestamp so it doesn't get cleaned up while still active.
         _intentWarnedGuilds.set(gid, now);
         return;
     }
     _intentWarnedGuilds.set(gid, now);
     console.warn(
-        `⚠️ [HINT] Pesan dari ${message.author?.tag} di server "${message.guild.name}" isinya kosong.\n` +
-            `   Biasanya karena "Message Content Intent" belum di-enable di Developer Portal.\n` +
-            `   Cek: https://discord.com/developers/applications → Bot → Privileged Gateway Intents\n` +
-            `   Akibatnya: auto-responder, anti-spam kata/link, dan AFK mention reply gak bakal jalan.\n` +
-            `   (warning ini cuma muncul sekali per 24 jam per server)`
+        `⚠️ [HINT] Message from ${message.author?.tag} in server "${message.guild.name}" has empty content.\n` +
+            `   Usually this means "Message Content Intent" is not enabled in the Developer Portal.\n` +
+            `   Check: https://discord.com/developers/applications → Bot → Privileged Gateway Intents\n` +
+            `   Result: auto-responder, anti-spam word/link checks, and AFK mention replies won't work.\n` +
+            `   (this warning only appears once every 24 hours per server)`
     );
-    // v3.9.17: cleanup entries yang sudah >24 jam tidak terdeteksi.
+    // v3.9.17: clean up entries not detected for more than 24 hours.
     if (_intentWarnedGuilds.size > 100) {
         for (const [k, ts] of _intentWarnedGuilds) {
             if (now - ts > INTENT_WARN_TTL_MS) _intentWarnedGuilds.delete(k);
@@ -54,35 +54,36 @@ function debugLogIntentMissing(message) {
 
 async function onMessageCreate(message) {
     try {
-        // v3.9.24 FIX: guard gabungan + filter webhook.
-        // Sebelumnya: line 57 cek `message.author?.bot` (null-safe), tapi baris
-        // di bawah dereference `message.author.id` TANPA guard — author null
-        // (webhook/partial edge) → TypeError yang ditelan outer catch.
-        // Bonus: webhook message sekarang di-skip (automod/AFK/leveling tidak
-        // memproses pesan webhook), dan cek `client.user.id` yang dead-code dihapus
-        // (pesan bot sudah di-return di guard ini).
+        // v3.9.24 FIX: combined guard + webhook filter.
+        // Previously: line 57 checked `message.author?.bot` (null-safe), but the
+        // line below dereferenced `message.author.id` WITHOUT a guard — a null
+        // author (webhook/partial edge case) → a TypeError swallowed by the outer catch.
+        // Bonus: webhook messages are now skipped (automod/AFK/leveling don't
+        // process webhook messages), and the dead `client.user.id` check was removed
+        // (bot messages already return at this guard).
         if (!message.author || message.author.bot || message.webhookId) return;
         if (!message.guild) return;
 
-        // v3.9.26 (single-guild hardening): kalau GUILD_ID di-set di .env, abaikan
-        // pesan dari guild lain. Bot single-guild — kalau tak sengaja di-invite ke
-        // server lain, tanpa guard ini: leveling jalan (config global!), XP tercecer
-        // ke levels.json, role ID guild utama di-add ke member guild lain (gagal),
-        // audit log nyasar ke channel guild utama. Guard = asuransi murah.
+        // v3.9.26 (single-guild hardening): if GUILD_ID is set in .env, ignore
+        // messages from other guilds. This is a single-guild bot — if it gets
+        // accidentally invited to another server, without this guard: leveling
+        // runs (global config!), XP gets scattered into levels.json, the main
+        // guild's role IDs get added to the other guild's members (fails), and
+        // audit logs stray into the main guild's channel. The guard is cheap insurance.
         if (process.env.GUILD_ID && message.guild.id !== process.env.GUILD_ID) return;
 
-        // Deteksi kalo Message Content Intent belum di-enable.
-        // Kalo pesan user lain isinya kosong padahal bukan attachment/sticker, kemungkinan besar intent missing.
-        // Skip warning kalau pesan cuma berisi attachment/sticker (memang gak ada content-nya).
+        // Detect whether the Message Content Intent isn't enabled yet.
+        // If another user's message is empty but isn't an attachment/sticker, most likely the intent is missing.
+        // Skip the warning if the message only contains attachments/stickers (they genuinely have no content).
         if (!message.content) {
             if (!message.attachments?.size && !message.stickers?.size && !message.components?.length) {
                 debugLogIntentMissing(message);
             }
         }
 
-        // Jalanin 4 hook community. Urutan: automod dulu (kalo pesan ke-delete,
-        // hook lainnya diskip) — soalnya kalo pesan udah ke-delete, message.reply
-        // bakal error "Unknown Message".
+        // Run the 4 community hooks. Order: automod first (if the message gets
+        // deleted, the other hooks are skipped) — because once a message is
+        // deleted, message.reply would throw "Unknown Message".
         try {
             const deleted = await hookAutoMod(message);
             if (deleted) return;
@@ -90,18 +91,18 @@ async function onMessageCreate(message) {
             console.error('MessageCreate hook error:', err.message);
         }
 
-        // v3.9.24 FIX: stats tracking dipindah SETELAH automod. Sebelumnya pesan
-        // spam/kata terlarang yang ke-delete tetap terhitung di leaderboard pesan,
-        // padahal XP leveling-nya di-skip — treatment inkonsisten untuk pesan yang sama.
+        // v3.9.24 FIX: stats tracking moved AFTER automod. Previously, spam/blocked-word
+        // messages that got deleted still counted toward the message leaderboard,
+        // while their leveling XP was skipped — inconsistent treatment of the same message.
         try {
             trackMessage(message.guild.id, message.author.id);
         } catch (_) {}
 
-        // v3.9.26 FIX: try/catch PER HOOK. Sebelumnya responder+AFK+leveling
-        // share satu catch — kalau clearAFK() throw (disk penuh/EROFS),
-        // hookLeveling TIDAK JALAN sama sekali → user diam-diam kehilangan XP
-        // di setiap pesan sampai disk pulih. Sekarang hook yang error mati
-        // sendirian, sisanya tetap jalan, dan log menyebut nama hook + stack.
+        // v3.9.26 FIX: try/catch PER HOOK. Previously responder+AFK+leveling
+        // shared one catch — if clearAFK() threw (disk full/EROFS),
+        // hookLeveling DIDN'T RUN AT ALL → users silently lost XP
+        // on every message until the disk recovered. Now a failing hook dies
+        // alone, the rest still run, and the log names the hook + stack.
         try {
             await hookAutoResponder(message);
         } catch (err) {
@@ -118,26 +119,26 @@ async function onMessageCreate(message) {
             console.error('MessageCreate hook [leveling] error:', err);
         }
     } catch (err) {
-        // v3.9.17 FIX: log error outer. Sebelumnya `catch (_) {}` menelan
-        // semua error tanpa log — bug di hook manapun silent fail tanpa jejak.
+        // v3.9.17 FIX: log the outer error. Previously `catch (_) {}` swallowed
+        // all errors without logging — a bug in any hook would silently fail with no trace.
         console.error('MessageCreate outer error:', err.message);
     }
 }
 
 /**
  * Hook 1: Anti-Spam & Auto-Mod
- * Cek 4 hal: spam, link, kata terlarang, mass-mention.
- * Kalo ada yang nabrak, hapus pesannya + kasih action (warn/mute/kick sesuai config).
+ * Checks 4 things: spam, links, blocked words, mass-mention.
+ * If something trips, delete the message + take action (warn/mute/kick per config).
  */
 async function hookAutoMod(message) {
     const config = automodManager.getGuildConfig(message.guild.id);
     if (!config || !config.enabled) return false;
 
-    // v3.9.38 FIX: whitelist GLOBAL sekarang CUMA admin (Administrator/ManageGuild).
-    // Sebelumnya isUserWhitelisted juga me-return true untuk role di
-    // `linkAllowedRoles` — member dengan role itu bypass SEMUA cek (spam, kata
-    // terlarang, mass-mention) padahal field itu (lihat /add-link-whitelist)
-    // cuma dimaksudkan exempt LINK.
+    // v3.9.38 FIX: the GLOBAL whitelist is now admins ONLY (Administrator/ManageGuild).
+    // Previously isUserWhitelisted also returned true for roles in
+    // `linkAllowedRoles` — members with that role bypassed ALL checks (spam,
+    // blocked words, mass-mention) even though that field (see /add-link-whitelist)
+    // was only meant to exempt LINKS.
     if (automodManager.isUserWhitelisted(message.member, config)) return false;
 
     const content = message.content || '';
@@ -145,43 +146,43 @@ async function hookAutoMod(message) {
     let actionReason = null;
     let actionToTake = null;
 
-    // 1. Cek spam (terlalu banyak pesan dalam waktu singkat)
+    // 1. Check spam (too many messages in a short window)
     if (automodManager.checkSpam(message.guild.id, message.author.id, config)) {
         shouldDelete = true;
-        actionReason = `Spam (${config.spamThreshold}+ pesan dalam ${config.spamWindowMs / 1000}s)`;
+        actionReason = `Spam (${config.spamThreshold}+ messages in ${config.spamWindowMs / 1000}s)`;
         actionToTake = config.spamAction;
         automodManager.resetSpamTracker(message.guild.id, message.author.id);
     }
 
-    // 2. Cek link (kalo blockLinks aktif & channel/role bukan whitelist)
-    // v3.9.38 FIX: role link-whitelist (linkAllowedRoles) dicek lewat
-    // isLinkAllowed() dan CUMA exempt cek LINK — spam/kata terlarang/
-    // mass-mention tetap di-enforce untuk member dengan role itu.
+    // 2. Check links (if blockLinks is active & the channel/role isn't whitelisted)
+    // v3.9.38 FIX: the link-whitelist role (linkAllowedRoles) is checked via
+    // isLinkAllowed() and ONLY exempts the LINK check — spam/blocked words/
+    // mass-mention are still enforced for members with that role.
     if (!shouldDelete && config.blockLinks && automodManager.containsLink(content)) {
         if (
             !config.linkAllowedChannels?.includes(message.channel.id) &&
             !automodManager.isLinkAllowed(message.member, config)
         ) {
             shouldDelete = true;
-            actionReason = 'Link diblokir di channel ini';
+            actionReason = 'Links are blocked in this channel';
             actionToTake = 'delete_only';
         }
     }
 
-    // 3. Cek kata terlarang
-    // v3.9.23: pakai findViolatedWord — support whole-word matching, exempt list,
-    // dan action per-kata. Kata lama dari blockWords sudah auto-migrate ke wordRules.
+    // 3. Check blocked words
+    // v3.9.23: uses findViolatedWord — supports whole-word matching, exempt lists,
+    // and per-word actions. Old blockWords entries were auto-migrated to wordRules.
     if (!shouldDelete) {
         const violation = automodManager.findViolatedWord(content, config);
         if (violation) {
             shouldDelete = true;
-            actionReason = `Kata terlarang: "${violation.word}"`;
-            // Action per-kata (dari /add-word action:...) — fallback ke wordAction global.
+            actionReason = `Blocked word: "${violation.word}"`;
+            // Per-word action (from /add-word action:...) — falls back to the global wordAction.
             actionToTake = violation.action || config.wordAction;
         }
     }
 
-    // 4. Cek mass-mention (mention terlalu banyak orang/role)
+    // 4. Check mass-mention (too many people/roles mentioned)
     if (!shouldDelete && config.maxMentions) {
         const mentionCount = automodManager.countMentions(message);
         if (mentionCount > config.maxMentions) {
@@ -193,44 +194,44 @@ async function hookAutoMod(message) {
 
     if (!shouldDelete) return false;
 
-    // Eksekusi: hapus pesan dulu, terus kasih action tambahan kalo perlu
+    // Execute: delete the message first, then take additional action if needed
     let deleted = false;
     try {
         if (shouldDelete) {
-            // v3.9.24: log kalau delete GAGAL (mis. bot kehilangan Manage Messages).
-            // Sebelumnya `.catch(() => {})` menelan error diam-diam — admin tidak
-            // pernah tahu kenapa kata terlarang masih kelihatan padahal automod aktif.
+            // v3.9.24: log if the delete FAILS (e.g. the bot lost Manage Messages).
+            // Previously `.catch(() => {})` swallowed the error silently — admins
+            // never knew why blocked words were still visible even with automod on.
             await message.delete().catch(err => {
-                console.warn(`⚠️ Auto-mod gagal hapus pesan (bot butuh Manage Messages): ${err.message}`);
+                console.warn(`⚠️ Auto-mod failed to delete message (bot needs Manage Messages): ${err.message}`);
             });
-            // Tetap dianggap "deleted" (flagged) supaya responder/AFK/leveling
-            // tidak memproses pesan pelanggaran, dan action (mute/kick) tetap jalan.
+            // Still counts as "deleted" (flagged) so that responder/AFK/leveling
+            // don't process the violating message, and the action (mute/kick) still runs.
             deleted = true;
         }
 
-        // Action tambahan (warn/mute/kick) — kalo bukan cuma delete
+        // Additional action (warn/mute/kick) — if it's not delete-only
         if (actionToTake && actionToTake !== 'delete_only') {
             const member = message.member;
             if (member) {
                 if (actionToTake === 'warn') {
-                    // DM doang sebagai peringatan
+                    // DM only, as a warning
                     try {
-                        await member.send(`⚠️ Pesan kamu dihapus di **${message.guild.name}**: ${actionReason}`);
+                        await member.send(`⚠️ Your message was deleted in **${message.guild.name}**: ${actionReason}`);
                     } catch (_) {}
                 } else if (actionToTake === 'mute_10m' || actionToTake === 'mute_1h') {
                     const duration = actionToTake === 'mute_10m' ? 10 * 60 * 1000 : 60 * 60 * 1000;
                     try {
                         await member.timeout(duration, `Auto-mod: ${actionReason}`);
-                        console.log(`🛡️ ${message.author.tag} di-mute ${actionToTake} — ${actionReason}`);
+                        console.log(`🛡️ ${message.author.tag} muted ${actionToTake} — ${actionReason}`);
                     } catch (err) {
-                        console.warn(`⚠️ Gagal mute ${message.author.tag}: ${err.message}`);
+                        console.warn(`⚠️ Failed to mute ${message.author.tag}: ${err.message}`);
                     }
                 } else if (actionToTake === 'kick') {
                     try {
                         await member.kick(`Auto-mod: ${actionReason}`);
-                        console.log(`🛡️ ${message.author.tag} di-kick — ${actionReason}`);
+                        console.log(`🛡️ ${message.author.tag} kicked — ${actionReason}`);
                     } catch (err) {
-                        console.warn(`⚠️ Gagal kick ${message.author.tag}: ${err.message}`);
+                        console.warn(`⚠️ Failed to kick ${message.author.tag}: ${err.message}`);
                     }
                 }
             }
@@ -245,10 +246,10 @@ async function hookAutoMod(message) {
 
 /**
  * Hook 2: Auto-Responder
- * Kalo pesan diawali trigger keyword (mis. "!sosmed"), bot auto-reply.
+ * If the message starts with a trigger keyword (e.g. "!sosmed"), the bot auto-replies.
  */
 async function hookAutoResponder(message) {
-    // Kirim userId biar cooldown-nya per-user (bukan global per-trigger)
+    // Pass the userId so the cooldown is per-user (not global per-trigger)
     const responder = responderManager.findMatch(message.guild.id, message.content, message.author.id);
     if (!responder) return;
 
@@ -261,11 +262,11 @@ async function hookAutoResponder(message) {
                 .setDescription(responder.reply)
                 .setColor(0x5865f2)
                 .setFooter({ text: `Auto-responder: ${responder.trigger}` });
-            // v3.9.17 FIX: tambah allowedMentions: { parse: [] } supaya
-            // @everyone/@here/<@&ROLE> di reply TIDAK trigger ping.
-            // Sebelumnya, mode embed TIDAK set allowedMentions → fallback ke
-            // Discord default (parse: ['everyone', 'roles', 'users']) →
-            // member bisa abuse trigger keyword untuk mass-ping @everyone.
+            // v3.9.17 FIX: add allowedMentions: { parse: [] } so that
+            // @everyone/@here/<@&ROLE> in the reply do NOT trigger a ping.
+            // Previously, embed mode did NOT set allowedMentions → fell back to
+            // the Discord default (parse: ['everyone', 'roles', 'users']) →
+            // members could abuse trigger keywords to mass-ping @everyone.
             await message.reply({ embeds: [embed], allowedMentions: { parse: [] } });
         } else {
             await message.reply({ content: responder.reply, allowedMentions: { parse: [] } });
@@ -278,43 +279,43 @@ async function hookAutoResponder(message) {
 
 /**
  * Hook 3: AFK System
- * - Kalo user yang AFK kirim pesan → clear AFK + sapa "welcome back"
- * - Kalo ada yang mention user AFK → reply kasih tau dia lagi AFK
+ * - If an AFK user sends a message → clear their AFK + greet them "welcome back"
+ * - If someone mentions an AFK user → reply letting them know they're AFK
  */
 async function hookAfkSystem(message) {
-    // Cek: kalo sender lagi AFK, clear dulu
+    // Check: if the sender is AFK, clear it first
     let senderWasAFK = false;
     if (afkManager.isAFK(message.guild.id, message.author.id)) {
         afkManager.clearAFK(message.guild.id, message.author.id);
         senderWasAFK = true;
     }
 
-    // Kumpulkan info user AFK yang di-mention di pesan ini
-    // v3.9.26: batch check — sebelumnya getAFK() per mention = 1+N baca afk.json
-    // per pesan yang ada mention. Sekarang 1 baca untuk semua mention.
+    // Collect info about AFK users mentioned in this message
+    // v3.9.26: batch check — previously getAFK() per mention = 1+N reads of afk.json
+    // per message containing mentions. Now 1 read for all mentions.
     const afkReplies = [];
     if (message.mentions?.users && message.mentions.users.size > 0) {
         const mentionedIds = [];
         for (const [userId, user] of message.mentions.users) {
-            if (userId === message.author.id) continue; // skip mention diri sendiri
+            if (userId === message.author.id) continue; // skip self-mentions
             if (user.bot) continue;
             mentionedIds.push(userId);
         }
         const afkMap = afkManager.getAFKBatch(message.guild.id, mentionedIds);
         for (const [userId, afkData] of Object.entries(afkMap)) {
             const duration = afkManager.formatDuration(afkData.since);
-            afkReplies.push(`💤 <@${userId}> lagi AFK: **${afkData.reason}** *(${duration})*`);
+            afkReplies.push(`💤 <@${userId}> is AFK: **${afkData.reason}** *(${duration})*`);
         }
     }
 
-    // Kalau sender AFK DAN ada user AFK yang di-mention, gabung jadi 1 pesan biar gak double-reply
+    // If the sender was AFK AND an AFK user was mentioned, combine into 1 message to avoid double-replies
     if (senderWasAFK && afkReplies.length > 0) {
         try {
             const reply = await message.reply({
-                content: `👋 Welcome back, ${message.author}! Status AFK kamu sudah di-clear.\n\n${afkReplies.join('\n')}`,
-                // v3.9.24 FIX: tambah parse: [] supaya reason AFK user (mis. berisi
-                // @everyone / <@&role>) tidak bisa mass-ping — konsisten dengan
-                // hardening responder v3.9.17. (users: [] sudah ada, parse belum.)
+                content: `👋 Welcome back, ${message.author}! Your AFK status has been cleared.\n\n${afkReplies.join('\n')}`,
+                // v3.9.24 FIX: add parse: [] so an AFK reason (e.g. containing
+                // @everyone / <@&role>) can't mass-ping — consistent with the
+                // v3.9.17 responder hardening. (users: [] already existed, parse didn't.)
                 allowedMentions: { parse: [], users: [] }
             });
             setTimeout(() => reply.delete().catch(() => {}), 30000).unref();
@@ -322,20 +323,20 @@ async function hookAfkSystem(message) {
         return;
     }
 
-    // Cuma sender AFK (tanpa mention user AFK lain)
+    // Only the sender was AFK (no other AFK users mentioned)
     if (senderWasAFK) {
         try {
             const welcomeBack = await message.reply({
-                content: `👋 Welcome back, ${message.author}! Status AFK kamu sudah di-clear.`,
+                content: `👋 Welcome back, ${message.author}! Your AFK status has been cleared.`,
                 allowedMentions: { parse: [], users: [] }
             });
-            // Hapus pesan welcome back setelah 5 detik biar channel gak berantakan
+            // Delete the welcome back message after 5 seconds so the channel stays tidy
             setTimeout(() => welcomeBack.delete().catch(() => {}), 5000).unref();
         } catch (_) {}
         return;
     }
 
-    // Cuma ada mention user AFK (sender sendiri gak AFK)
+    // Only an AFK user was mentioned (the sender themselves isn't AFK)
     if (afkReplies.length > 0) {
         try {
             const reply = await message.reply({
@@ -349,7 +350,7 @@ async function hookAfkSystem(message) {
 
 /**
  * Hook 4: Leveling
- * Tambah XP ke user. Kalo naik level, announce + kasih role reward (kalau ada).
+ * Adds XP to the user. On a level up, announces it + grants reward role(s) if any.
  */
 async function hookLeveling(message) {
     const config = getConfig();
@@ -362,14 +363,14 @@ async function hookLeveling(message) {
     if (!result.leveledUp) return;
 
     const newLevel = result.newLevel;
-    console.log(`📊 ${message.author.tag} naik ke level ${newLevel}!`);
+    console.log(`📊 ${message.author.tag} leveled up to level ${newLevel}!`);
 
-    // Announce level up di channel tempat user chat
+    // Announce the level up in the channel where the user chatted
     if (levelingConfig.announceLevelUp) {
         try {
             const levelUpEmbed = new EmbedBuilder()
                 .setTitle('🎉 LEVEL UP!')
-                .setDescription(`GG ${message.author}! Kamu naik ke **Level ${newLevel}**!`)
+                .setDescription(`GG ${message.author}! You've reached **Level ${newLevel}**!`)
                 .setColor(0xf1c40f)
                 .setThumbnail(message.author.displayAvatarURL({ dynamic: true }))
                 .setTimestamp();
@@ -377,24 +378,24 @@ async function hookLeveling(message) {
         } catch (_) {}
     }
 
-    // Auto-assign role reward. Support stacking — user level 50 dapet semua role level 10, 20, 50 sekaligus.
+    // Auto-assign reward roles. Stacking is supported — a level 50 user gets all of the level 10, 20, and 50 roles at once.
     const roleIds = levelManager.getRoleForLevel(newLevel, config);
     if (roleIds.length > 0 && message.member) {
-        // Cek role mana yang belum dimiliki user
+        // Check which roles the user doesn't have yet
         const toAdd = roleIds.filter(id => !message.member.roles.cache.has(id));
         if (toAdd.length > 0) {
             try {
                 await message.member.roles.add(toAdd);
                 console.log(
-                    `📊 Kasih ${toAdd.length} role ke ${message.author.tag} (level ${newLevel}): ${toAdd.join(', ')}`
+                    `📊 Granted ${toAdd.length} role(s) to ${message.author.tag} (level ${newLevel}): ${toAdd.join(', ')}`
                 );
                 try {
                     await message.author.send(
-                        `🎉 Kamu dapat role baru di **${message.guild.name}** karena cap Level ${newLevel}!`
+                        `🎉 You got new role(s) in **${message.guild.name}** for reaching Level ${newLevel}!`
                     );
                 } catch (_) {}
             } catch (err) {
-                console.warn(`⚠️ Gagal kasih role level: ${err.message}`);
+                console.warn(`⚠️ Failed to grant level role(s): ${err.message}`);
             }
         }
     }

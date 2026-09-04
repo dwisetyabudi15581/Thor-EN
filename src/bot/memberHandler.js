@@ -1,16 +1,16 @@
 /**
  * Member Handler — welcome/goodbye + auto-role unverified.
  *
- * Dipanggil oleh:
+ * Called by:
  *   - src/bot/events/guildMemberAdd.js
  *   - src/bot/events/guildMemberRemove.js
  *
  * Logic:
- *   - onMemberAdd: beri role Unverified + kirim welcome embed ke channel welcome.
- *   - onMemberRemove: cek audit log (kick/ban vs leave sukarela) + kirim goodbye embed.
+ *   - onMemberAdd: grant the Unverified role + send a welcome embed to the welcome channel.
+ *   - onMemberRemove: check the audit log (kick/ban vs voluntary leave) + send a goodbye embed.
  *
- * v3.9.0 FIX: skip bot account.
- * v3.9.8 FIX: AuditLogEvent enum (bukan magic number 20/22), 10s window (was 5s),
+ * v3.9.0 FIX: skip bot accounts.
+ * v3.9.8 FIX: AuditLogEvent enum (not magic number 20/22), 10s window (was 5s),
  *   separate fetchAuditLogs for kick & ban (more accurate, less data).
  */
 
@@ -34,12 +34,12 @@ async function onMemberAdd(member) {
         if (unverifiedRole) {
             try {
                 await member.roles.add(unverifiedRole);
-                console.log(`✅ Role Unverified diberikan ke ${user.tag}`);
+                console.log(`✅ Unverified role granted to ${user.tag}`);
             } catch (err) {
-                console.error(`❌ Gagal tambah role unverified untuk ${user.tag}:`, err.message);
+                console.error(`❌ Failed to add unverified role for ${user.tag}:`, err.message);
             }
         } else {
-            console.warn(`⚠️ Role unverified (ID: ${config.roles.unverified}) tidak ditemukan.`);
+            console.warn(`⚠️ Unverified role (ID: ${config.roles.unverified}) not found.`);
         }
     }
 
@@ -64,10 +64,10 @@ async function onMemberAdd(member) {
             try {
                 await welcomeChannel.send({ content: `<@${user.id}>`, embeds: [embed] });
             } catch (err) {
-                console.error('❌ Gagal kirim welcome message:', err.message);
+                console.error('❌ Failed to send welcome message:', err.message);
             }
         } else {
-            console.warn(`⚠️ Channel welcome (ID: ${config.channels.welcome}) tidak ditemukan.`);
+            console.warn(`⚠️ Welcome channel (ID: ${config.channels.welcome}) not found.`);
         }
     }
 }
@@ -82,11 +82,11 @@ async function onMemberRemove(member) {
     if (!config.channels.goodbye) return;
     const goodbyeChannel = guild.channels.cache.get(config.channels.goodbye);
     if (!goodbyeChannel) {
-        console.warn(`⚠️ Channel goodbye (ID: ${config.channels.goodbye}) tidak ditemukan.`);
+        console.warn(`⚠️ Goodbye channel (ID: ${config.channels.goodbye}) not found.`);
         return;
     }
 
-    let action = 'keluar';
+    let action = 'left';
     const AUDIT_WINDOW_MS = 10 * 1000;
     try {
         const audits = await guild.fetchAuditLogs({
@@ -97,7 +97,7 @@ async function onMemberRemove(member) {
             e => e.target?.id === user.id && Date.now() - e.createdTimestamp < AUDIT_WINDOW_MS
         );
         if (kickEntry) {
-            action = 'dikeluarkan (kick)';
+            action = 'kicked';
         } else {
             const banAudits = await guild.fetchAuditLogs({
                 type: AuditLogEvent.MemberBanAdd,
@@ -107,13 +107,13 @@ async function onMemberRemove(member) {
                 e => e.target?.id === user.id && Date.now() - e.createdTimestamp < AUDIT_WINDOW_MS
             );
             if (banEntry) {
-                action = 'di-ban';
+                action = 'banned';
             }
         }
     } catch (err) {
         console.warn(
-            `⚠️ Tidak bisa akses audit log untuk goodbye <@${user.id}>: ${err.message?.slice(0, 80)}. ` +
-                `Pastikan bot punya permission View Audit Log.`
+            `⚠️ Could not access the audit log for <@${user.id}>'s goodbye message: ${err.message?.slice(0, 80)}. ` +
+                `Make sure the bot has the View Audit Log permission.`
         );
     }
 
@@ -136,7 +136,7 @@ async function onMemberRemove(member) {
     try {
         await goodbyeChannel.send({ embeds: [embed] });
     } catch (err) {
-        console.error('❌ Gagal kirim goodbye message:', err.message);
+        console.error('❌ Failed to send goodbye message:', err.message);
     }
 }
 

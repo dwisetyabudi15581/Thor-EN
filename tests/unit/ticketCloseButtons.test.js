@@ -1,16 +1,16 @@
 /**
- * Unit tests v3.9.35 — fix tombol konfirmasi close tiket non-transaksi.
+ * Unit tests v3.9.35 — fix for the close-confirmation buttons on non-transaction tickets.
  *
- * Bug yang diuji (user-reported):
- *   Di tiket bantuan/help/report/claim/giveaway, tombol konfirmasi close
- *   "❌ Tutup Tanpa Selesai" salah wiring ke customId `ticket_close_abort`
- *   — sama dengan "⏏️ Batal Tutup". Akibatnya KEDUA tombol sama-sama hanya
- *   membatalkan penutupan; tiket non-transaksi tidak bisa ditutup tanpa
- *   diselesaikan (interactions/ticket.js).
+ * Bug under test (user-reported):
+ *   On help/report/claim/giveaway tickets, the close-confirmation button
+ *   "❌ Close Without Completing" was mis-wired to the customId `ticket_close_abort`
+ *   — the same as "⏏️ Cancel Close". As a result, BOTH buttons only cancelled
+ *   the closing; non-transaction tickets could not be closed without being
+ *   completed (interactions/ticket.js).
  *
- * Fix: tombol "Tutup Tanpa Selesai" kini pakai customId `ticket_close_cancel`
- *   yang benar-benar menutup tiket (closeTicket isSuccess=false → transcript
- *   ditandai tidak selesai, channel dihapus, meta dibersihkan).
+ * Fix: the "Close Without Completing" button now uses the customId `ticket_close_cancel`,
+ *   which actually closes the ticket (closeTicket isSuccess=false → transcript
+ *   marked not completed, channel deleted, meta cleaned up).
  */
 
 const test = require('node:test');
@@ -21,8 +21,8 @@ const path = require('path');
 const dataDir = path.join(__dirname, '..', '..', 'data');
 
 // ====================================================
-// === Sandbox: file data produksi di-snapshot & restore ===
-// === (pola hardeningV31.test.js)                    ===
+// === Sandbox: production data files are snapshotted & restored ===
+// === (pattern from hardeningV31.test.js)                 ===
 // ====================================================
 const SANDBOX_FILES = ['tickets.json', 'config.json', 'stats.json'];
 const backups = [];
@@ -62,9 +62,9 @@ function resetDataFile(name, content) {
 
 const { setTicketMeta, getTicketMeta } = require('../../src/data/ticketManager');
 
-// Seed tiket non-transaksi (help / claim_giveaway).
-// v3.9.19+: kategori tanpa produk → produk sintetis isHelp:true, requiresKey:false,
-// tanpa flag isTransaction → resolveTicketType → isTransaction=false.
+// Seed a non-transaction ticket (help / claim_giveaway).
+// v3.9.19+: categories without products → synthetic product isHelp:true, requiresKey:false,
+// without the isTransaction flag → resolveTicketType → isTransaction=false.
 function seedNonTransactionTicket(channelId, category) {
     resetDataFile('tickets.json', {});
     resetDataFile('config.json', {});
@@ -96,7 +96,7 @@ function makeMockInteraction({ customId, channel }) {
         isStringSelectMenu: () => false,
         isUserSelectMenu: () => false,
         isModalSubmit: () => false,
-        // Admin via Discord permission (bypass role-config path).
+        // Admin via Discord permission (bypasses the role-config path).
         member: {
             permissions: { has: () => true },
             roles: { cache: new Map() }
@@ -128,10 +128,10 @@ function makeMockInteraction({ customId, channel }) {
 }
 
 // ====================================================
-// === 1. Row konfirmasi close — tiket non-transaksi ===
+// === 1. Close confirmation row — non-transaction ticket ===
 // ====================================================
 
-test('v3.9.35 FIX: tiket help — tombol "Tutup Tanpa Selesai" pakai customId ticket_close_cancel (bukan abort)', async () => {
+test('v3.9.35 FIX: help ticket — "Close Without Completing" button uses customId ticket_close_cancel (not abort)', async () => {
     seedNonTransactionTicket('chan_help_close', 'help');
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({
@@ -140,28 +140,28 @@ test('v3.9.35 FIX: tiket help — tombol "Tutup Tanpa Selesai" pakai customId ti
     });
     await routeInteraction(interaction);
 
-    assert.ok(interaction._replies.length > 0, 'konfirmasi close merespon');
+    assert.ok(interaction._replies.length > 0, 'close confirmation responded');
     const reply = interaction._replies[0];
-    assert.ok(reply.components?.length > 0, 'row tombol konfirmasi ada');
+    assert.ok(reply.components?.length > 0, 'close confirmation button row exists');
 
     const btns = reply.components[0].components;
-    assert.strictEqual(btns.length, 3, 'help: 3 tombol (Selesai / Tutup Tanpa Selesai / Batal Tutup)');
+    assert.strictEqual(btns.length, 3, 'help: 3 buttons (Done / Close Without Completing / Cancel Close)');
 
     const ids = btns.map(b => b.data.custom_id);
-    // Inti fix: tombol close-tanpa-selesai TIDAK lagi memakai customId abort.
-    assert.ok(ids.includes('ticket_close_success'), 'tombol Selesai ada');
-    assert.ok(ids.includes('ticket_close_cancel'), 'tombol Tutup Tanpa Selesai → customId ticket_close_cancel');
-    assert.ok(ids.includes('ticket_close_abort'), 'tombol Batal Tutup ada');
+    // Core fix: the close-without-completing button NO LONGER uses the abort customId.
+    assert.ok(ids.includes('ticket_close_success'), 'Done button exists');
+    assert.ok(ids.includes('ticket_close_cancel'), 'Close Without Completing button → customId ticket_close_cancel');
+    assert.ok(ids.includes('ticket_close_abort'), 'Cancel Close button exists');
 
-    // Tidak boleh ada customId ganda di satu row (Discord menolak duplikat).
-    assert.strictEqual(new Set(ids).size, ids.length, 'semua customId unik');
+    // There must be no duplicate customIds in a single row (Discord rejects duplicates).
+    assert.strictEqual(new Set(ids).size, ids.length, 'all customIds unique');
 
-    // Label tombol benar.
+    // Button labels are correct.
     const cancelBtn = btns.find(b => b.data.custom_id === 'ticket_close_cancel');
-    assert.strictEqual(cancelBtn.data.label, '❌ Tutup Tanpa Selesai');
+    assert.strictEqual(cancelBtn.data.label, '❌ Close Without Completing');
 });
 
-test('v3.9.35 FIX: tiket claim_giveaway — row konfirmasi sama (help-style), tombol cancel tersedia', async () => {
+test('v3.9.35 FIX: claim_giveaway ticket — same confirmation row (help-style), cancel button available', async () => {
     seedNonTransactionTicket('chan_claim_close', 'claim_giveaway');
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({
@@ -172,15 +172,15 @@ test('v3.9.35 FIX: tiket claim_giveaway — row konfirmasi sama (help-style), to
 
     const btns = interaction._replies[0].components[0].components;
     const ids = btns.map(b => b.data.custom_id);
-    assert.ok(ids.includes('ticket_close_cancel'), 'claim/giveaway dapat tombol Tutup Tanpa Selesai');
-    assert.ok(ids.includes('ticket_close_abort'), 'claim/giveaway dapat tombol Batal Tutup');
+    assert.ok(ids.includes('ticket_close_cancel'), 'claim/giveaway gets the Close Without Completing button');
+    assert.ok(ids.includes('ticket_close_abort'), 'claim/giveaway gets the Cancel Close button');
 });
 
 // ====================================================
-// === 2. Klik ticket_close_cancel → tiket BENAR-BENAR ditutup ===
+// === 2. Click ticket_close_cancel → ticket is REALLY closed ===
 // ====================================================
 
-test('v3.9.35 FIX: klik "Tutup Tanpa Selesai" → channel dihapus + meta dibersihkan (tiket tertutup)', async () => {
+test('v3.9.35 FIX: clicking "Close Without Completing" → channel deleted + meta cleaned up (ticket closed)', async () => {
     seedNonTransactionTicket('chan_help_cancel', 'help');
     let deleted = false;
     const routeInteraction = require('../../src/interactions');
@@ -196,11 +196,11 @@ test('v3.9.35 FIX: klik "Tutup Tanpa Selesai" → channel dihapus + meta dibersi
     });
     await routeInteraction(interaction);
 
-    assert.strictEqual(deleted, true, 'channel tiket dihapus → tiket BENAR-BENAR tertutup');
-    assert.strictEqual(getTicketMeta('chan_help_cancel', ''), null, 'meta tiket dibersihkan dari tickets.json');
+    assert.strictEqual(deleted, true, 'ticket channel deleted → ticket is REALLY closed');
+    assert.strictEqual(getTicketMeta('chan_help_cancel', ''), null, 'ticket meta cleaned up from tickets.json');
 });
 
-test('v3.9.35: klik "Tutup Tanpa Selesai" pada tiket report → juga menutup (semua kategori non-transaksi)', async () => {
+test('v3.9.35: clicking "Close Without Completing" on a report ticket → also closes (all non-transaction categories)', async () => {
     seedNonTransactionTicket('chan_report_cancel', 'report');
     let deleted = false;
     const routeInteraction = require('../../src/interactions');
@@ -216,15 +216,15 @@ test('v3.9.35: klik "Tutup Tanpa Selesai" pada tiket report → juga menutup (se
     });
     await routeInteraction(interaction);
 
-    assert.strictEqual(deleted, true, 'tiket report tertutup');
+    assert.strictEqual(deleted, true, 'report ticket closed');
     assert.strictEqual(getTicketMeta('chan_report_cancel', ''), null);
 });
 
 // ====================================================
-// === 3. Klik ticket_close_abort → tiket TIDAK ditutup ===
+// === 3. Click ticket_close_abort → ticket NOT closed ===
 // ====================================================
 
-test('v3.9.35: klik "Batal Tutup" (ticket_close_abort) → tiket TIDAK ditutup, meta utuh', async () => {
+test('v3.9.35: clicking "Cancel Close" (ticket_close_abort) → ticket NOT closed, meta intact', async () => {
     seedNonTransactionTicket('chan_help_abort', 'help');
     let deleted = false;
     const routeInteraction = require('../../src/interactions');
@@ -240,19 +240,19 @@ test('v3.9.35: klik "Batal Tutup" (ticket_close_abort) → tiket TIDAK ditutup, 
     });
     await routeInteraction(interaction);
 
-    assert.strictEqual(deleted, false, 'channel TIDAK dihapus');
-    assert.ok(getTicketMeta('chan_help_abort', ''), 'meta tiket tetap ada');
+    assert.strictEqual(deleted, false, 'channel NOT deleted');
+    assert.ok(getTicketMeta('chan_help_abort', ''), 'ticket meta still exists');
     assert.ok(
-        interaction._updates.length > 0 && /dibatalkan/.test(interaction._updates[0].content),
-        'pesan konfirmasi: penutupan dibatalkan'
+        interaction._updates.length > 0 && /cancelled/.test(interaction._updates[0].content),
+        'confirmation message: closing cancelled'
     );
 });
 
 // ====================================================
-// === 4. Non-admin tidak bisa tutup tanpa selesai (defense) ===
+// === 4. Non-admin cannot close without completing (defense) ===
 // ====================================================
 
-test('v3.9.35: non-admin klik "Tutup Tanpa Selesai" → ditolak, tiket tetap hidup', async () => {
+test('v3.9.35: non-admin clicks "Close Without Completing" → rejected, ticket stays alive', async () => {
     seedNonTransactionTicket('chan_help_noadmin', 'help');
     let deleted = false;
     const routeInteraction = require('../../src/interactions');
@@ -266,24 +266,24 @@ test('v3.9.35: non-admin klik "Tutup Tanpa Selesai" → ditolak, tiket tetap hid
             }
         })
     });
-    // Non-admin: tidak punya permission ManageGuild/Administrator & tanpa role admin.
+    // Non-admin: no ManageGuild/Administrator permission & no admin role.
     interaction.member = {
         permissions: { has: () => false },
         roles: { cache: new Map() }
     };
     await routeInteraction(interaction);
 
-    assert.strictEqual(deleted, false, 'channel tidak dihapus');
-    assert.ok(getTicketMeta('chan_help_noadmin', ''), 'meta tetap ada');
-    assert.match(interaction._replies[0].content, /Hanya Admin/);
+    assert.strictEqual(deleted, false, 'channel not deleted');
+    assert.ok(getTicketMeta('chan_help_noadmin', ''), 'meta still exists');
+    assert.match(interaction._replies[0].content, /Only Admin\/Staff/);
 });
 
 // ====================================================
-// === 5. Legacy: ephemeral lama masih punya tombol abort2 ===
-// ===    → handler tetap menangkap (tidak dead button) ===
+// === 5. Legacy: old ephemerals still have the abort2 button ===
+// ===    → the handler still catches it (no dead button) ===
 // ====================================================
 
-test('v3.9.35 compat: customId lama ticket_close_abort2 (ephemeral lama) tetap di-handle → batal, tidak error', async () => {
+test('v3.9.35 compat: legacy customId ticket_close_abort2 (old ephemeral) still handled → cancel, no error', async () => {
     seedNonTransactionTicket('chan_help_abort2', 'help');
     let deleted = false;
     const routeInteraction = require('../../src/interactions');
@@ -299,6 +299,6 @@ test('v3.9.35 compat: customId lama ticket_close_abort2 (ephemeral lama) tetap d
     });
     await routeInteraction(interaction);
 
-    assert.strictEqual(deleted, false, 'channel tidak dihapus (perilaku batal)');
-    assert.ok(getTicketMeta('chan_help_abort2', ''), 'meta tetap ada');
+    assert.strictEqual(deleted, false, 'channel not deleted (cancel behavior)');
+    assert.ok(getTicketMeta('chan_help_abort2', ''), 'meta still exists');
 });

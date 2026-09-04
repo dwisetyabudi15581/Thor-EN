@@ -1,21 +1,21 @@
 /**
- * Unit tests v3.9.30 — PENGGABUNGAN /set-transcript-channel KE /set-channel.
+ * Unit tests v3.9.30 — MERGING /set-transcript-channel INTO /set-channel.
  *
- * Permintaan user: "/set-transkip-chanel di jadiin satu saja dengan /set-chanel
- * biar tidak bingung" — admin tidak perlu hafal dua command channel yang mirip.
+ * User request: "/set-transcript-channel should be merged into /set-channel so it's
+ * less confusing" — admins no longer need to remember two similar channel commands.
  *
- * Yang dibuktikan test ini:
- *   1. Registry: command terpisah /set-transcript-channel BENAR-BENAR hilang
- *      (total command 81 → 80) dan tidak ada mapping routing yang nyangkut.
- *   2. Registry: /set-channel tipe kini punya choice 'transcript';
- *      /remove-channel juga (supaya bisa dihapus dengan pola yang sama).
- *   3. Handler: /set-channel tipe:transcript menulis ke key yang sama yang
- *      dibaca ticketManager.saveTranscript → config.channels.transcript —
- *      perilaku identik dengan mantan command terpisah (roundtrip key).
- *   4. Handler: channel non-text (voice/category) ditolak — guard pindahan
- *      dari handler lama, kini berlaku untuk SEMUA tipe channel config.
- *   5. Handler: tipe lain (invoice/welcome/...) tetap berfungsi seperti
- *      sebelumnya (regression guard) — tanpa tip transcript.
+ * What this test proves:
+ *   1. Registry: the separate /set-transcript-channel command is REALLY gone
+ *      (total commands 81 → 80) and no routing mapping is left dangling.
+ *   2. Registry: /set-channel tipe now has a 'transcript' choice;
+ *      /remove-channel too (so it can be removed with the same pattern).
+ *   3. Handler: /set-channel tipe:transcript writes to the same key that
+ *      ticketManager.saveTranscript reads — config.channels.transcript —
+ *      behavior identical to the former separate command (key roundtrip).
+ *   4. Handler: non-text channels (voice/category) are rejected — guard moved
+ *      from the old handler, now applies to ALL channel config types.
+ *   5. Handler: other types (invoice/welcome/...) keep working exactly like
+ *      before (regression guard) — without the transcript tip.
  */
 
 const test = require('node:test');
@@ -29,7 +29,7 @@ const configPath = path.join(DATA_DIR, 'config.json');
 
 // ====================================================
 // === Sandbox: snapshot & restore config.json       ===
-// === (pola newCategorySafety.test.js)              ===
+// === (newCategorySafety.test.js pattern)           ===
 // ====================================================
 const SANDBOX_FILES = ['config.json'];
 const backups = new Map();
@@ -54,7 +54,7 @@ process.on('exit', () => {
     }
 });
 
-/** Config terkontrol: tanpa audit-log → logAudit silent-skip. */
+/** Controlled config: no audit-log → logAudit silently skips. */
 function writeTestConfig() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     fs.writeFileSync(
@@ -73,7 +73,7 @@ function writeTestConfig() {
     );
 }
 
-/** Mock channel Discord. default: text channel (type GuildText). */
+/** Discord channel mock. Default: text channel (type GuildText). */
 function makeChannel({ id = '111', name = 'transcript-log', type = ChannelType.GuildText } = {}) {
     return {
         id,
@@ -83,7 +83,7 @@ function makeChannel({ id = '111', name = 'transcript-log', type = ChannelType.G
     };
 }
 
-/** Mock interaction untuk handler domain config (/set-channel). */
+/** Interaction mock for the config domain handler (/set-channel). */
 function makeSetChannelInteraction({ tipe, channel }) {
     const replies = [];
     return {
@@ -116,43 +116,43 @@ function makeSetChannelInteraction({ tipe, channel }) {
 }
 
 // ====================================================
-// === 1. Registry — command lama hilang, choice baru ada ===
+// === 1. Registry — old command gone, new choice present ===
 // ====================================================
 
-test('registry: /set-transcript-channel TIDAK lagi terdaftar (digabung ke /set-channel)', () => {
+test('registry: /set-transcript-channel is NO LONGER registered (merged into /set-channel)', () => {
     const { getCommands } = require('../../src/commands/registry');
     const names = getCommands().map(c => c.name);
-    assert.ok(!names.includes('set-transcript-channel'), 'command lama harus hilang dari registry');
+    assert.ok(!names.includes('set-transcript-channel'), 'the old command must be gone from the registry');
 });
 
-test('registry: total command tepat 82 (81 - 1 digabung + 2 midman v3.9.32)', () => {
+test('registry: total commands exactly 82 (81 - 1 merged + 2 midman v3.9.32)', () => {
     const { getCommands } = require('../../src/commands/registry');
     assert.strictEqual(getCommands().length, 82);
 });
 
-test('registry: /set-channel punya choice tipe "transcript" + deskripsi menyebut transcript', () => {
+test('registry: /set-channel has the "transcript" tipe choice + description mentions transcript', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmd = getCommands().find(c => c.name === 'set-channel');
-    assert.ok(cmd, 'set-channel harus terdaftar');
-    assert.ok(/transcript/i.test(cmd.description), 'deskripsi root harus menyebut transcript');
+    assert.ok(cmd, 'set-channel must be registered');
+    assert.ok(/transcript/i.test(cmd.description), 'the root description must mention transcript');
     const tipe = cmd.options.find(o => o.name === 'tipe');
-    assert.ok(tipe, 'set-channel harus punya opsi tipe');
+    assert.ok(tipe, 'set-channel must have a tipe option');
     const values = tipe.choices.map(c => c.value);
     for (const v of ['invoice', 'welcome', 'goodbye', 'audit-log', 'transcript']) {
-        assert.ok(values.includes(v), `choice "${v}" harus tetap ada`);
+        assert.ok(values.includes(v), `choice "${v}" must still exist`);
     }
 });
 
-test('registry: /remove-channel juga punya choice "transcript" (pola hapus konsisten)', () => {
+test('registry: /remove-channel also has the "transcript" choice (consistent removal pattern)', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmd = getCommands().find(c => c.name === 'remove-channel');
-    assert.ok(cmd, 'remove-channel harus terdaftar');
+    assert.ok(cmd, 'remove-channel must be registered');
     const tipe = cmd.options.find(o => o.name === 'tipe');
     const values = tipe.choices.map(c => c.value);
-    assert.ok(values.includes('transcript'), 'remove-channel harus bisa hapus transcript');
+    assert.ok(values.includes('transcript'), 'remove-channel must be able to remove transcript');
 });
 
-test('router: /set-transcript-channel tidak lagi di-map — balas "belum didukung"', async () => {
+test('router: /set-transcript-channel is no longer mapped — replies "not supported"', async () => {
     const routeCommand = require('../../src/commands');
     const replies = [];
     const interaction = {
@@ -174,14 +174,14 @@ test('router: /set-transcript-channel tidak lagi di-map — balas "belum didukun
     };
     await routeCommand(interaction);
     assert.strictEqual(replies.length, 1);
-    assert.match(replies[0].opts.content, /belum didukung|tidak dikenali|not registered/i);
+    assert.match(replies[0].opts.content, /not supported by the router/i);
 });
 
 // ====================================================
-// === 2. Handler /set-channel — perilaku transcript ===
+// === 2. /set-channel handler — transcript behavior ===
 // ====================================================
 
-test('handler: /set-channel tipe:transcript → config.channels.transcript terisi + tip khusus', async () => {
+test('handler: /set-channel tipe:transcript → config.channels.transcript filled + special tip', async () => {
     writeTestConfig();
     const { getConfig } = require('../../src/data/configManager');
     const configHandler = require('../../src/commands/config');
@@ -190,24 +190,24 @@ test('handler: /set-channel tipe:transcript → config.channels.transcript teris
     const interaction = makeSetChannelInteraction({ tipe: 'transcript', channel: ch });
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, '999', 'harus menulis key channels.transcript');
+    assert.strictEqual(getConfig().channels.transcript, '999', 'must write the channels.transcript key');
     const last = interaction._replies[interaction._replies.length - 1];
     assert.match(last.opts.content, /✅/);
     assert.match(last.opts.content, /transcript/i);
-    assert.match(last.opts.content, /auto-save/i, 'tip khusus transcript harus muncul');
+    assert.match(last.opts.content, /auto-save/i, 'the transcript-specific tip must appear');
 });
 
-test('handler: key yang ditulis = key yang dibaca saveTranscript (roundtrip kunci data)', () => {
+test('handler: the key written = the key saveTranscript reads (data key roundtrip)', () => {
     writeTestConfig();
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig();
-    // ticketManager.js membaca: config.channels?.transcript (saveTranscript).
-    // Test ini mengunci kontrak: key tulisan handler == key pembacaan runtime.
-    assert.ok('transcript' in config.channels === false, 'awal: kosong');
+    // ticketManager.js reads: config.channels?.transcript (saveTranscript).
+    // This test locks the contract: the key the handler writes == the key the runtime reads.
+    assert.ok('transcript' in config.channels === false, 'start: empty');
     const ch = makeChannel({ id: '777' });
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'data', 'ticketManager.js'), 'utf8');
-    assert.match(src, /config\.channels\?\.transcript/, 'ticketManager harus membaca channels.transcript');
-    // Tulis via handler lalu pastikan key persis sama yang dibaca runtime.
+    assert.match(src, /config\.channels\?\.transcript/, 'ticketManager must read channels.transcript');
+    // Write via the handler, then make sure it is exactly the same key the runtime reads.
     return require('../../src/commands/config')(makeSetChannelInteraction({ tipe: 'transcript', channel: ch })).then(
         () => {
             assert.strictEqual(getConfig().channels.transcript, '777');
@@ -215,7 +215,7 @@ test('handler: key yang ditulis = key yang dibaca saveTranscript (roundtrip kunc
     );
 });
 
-test('handler: /set-channel tipe:transcript dengan VOICE channel → ditolak, config tidak berubah', async () => {
+test('handler: /set-channel tipe:transcript with a VOICE channel → rejected, config unchanged', async () => {
     writeTestConfig();
     const { getConfig } = require('../../src/data/configManager');
     const configHandler = require('../../src/commands/config');
@@ -224,12 +224,12 @@ test('handler: /set-channel tipe:transcript dengan VOICE channel → ditolak, co
     const interaction = makeSetChannelInteraction({ tipe: 'transcript', channel: voice });
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, undefined, 'tidak boleh tersimpan');
+    assert.strictEqual(getConfig().channels.transcript, undefined, 'must not be saved');
     const last = interaction._replies[interaction._replies.length - 1];
-    assert.match(last.opts.content, /harus berupa text channel/i);
+    assert.match(last.opts.content, /must be a text channel/i);
 });
 
-test('handler: /set-channel tipe:invoice tetap normal — tanpa tip transcript (regression)', async () => {
+test('handler: /set-channel tipe:invoice still normal — without the transcript tip (regression)', async () => {
     writeTestConfig();
     const { getConfig } = require('../../src/data/configManager');
     const configHandler = require('../../src/commands/config');
@@ -241,14 +241,14 @@ test('handler: /set-channel tipe:invoice tetap normal — tanpa tip transcript (
     assert.strictEqual(getConfig().channels.invoice, '321');
     const last = interaction._replies[interaction._replies.length - 1];
     assert.match(last.opts.content, /✅/);
-    assert.ok(!/auto-save/i.test(last.opts.content), 'tip transcript TIDAK boleh muncul untuk tipe lain');
+    assert.ok(!/auto-save/i.test(last.opts.content), 'the transcript tip must NOT appear for other types');
 });
 
 // ====================================================
-// === 3. /remove-channel — transcript bisa dihapus ===
+// === 3. /remove-channel — transcript can be removed ===
 // ====================================================
 
-test('handler: /remove-channel tipe:transcript → key dihapus dari config', async () => {
+test('handler: /remove-channel tipe:transcript → key removed from config', async () => {
     writeTestConfig();
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const config = getConfig();
@@ -285,8 +285,8 @@ test('handler: /remove-channel tipe:transcript → key dihapus dari config', asy
     };
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, undefined, 'key transcript harus terhapus');
+    assert.strictEqual(getConfig().channels.transcript, undefined, 'the transcript key must be removed');
     const last = replies[replies.length - 1];
-    assert.match(last.opts.content, /berhasil dihapus/);
+    assert.match(last.opts.content, /removed from config/i);
     assert.match(last.opts.content, /\/set-channel transcript/);
 });

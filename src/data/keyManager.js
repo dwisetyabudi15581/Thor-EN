@@ -14,16 +14,16 @@ const keysPath = path.join(__dirname, '..', '..', 'data', 'keys.json');
  *     "username": "User#1234",
  *     "roleId": "789012",
  *     "productName": "30 Days",
- *     "days": 30,           // 0 = permanen
- *     "expireAt": 1735689600000,  // timestamp ms. null = permanen
+ *     "days": 30,           // 0 = permanent
+ *     "expireAt": 1735689600000,  // timestamp ms. null = permanent
  *     "createdAt": 1735000000000
  *   }
  * ]
  *
- * === MODEL KEY-DRIVEN ===
- * Setiap pembelian = 1 key baru dengan expireAt INDEPENDEN (tidak ditumpuk).
- * Role VIP mengikuti key dengan sisa waktu TERBANYAK (max dari semua key aktif).
- * Key yang sudah expired akan dihapus otomatis dari keys.json.
+ * === KEY-DRIVEN MODEL ===
+ * Every purchase = 1 new key with an INDEPENDENT expireAt (not stacked).
+ * The VIP role follows the key with the MOST time remaining (max of all active keys).
+ * Expired keys are automatically removed from keys.json.
  */
 
 function loadKeys() {
@@ -31,18 +31,18 @@ function loadKeys() {
         if (!fs.existsSync(keysPath)) return [];
         return JSON.parse(fs.readFileSync(keysPath, 'utf8'));
     } catch (err) {
-        console.error('Error load keys.json:', err.message);
-        // v3.9.26: karantina file korup SEBELUM return [] — tanpa ini save()
-        // berikutnya menimpa file korup dengan state kosong → SEMUA VIP key
-        // hilang permanen. (keys.json = data paling kritis di bot ini.)
+        console.error('Error loading keys.json:', err.message);
+        // v3.9.26: quarantine the corrupt file BEFORE returning [] — without this the
+        // next save() would overwrite the corrupt file with an empty state → ALL VIP
+        // keys permanently lost. (keys.json = the most critical data in this bot.)
         quarantineCorruptFile(keysPath);
         return [];
     }
 }
 
 /**
- * v3.9.0 FIX: pakai safeWriteJSON (atomic tmp+rename) supaya crash mid-write
- * tidak corrupt keys.json (yang bisa wipe semua VIP key).
+ * v3.9.0 FIX: uses safeWriteJSON (atomic tmp+rename) so a mid-write crash
+ * doesn't corrupt keys.json (which could wipe all VIP keys).
  */
 function saveKeys(list) {
     safeWriteJSON(keysPath, list);
@@ -53,14 +53,14 @@ function genId() {
 }
 
 /**
- * Tambah key baru.
+ * Add a new key.
  *
  * @param {Object} data - { key, userId, username, roleId, productName, days, guildId }
- *   - days: 0 = permanen, >0 = durasi hari
- *   - expireAt akan dihitung otomatis (now + days * 86400000) atau null kalau permanen
- *   - guildId: ID guild tempat key ini diberikan (v3.9.3 — sebelumnya tidak disimpan,
- *     yang bikin removeAllKeysByUser(userId, guildId) broken karena filter tidak pernah match)
- * @returns {Object} entry yang baru disimpan
+ *   - days: 0 = permanent, >0 = duration in days
+ *   - expireAt is computed automatically (now + days * 86400000), or null if permanent
+ *   - guildId: the guild ID where this key was given (v3.9.3 — previously not stored,
+ *     which broke removeAllKeysByUser(userId, guildId) because the filter never matched)
+ * @returns {Object} the newly stored entry
  */
 function addKey(data) {
     const list = loadKeys();
@@ -68,24 +68,24 @@ function addKey(data) {
     const days = Number(data.days) || 0;
     const expireAt = days > 0 ? now + days * 24 * 60 * 60 * 1000 : null;
 
-    // v3.9.38 FIX (FIX 5c): harden data layer — key kosong/whitespace DITOLAK.
-    // Sebelumnya hanya truthy-check `data.key &&` di dup-check → "   " lolos
-    // tersimpan sebagai key blank (buyers tidak bisa redeem apa-apa). Key
-    // di-trim dulu, dan versi ter-trim yang disimpan supaya dup-check akurat.
+    // v3.9.38 FIX (FIX 5c): hardened data layer — empty/whitespace keys are REJECTED.
+    // Before, the dup-check only did a truthy check `data.key &&` → "   " slipped
+    // through and got stored as a blank key (buyers couldn't redeem anything). The
+    // key is trimmed first, and the trimmed version is stored so the dup-check is accurate.
     const key = typeof data.key === 'string' ? data.key.trim() : '';
     if (!key) {
-        throw new Error('Key tidak boleh kosong');
+        throw new Error('Key cannot be empty');
     }
 
-    // v3.9.8 FIX: cek uniqueness key. Sebelumnya tidak ada cek → admin typo
-    // / copy-paste bisa bikin 2 entry dengan key sama, dan getActiveKeysByUserAndRole
-    // double-count (meski max() idempotent, tetap UX confusion + bisa bikin
-    // member redeem 2x kalau redemption logic pakai find-by-key).
-    // v3.9.38 FIX (FIX 6c): pesan error TIDAK lagi menyertakan nilai key —
-    // error ini mengalir ke console log handler (ticket.js/keys.js) → raw key
-    // bocor ke log. Admin sudah tahu key yang barusan dia ketik.
+    // v3.9.8 FIX: check key uniqueness. Before there was no check → an admin typo
+    // / copy-paste could create 2 entries with the same key, and getActiveKeysByUserAndRole
+    // would double-count (though max() is idempotent, still UX confusion + could let
+    // a member redeem 2x if the redemption logic uses find-by-key).
+    // v3.9.38 FIX (FIX 6c): the error message NO LONGER includes the key value —
+    // this error flows to the handler's console log (ticket.js/keys.js) → the raw key
+    // would leak into logs. The admin already knows the key they just typed.
     if (list.some(k => k.key === key)) {
-        throw new Error('Key sudah ada di database (duplicate).');
+        throw new Error('Key already exists in the database (duplicate).');
     }
 
     const entry = {
@@ -97,7 +97,7 @@ function addKey(data) {
         productName: data.productName || 'Unknown',
         days,
         expireAt,
-        guildId: data.guildId || null, // v3.9.3: simpan guildId supaya cross-guild wipe bisa akurat
+        guildId: data.guildId || null, // v3.9.3: store guildId so cross-guild wipes can be accurate
         createdAt: now
     };
     list.push(entry);
@@ -106,31 +106,31 @@ function addKey(data) {
 }
 
 /**
- * Ambil SEMUA key milik user tertentu (tanpa filter expired).
- * v3.9.8: tambah optional guildId filter supaya /list-keys tidak bocor cross-guild.
+ * Get ALL keys owned by a specific user (no expired filter).
+ * v3.9.8: added an optional guildId filter so /list-keys doesn't leak cross-guild.
  */
 function findAllByUser(userId, guildId) {
     const list = loadKeys();
     if (guildId) {
-        // Filter key milik user ini di guild ini.
-        // Key tanpa guildId (schema lama, pre-v3.9.3) juga diikutsertakan (backward compat).
+        // Filter this user's keys in this guild.
+        // Keys without a guildId (old schema, pre-v3.9.3) are included too (backward compat).
         return list.filter(k => k.userId === userId && (k.guildId === guildId || !k.guildId));
     }
     return list.filter(k => k.userId === userId);
 }
 
 /**
- * Ambil key aktif (belum expired) milik user + role tertentu.
- * Key permanen (expireAt = null) selalu dihitung aktif.
+ * Get the active (not expired) keys owned by a user for a specific role.
+ * Permanent keys (expireAt = null) always count as active.
  *
  * @param {string} userId
  * @param {string} roleId
  * @param {number} [now=Date.now()] - timestamp ms
- * @param {string|null} [guildId=null] - v3.9.31: optional guild filter (konsistensi
- *        pola dengan findAllByUser). Key legacy tanpa guildId tetap dihitung
- *        (backward compat). roleId sebenarnya unik per guild (snowflake), jadi
- *        ini murni konsistensi, bukan fix kebocoran nyata.
- * @returns {Array} daftar key aktif
+ * @param {string|null} [guildId=null] - v3.9.31: optional guild filter (consistency
+ *        with the findAllByUser pattern). Legacy keys without a guildId still count
+ *        (backward compat). roleId is actually unique per guild (snowflake), so
+ *        this is purely consistency, not a real leak fix.
+ * @returns {Array} list of active keys
  */
 function getActiveKeysByUserAndRole(userId, roleId, now = Date.now(), guildId = null) {
     const list = loadKeys();
@@ -144,7 +144,7 @@ function getActiveKeysByUserAndRole(userId, roleId, now = Date.now(), guildId = 
 }
 
 /**
- * Apakah user punya key PERMANEN untuk role tertentu?
+ * Does the user have a PERMANENT key for a specific role?
  */
 function hasPermanentKey(userId, roleId) {
     const list = loadKeys();
@@ -152,20 +152,20 @@ function hasPermanentKey(userId, roleId) {
 }
 
 /**
- * Ambil expireAt TERBESAR dari semua key aktif milik user+role.
- * - Kalau ada key permanen → return null (permanen)
- * - Kalau ada key aktif → return max(expireAt)
- * - Kalau tidak ada key aktif → return null (tapi panggilan harus cek dulu)
+ * Get the LARGEST expireAt across all of a user+role's active keys.
+ * - If a permanent key exists → return null (permanent)
+ * - If active keys exist → return max(expireAt)
+ * - If no active keys → return null (but the caller must check first)
  *
- * @returns {number|null} timestamp ms, atau null kalau permanen / tidak ada
+ * @returns {number|null} timestamp ms, or null if permanent / none
  */
 function getMaxExpireAtByUserAndRole(userId, roleId, now = Date.now()) {
     const actives = getActiveKeysByUserAndRole(userId, roleId, now);
     if (actives.length === 0) return null;
-    if (actives.some(k => k.expireAt === null)) return null; // ada permanen
-    // v3.9.1 FIX: pakai reduce, bukan Math.max(...spread). Kalau user punya
-    // ratusan key aktif (kasus ekstrim), spread bisa kena call stack limit
-    // dan throw RangeError "Maximum call stack size exceeded".
+    if (actives.some(k => k.expireAt === null)) return null; // a permanent one exists
+    // v3.9.1 FIX: use reduce, not Math.max(...spread). If a user has
+    // hundreds of active keys (extreme case), the spread can hit the call stack
+    // limit and throw RangeError "Maximum call stack size exceeded".
     let max = -Infinity;
     for (const k of actives) {
         if (k.expireAt > max) max = k.expireAt;
@@ -174,8 +174,8 @@ function getMaxExpireAtByUserAndRole(userId, roleId, now = Date.now()) {
 }
 
 /**
- * Ambil semua key yang SUDAH expired (expireAt !== null && expireAt <= now).
- * Key permanen TIDAK akan pernah masuk sini.
+ * Get all keys that have ALREADY expired (expireAt !== null && expireAt <= now).
+ * Permanent keys will NEVER end up here.
  */
 function getExpiredKeys(now = Date.now()) {
     const list = loadKeys();
@@ -183,19 +183,19 @@ function getExpiredKeys(now = Date.now()) {
 }
 
 /**
- * Ambil SEMUA key di keys.json (untuk keperluan stats/debug).
+ * Get ALL keys in keys.json (for stats/debug purposes).
  */
 function getAllKeys() {
     return loadKeys();
 }
 
 /**
- * Hitung statistik key buat /config-show.
+ * Compute key statistics for /config-show.
  * Returns: { total, active, expired, permanent }
- *  - total: semua key di file
- *  - active: expireAt > now ATAU permanen
- *  - expired: expireAt <= now (akan dibersihkan scheduler)
- *  - permanent: days=0 atau expireAt=null
+ *  - total: all keys in the file
+ *  - active: expireAt > now OR permanent
+ *  - expired: expireAt <= now (cleaned up by the scheduler)
+ *  - permanent: days=0 or expireAt=null
  */
 function getStats(now = Date.now()) {
     const list = loadKeys();
@@ -205,7 +205,7 @@ function getStats(now = Date.now()) {
     for (const k of list) {
         if (k.expireAt === null || k.days === 0) {
             permanent++;
-            active++; // permanent selalu active
+            active++; // permanent is always active
         } else if (k.expireAt > now) {
             active++;
         } else {
@@ -217,7 +217,7 @@ function getStats(now = Date.now()) {
 
 /**
  * v3.9.4: Guild-scoped variant of getStats.
- * Hanya hitung key milik guild ini (atau key legacy tanpa guildId, yang dianggap milik guild pemanggil).
+ * Only counts keys belonging to this guild (or legacy keys without a guildId, treated as the calling guild's).
  *
  * @param {string} guildId
  * @param {number} now
@@ -243,8 +243,8 @@ function getStatsByGuild(guildId, now = Date.now()) {
 }
 
 /**
- * Hapus SEMUA key yang sudah expired dari keys.json.
- * @returns {number} jumlah key yang dihapus
+ * Remove ALL expired keys from keys.json.
+ * @returns {number} number of keys removed
  */
 function removeExpiredKeys(now = Date.now()) {
     const list = loadKeys();
@@ -255,34 +255,34 @@ function removeExpiredKeys(now = Date.now()) {
 }
 
 /**
- * Hapus SEMUA key milik user tertentu (dipakai /clear-schedule --clear_keys).
- * v3.9.0 FIX: tambah parameter guildId supaya cross-guild wipe tidak terjadi.
- *   - Kalau guildId diberikan: hanya hapus key yang match userId DAN guildId.
- *   - Kalau guildId undefined/null: behavior lama (hapus semua key user — backward compat).
+ * Remove ALL keys owned by a specific user (used by /clear-schedule --clear_keys).
+ * v3.9.0 FIX: added the guildId parameter so no cross-guild wipe happens.
+ *   - If guildId is given: only remove keys matching userId AND guildId.
+ *   - If guildId is undefined/null: old behavior (remove all of the user's keys — backward compat).
  *
- * v3.9.3 FIX: sebelumnya, kalau guildId di-pass tapi key tidak punya field guildId
- *   (schema lama, sebelum v3.9.3), filter `k.guildId === guildId` TIDAK PERNAH match
- *   karena k.guildId = undefined. Akibatnya, /clear-schedule clear_keys:true
- *   silently menghapus 0 key padahal admin mengira VIP sudah di-reset.
- *   Sekarang: key tanpa guildId (schema lama) dianggap milik guild yang memanggil
- *   (asumsi: bot sebelumnya single-guild). Key baru (v3.9.3+) punya guildId eksplisit.
+ * v3.9.3 FIX: before, when guildId was passed but a key had no guildId field
+ *   (old schema, pre-v3.9.3), the filter `k.guildId === guildId` NEVER matched
+ *   because k.guildId was undefined. As a result, /clear-schedule clear_keys:true
+ *   silently removed 0 keys while the admin believed VIP had been reset.
+ *   Now: keys without a guildId (old schema) are treated as belonging to the calling
+ *   guild (assumption: the bot was previously single-guild). New keys (v3.9.3+) have an explicit guildId.
  *
  * @param {string} userId
- * @param {string} [guildId] - opsional, filter by guild kalau diberikan
- * @returns {number} jumlah key yang dihapus
+ * @param {string} [guildId] - optional, filter by guild when given
+ * @returns {number} number of keys removed
  */
 function removeAllKeysByUser(userId, guildId) {
     const list = loadKeys();
     let filtered;
     if (guildId) {
-        // Hapus key milik user ini di guild ini.
-        // Key tanpa guildId (schema lama, pre-v3.9.3) juga dihapus karena
-        // diasumsikan milik guild pertama yang memanggil (backward compat).
+        // Remove this user's keys in this guild.
+        // Keys without a guildId (old schema, pre-v3.9.3) are also removed since
+        // they're assumed to belong to the first calling guild (backward compat).
         filtered = list.filter(
             k => !(k.userId === userId && (k.guildId === guildId || k.guildId === undefined || k.guildId === null))
         );
     } else {
-        // Behavior lama: hapus semua key user (backward compat untuk single-guild).
+        // Old behavior: remove all of the user's keys (backward compat for single-guild).
         filtered = list.filter(k => k.userId !== userId);
     }
     const removed = list.length - filtered.length;
@@ -291,8 +291,8 @@ function removeAllKeysByUser(userId, guildId) {
 }
 
 /**
- * Hapus SEMUA key milik user + role tertentu.
- * @returns {number} jumlah key yang dihapus
+ * Remove ALL keys owned by a user for a specific role.
+ * @returns {number} number of keys removed
  */
 function removeAllKeysByUserAndRole(userId, roleId) {
     const list = loadKeys();
@@ -303,7 +303,7 @@ function removeAllKeysByUserAndRole(userId, roleId) {
 }
 
 /**
- * Hitung sisa hari dari sebuah key (bisa negatif kalau expired, Infinity kalau permanen).
+ * Compute the remaining days of a key (can be negative if expired, Infinity if permanent).
  */
 function getRemainingDays(key, now = Date.now()) {
     if (key.expireAt === null) return Infinity;
@@ -311,25 +311,25 @@ function getRemainingDays(key, now = Date.now()) {
 }
 
 /**
- * Format tampilan sisa waktu untuk 1 key.
+ * Format the remaining-time display for a single key.
  */
 function formatRemaining(key, now = Date.now()) {
-    if (key.expireAt === null) return 'Permanen';
+    if (key.expireAt === null) return 'Permanent';
     const days = getRemainingDays(key, now);
     if (days <= 0) return 'Expired';
     if (days < 1) {
         const hours = Math.ceil(days * 24);
-        return `${hours} jam lagi`;
+        return `${hours} hours left`;
     }
-    return `${Math.ceil(days)} hari lagi`;
+    return `${Math.ceil(days)} days left`;
 }
 
 /**
- * Format daftar key untuk ditampilkan ke user/admin.
- * Hanya tampilkan key aktif.
+ * Format a key list for display to a user/admin.
+ * Only shows active keys.
  */
 function formatKeysForUser(keys, now = Date.now()) {
-    if (keys.length === 0) return '(tidak ada key)';
+    if (keys.length === 0) return '(no keys)';
     return keys
         .map((k, i) => {
             const remaining = formatRemaining(k, now);

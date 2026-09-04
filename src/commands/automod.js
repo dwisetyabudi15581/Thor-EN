@@ -11,13 +11,13 @@
  * - Mass-mention block
  *
  * v3.9.23 WORD FLEX:
- * - /add-word words action tipe — tambah kata SATU PER SATU (append, tidak replace
- *   daftar lama). Support action per kata + tipe exempt.
- * - /remove-word word tipe — hapus kata spesifik dari blocklist / exempt list.
- * - /list-words — lihat semua kata + action per kata + exempt + match mode.
- * - /remove-link-whitelist — hapus channel/role dari whitelist link.
- * - /set-automod block_words → BULK REPLACE (ganti semua). Buat edit granular
- *   (nambah/hapus 1 kata), pakai /add-word atau /remove-word.
+ * - /add-word words action tipe — add words ONE BY ONE (append, does not replace
+ *   the old list). Supports per-word actions + the exempt type.
+ * - /remove-word word tipe — remove a specific word from the blocklist / exempt list.
+ * - /list-words — view all words + per-word action + exempt + match mode.
+ * - /remove-link-whitelist — remove a channel/role from the link whitelist.
+ * - /set-automod block_words → BULK REPLACE (replaces everything). For granular
+ *   edits (adding/removing 1 word), use /add-word or /remove-word.
  */
 
 const { EmbedBuilder, MessageFlags } = require('discord.js');
@@ -25,7 +25,7 @@ const { logAudit, safeEditReply } = require('./_shared');
 
 const automod = require('../data/automodManager');
 
-// Label display buat action di embed.
+// Display labels for actions in embeds.
 const ACTION_LABELS = {
     delete_only: 'Delete only',
     warn: 'Warn (DM)',
@@ -34,12 +34,12 @@ const ACTION_LABELS = {
     kick: 'Kick'
 };
 
-// Discord embed field value max 1024 char — pakai 1000 buat buffer.
+// Discord embed field value max is 1024 char — use 1000 for buffer.
 const FIELD_VALUE_MAX = 1000;
 
 /**
- * Gabung daftar item jadi 1 string dengan truncate aman.
- * Return { text, truncated, total }.
+ * Join a list of items into 1 string with safe truncation.
+ * Returns { text, truncated, total }.
  */
 function joinTruncated(items, separator, maxLen = FIELD_VALUE_MAX) {
     const total = items.length;
@@ -54,15 +54,15 @@ function joinTruncated(items, separator, maxLen = FIELD_VALUE_MAX) {
     }
     const truncated = count < total;
     if (truncated) {
-        const suffix = `\n…+${total - count} lainnya`;
+        const suffix = `\n…+${total - count} more`;
         text = (text + suffix).length > maxLen + 60 ? text.slice(0, maxLen) + suffix : text + suffix;
     }
     return { text, truncated, total };
 }
 
 /**
- * Format daftar wordRules: "kata → action" per baris.
- * Kata tanpa action khusus pakai label "(global)".
+ * Format a wordRules list: "word → action" per line.
+ * Words without a specific action use the "(global)" label.
  */
 function formatWordRules(wordRules) {
     return wordRules.map(rule => {
@@ -89,9 +89,9 @@ module.exports = async function (interaction) {
         if (spamAction) updates.spamAction = spamAction;
         if (blockLinks !== null) updates.blockLinks = blockLinks;
         if (blockWords !== null) {
-            // v3.9.23: BULK REPLACE — seluruh daftar kata diganti dengan input ini.
-            // Buat NAMBAH kata tanpa hapus yang lama → /add-word.
-            // Buat HAPUS 1 kata → /remove-word.
+            // v3.9.23: BULK REPLACE — the entire word list is replaced with this input.
+            // To ADD words without removing the old ones → /add-word.
+            // To REMOVE 1 word → /remove-word.
             const words = blockWords
                 .split(',')
                 .map(w => w.trim().toLowerCase())
@@ -102,7 +102,7 @@ module.exports = async function (interaction) {
                 addedBy: interaction.user.id,
                 addedAt: Date.now()
             }));
-            updates.blockWords = []; // bersihin legacy field
+            updates.blockWords = []; // clear the legacy field
         }
         if (wordAction) updates.wordAction = wordAction;
         if (maxMentions !== null) updates.maxMentions = maxMentions;
@@ -132,7 +132,7 @@ module.exports = async function (interaction) {
                 { name: '🔗 Block Links', value: newConfig.blockLinks ? 'Yes' : 'No', inline: true },
                 {
                     name: '📝 Word Filter',
-                    value: `${newConfig.wordRules.length} kata (+${newConfig.exemptWords.length} exempt)`,
+                    value: `${newConfig.wordRules.length} words (+${newConfig.exemptWords.length} exempt)`,
                     inline: true
                 },
                 {
@@ -149,7 +149,7 @@ module.exports = async function (interaction) {
                 { name: '🔨 Mention Action', value: newConfig.mentionAction, inline: true }
             )
             .setFooter({
-                text: 'Pakai /add-word /remove-word /list-words buat kelola kata. /automod-show untuk detail.'
+                text: 'Use /add-word /remove-word /list-words to manage words. /automod-show for details.'
             });
 
         return safeEditReply(interaction, { embeds: [embed] });
@@ -163,7 +163,7 @@ module.exports = async function (interaction) {
         if (!config) {
             return safeEditReply(interaction, {
                 content:
-                    'ℹ️ Auto-mod belum di-config. Pakai `/set-automod` untuk setup, lalu `/automod-toggle enabled:true`.'
+                    'ℹ️ Auto-mod is not configured yet. Use `/set-automod` to set it up, then `/automod-toggle enabled:true`.'
             });
         }
 
@@ -188,7 +188,7 @@ module.exports = async function (interaction) {
                 { name: '✅ Status', value: config.enabled ? 'Enabled ✅' : 'Disabled ❌', inline: true },
                 {
                     name: '⚡ Spam Detection',
-                    value: `${config.spamThreshold} msg dalam ${(config.spamWindowMs || 10000) / 1000}s → ${config.spamAction || 'mute_10m'}`,
+                    value: `${config.spamThreshold} msg in ${(config.spamWindowMs || 10000) / 1000}s → ${config.spamAction || 'mute_10m'}`,
                     inline: false
                 },
                 {
@@ -199,7 +199,7 @@ module.exports = async function (interaction) {
                     inline: false
                 },
                 {
-                    name: `📝 Word Filter (${wordList.total} kata)`,
+                    name: `📝 Word Filter (${wordList.total} words)`,
                     value: wordList.text,
                     inline: false
                 },
@@ -207,8 +207,8 @@ module.exports = async function (interaction) {
                     name: '🎯 Match Mode',
                     value:
                         config.wordMatchMode === 'whole_word'
-                            ? '**Whole word** — kata harus berdiri sendiri ("asu" tidak match "asus")'
-                            : '**Substring** — match di mana saja (bisa false-positive)',
+                            ? '**Whole word** — the word must stand on its own ("asu" does not match "asus")'
+                            : '**Substring** — matches anywhere (can cause false positives)',
                     inline: false
                 },
                 {
@@ -223,7 +223,7 @@ module.exports = async function (interaction) {
                 }
             )
             .setFooter({
-                text: `Kelola kata: /add-word, /remove-word, /list-words • Updated: ${config.updatedAt ? new Date(config.updatedAt).toLocaleString('id-ID') : 'unknown'}`
+                text: `Manage words: /add-word, /remove-word, /list-words • Updated: ${config.updatedAt ? new Date(config.updatedAt).toLocaleString('en-US') : 'unknown'}`
             });
 
         return safeEditReply(interaction, { embeds: [embed] });
@@ -246,8 +246,8 @@ module.exports = async function (interaction) {
 
         return safeEditReply(interaction, {
             content:
-                `${enabled ? '✅' : '❌'} Auto-mod ${enabled ? 'diaktifkan' : 'dinonaktifkan'}.\n\n` +
-                `💡 Config saat ini masih tersimpan. Kalau enable lagi nanti, tinggal pakai tanpa setup ulang.`
+                `${enabled ? '✅' : '❌'} Auto-mod ${enabled ? 'enabled' : 'disabled'}.\n\n` +
+                `💡 Your current config is still saved. Enable it again later and it works right away — no re-setup needed.`
         });
     }
 
@@ -273,7 +273,7 @@ module.exports = async function (interaction) {
         }
 
         if (Object.keys(updates).length === 0) {
-            return safeEditReply(interaction, { content: '❌ Pilih channel atau role untuk whitelist.' });
+            return safeEditReply(interaction, { content: '❌ Pick a channel or role to whitelist.' });
         }
 
         const newConfig = automod.setGuildConfig(interaction.guild.id, updates);
@@ -288,7 +288,7 @@ module.exports = async function (interaction) {
 
         return safeEditReply(interaction, {
             content:
-                `✅ Whitelist ditambahkan!\n\n` +
+                `✅ Whitelist added!\n\n` +
                 `📢 Channels: ${newConfig.linkAllowedChannels.map(id => `<#${id}>`).join(', ') || '_(none)_'}\n` +
                 `🎭 Roles: ${newConfig.linkAllowedRoles.map(id => `<@&${id}>`).join(', ') || '_(none)_'}`
         });
@@ -303,7 +303,7 @@ module.exports = async function (interaction) {
 
         if (!channel && !role) {
             return safeEditReply(interaction, {
-                content: '❌ Pilih channel atau role yang mau dihapus dari whitelist.'
+                content: '❌ Pick the channel or role to remove from the whitelist.'
             });
         }
 
@@ -328,7 +328,7 @@ module.exports = async function (interaction) {
 
         if (removedParts.length === 0) {
             return safeEditReply(interaction, {
-                content: `ℹ️ ${channel ? `<#${channel.id}> ` : ''}${role ? `<@&${role.id}>` : ''} tidak ada di whitelist link.`
+                content: `ℹ️ ${channel ? `<#${channel.id}> ` : ''}${role ? `<@&${role.id}>` : ''} is not in the link whitelist.`
             });
         }
 
@@ -344,7 +344,7 @@ module.exports = async function (interaction) {
 
         return safeEditReply(interaction, {
             content:
-                `✅ Dihapus dari whitelist link: **${removedParts.join(', ')}**\n\n` +
+                `✅ Removed from the link whitelist: **${removedParts.join(', ')}**\n\n` +
                 `📢 Channels: ${newConfig.linkAllowedChannels.map(id => `<#${id}>`).join(', ') || '_(none)_'}\n` +
                 `🎭 Roles: ${newConfig.linkAllowedRoles.map(id => `<@&${id}>`).join(', ') || '_(none)_'}`
         });
@@ -355,10 +355,10 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const wordsInput = interaction.options.getString('words');
-        const action = interaction.options.getString('action'); // null = fallback global
+        const action = interaction.options.getString('action'); // null = global fallback
         const tipe = interaction.options.getString('tipe') || 'blocklist';
 
-        // tipe=exempt → tambah ke daftar kata yang di-EXEMPT (tidak di-flag)
+        // tipe=exempt → add to the list of EXEMPT words (not flagged)
         if (tipe === 'exempt') {
             const result = automod.addExemptWords(interaction.guild.id, wordsInput);
 
@@ -373,19 +373,19 @@ module.exports = async function (interaction) {
             const config = automod.getGuildConfig(interaction.guild.id);
             const lines = [];
             if (result.added.length > 0)
-                lines.push(`✅ Ditambah ke **exempt**: ${result.added.map(w => `\`${w}\``).join(', ')}`);
+                lines.push(`✅ Added to **exempt**: ${result.added.map(w => `\`${w}\``).join(', ')}`);
             if (result.skipped.length > 0)
-                lines.push(`⏭️ Skip (sudah ada): ${result.skipped.map(w => `\`${w}\``).join(', ')}`);
+                lines.push(`⏭️ Skipped (already exists): ${result.skipped.map(w => `\`${w}\``).join(', ')}`);
             if (result.added.length === 0 && result.skipped.length === 0)
-                lines.push('❌ Tidak ada kata valid yang bisa ditambahkan.');
+                lines.push('❌ No valid words to add.');
             lines.push(
-                `\n🛡️ Exempt sekarang: **${config.exemptWords.length} kata** — pesan berisi kata ini tidak di-flag auto-mod.`
+                `\n🛡️ Exempt now: **${config.exemptWords.length} words** — messages containing these words are not flagged by auto-mod.`
             );
 
             return safeEditReply(interaction, { content: lines.join('\n') });
         }
 
-        // tipe=blocklist (default) → tambah ke daftar kata yang di-BLOCK
+        // tipe=blocklist (default) → add to the list of BLOCKED words
         const result = automod.addWords(interaction.guild.id, wordsInput, action, interaction.user.id);
         if (result.error) {
             return safeEditReply(interaction, { content: `❌ ${result.error}` });
@@ -403,18 +403,18 @@ module.exports = async function (interaction) {
         const lines = [];
         if (result.added.length > 0) {
             const actionLabel = action ? ` (action: **${ACTION_LABELS[action] || action}**)` : '';
-            lines.push(`✅ Ditambah ke **blocklist**: ${result.added.map(w => `\`${w}\``).join(', ')}${actionLabel}`);
+            lines.push(`✅ Added to **blocklist**: ${result.added.map(w => `\`${w}\``).join(', ')}${actionLabel}`);
         }
         if (result.skipped.length > 0)
             lines.push(
-                `⏭️ Skip (sudah ada — pakai /remove-word dulu kalau mau ubah): ${result.skipped.map(w => `\`${w}\``).join(', ')}`
+                `⏭️ Skipped (already exists — use /remove-word first if you want to change it): ${result.skipped.map(w => `\`${w}\``).join(', ')}`
             );
         if (result.added.length === 0 && result.skipped.length === 0)
-            lines.push('❌ Tidak ada kata valid yang bisa ditambahkan.');
+            lines.push('❌ No valid words to add.');
         lines.push(
-            `\n📝 Blocklist sekarang: **${config.wordRules.length} kata** • match: ${config.wordMatchMode === 'whole_word' ? 'whole word' : 'substring'} • exempt: ${config.exemptWords.length} kata`
+            `\n📝 Blocklist now: **${config.wordRules.length} words** • match: ${config.wordMatchMode === 'whole_word' ? 'whole word' : 'substring'} • exempt: ${config.exemptWords.length} words`
         );
-        lines.push('💡 Lihat semua: `/list-words`');
+        lines.push('💡 View all: `/list-words`');
 
         return safeEditReply(interaction, { content: lines.join('\n') });
     }
@@ -441,7 +441,7 @@ module.exports = async function (interaction) {
         }
         if (!result.ok) {
             return safeEditReply(interaction, {
-                content: `ℹ️ Kata \`${word.toLowerCase()}\` tidak ada di ${listLabel}. Cek daftar: \`/list-words\`.`
+                content: `ℹ️ The word \`${word.toLowerCase()}\` isn't in the ${listLabel}. Check the list: \`/list-words\`.`
             });
         }
 
@@ -454,7 +454,7 @@ module.exports = async function (interaction) {
         });
 
         return safeEditReply(interaction, {
-            content: `✅ Kata \`${result.removed}\` dihapus dari **${listLabel}**.\n\n💡 Kalau mau nambah lagi: \`/add-word words:${result.removed}\``
+            content: `✅ Word \`${result.removed}\` removed from the **${listLabel}**.\n\n💡 To add it back: \`/add-word words:${result.removed}\``
         });
     }
 
@@ -466,7 +466,7 @@ module.exports = async function (interaction) {
         if (!config) {
             return safeEditReply(interaction, {
                 content:
-                    'ℹ️ Auto-mod belum di-config — belum ada kata yang di-block.\n\nTambah kata pertama: `/add-word words:kata1,kata2`'
+                    'ℹ️ Auto-mod is not configured yet — no blocked words.\n\nAdd your first words: `/add-word words:word1,word2`'
             });
         }
 
@@ -477,15 +477,15 @@ module.exports = async function (interaction) {
         );
 
         const embed = new EmbedBuilder()
-            .setTitle(`📝 WORD FILTER — ${wordList.total} kata`)
+            .setTitle(`📝 WORD FILTER — ${wordList.total} words`)
             .setColor(0x5865f2)
             .addFields(
                 {
                     name: '🎯 Match Mode',
                     value:
                         config.wordMatchMode === 'whole_word'
-                            ? '**Whole word** — "asu" tidak match "asus"'
-                            : '**Substring** — match di mana saja',
+                            ? '**Whole word** — "asu" does not match "asus"'
+                            : '**Substring** — matches anywhere',
                     inline: false
                 },
                 {
@@ -500,12 +500,12 @@ module.exports = async function (interaction) {
                 },
                 {
                     name: '🔨 Fallback Action',
-                    value: `${ACTION_LABELS[config.wordAction] || config.wordAction} — dipakai kata tanpa action khusus`,
+                    value: `${ACTION_LABELS[config.wordAction] || config.wordAction} — used for words without a specific action`,
                     inline: false
                 }
             )
             .setFooter({
-                text: 'Tambah: /add-word • Hapus: /remove-word • Bulk replace: /set-automod block_words'
+                text: 'Add: /add-word • Remove: /remove-word • Bulk replace: /set-automod block_words'
             });
 
         return safeEditReply(interaction, { embeds: [embed] });

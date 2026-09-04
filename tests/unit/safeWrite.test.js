@@ -1,5 +1,5 @@
 /**
- * Unit tests untuk safeWrite (atomic JSON write)
+ * Unit tests for safeWrite (atomic JSON write)
  */
 
 const test = require('node:test');

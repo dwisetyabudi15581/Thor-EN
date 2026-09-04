@@ -1,14 +1,14 @@
 /**
- * InteractionCreate handler — route slash command & button/select/modal.
+ * InteractionCreate handler — routes slash commands & button/select/modal.
  *
- * Dipakai oleh index.js. Error handling global ada di sini supaya:
- *   - Transient network error (5xx, ECONNRESET, dll) → warning ringan, no stack.
- *   - Ignorable reply error (10008 Unknown Message, 10062 Unknown Interaction,
- *     40060 Interaction already acknowledged) → warning ringan (user behavior).
- *   - Lainnya → full error log.
+ * Used by index.js. Global error handling lives here so that:
+ *   - Transient network errors (5xx, ECONNRESET, etc) → light warning, no stack.
+ *   - Ignorable reply errors (10008 Unknown Message, 10062 Unknown Interaction,
+ *     40060 Interaction already acknowledged) → light warning (user behavior).
+ *   - Everything else → full error log.
  *
- * v3.9.8 FIX: branch `interaction.deferred && !interaction.replied` ditangani
- * (sebelumnya user lihat "Thinking..." 15 menit setelah command throw post-defer).
+ * v3.9.8 FIX: the `interaction.deferred && !interaction.replied` branch is handled
+ * (previously the user saw "Thinking..." for 15 minutes after a command threw post-defer).
  */
 
 const { Events, MessageFlags } = require('discord.js');
@@ -43,10 +43,11 @@ function isIgnorableReplyError(err) {
 
 async function onInteractionCreate(interaction) {
     try {
-        // v3.9.26 (single-guild hardening): kalau GUILD_ID di-set, abaikan
-        // interaction dari guild lain. Tanpa guard, command bisa dipakai di guild
-        // kedua (kalau bot tak sengaja di-invite): config global → roles/channels
-        // guild utama dipakai di sana → perilaku aneh + data nyasar.
+        // v3.9.26 (single-guild hardening): if GUILD_ID is set, ignore
+        // interactions from other guilds. Without this guard, commands could be
+        // used in a second guild (if the bot gets accidentally invited): global
+        // config → the main guild's roles/channels get used there → weird
+        // behavior + stray data.
         if (process.env.GUILD_ID && interaction.guildId && interaction.guildId !== process.env.GUILD_ID) {
             return;
         }
@@ -67,7 +68,7 @@ async function onInteractionCreate(interaction) {
             );
         } else if (isIgnorableReply) {
             console.warn(
-                `⚠️ Interaction ${interaction.id} reply gagal (code ${err.code}): ${err.message?.slice(0, 100)}`
+                `⚠️ Interaction ${interaction.id} reply failed (code ${err.code}): ${err.message?.slice(0, 100)}`
             );
         } else {
             console.error('Interaction Error:', err);
@@ -75,13 +76,13 @@ async function onInteractionCreate(interaction) {
 
         if (!isTransient && !isIgnorableReply && interaction.isRepliable()) {
             if (!interaction.replied && !interaction.deferred) {
-                // v3.9.24: MessageFlags.Ephemeral (dulu magic number 64 padahal
-                // MessageFlags sudah di-import tapi tidak dipakai).
+                // v3.9.24: MessageFlags.Ephemeral (previously magic number 64 even
+                // though MessageFlags was already imported but unused).
                 interaction
-                    .reply({ content: '❌ Terjadi error. Coba lagi sebentar.', flags: MessageFlags.Ephemeral })
+                    .reply({ content: '❌ An error occurred. Try again in a moment.', flags: MessageFlags.Ephemeral })
                     .catch(() => {});
             } else if (interaction.deferred && !interaction.replied) {
-                interaction.editReply({ content: '❌ Terjadi error. Coba lagi sebentar.' }).catch(() => {});
+                interaction.editReply({ content: '❌ An error occurred. Try again in a moment.' }).catch(() => {});
             }
         }
     }

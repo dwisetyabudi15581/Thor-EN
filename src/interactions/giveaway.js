@@ -1,23 +1,23 @@
 /**
  * Giveaway domain handler — button `gw_join:*` & `gw_leave:*`.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — just moved to a new file.
  *
- * Helper `handleGiveawayButton` dan `updateGiveawayMessage` jadi LOCAL
- * function di file ini.
+ * Helpers `handleGiveawayButton` and `updateGiveawayMessage` are LOCAL
+ * functions in this file.
  *
- * Router (src/interactions/index.js) sudah apply:
+ * The router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
  *   - routing by customId prefix
- * Jadi domain handler fokus ke logic-nya saja.
+ * So the domain handler can focus on its logic alone.
  */
 
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { withUserLock } = require('../commands/_shared');
-// addParticipant / removeParticipant tidak di-export _shared, import langsung.
+// addParticipant / removeParticipant are not exported from _shared — import them directly.
 const {
     get: getGiveaway,
     addParticipant: gwAddParticipant,
@@ -45,41 +45,41 @@ async function handleGiveawayButton(interaction) {
         const gw = getGiveaway(gwId);
         if (!gw) {
             return interaction.reply({
-                content: '❌ Giveaway tidak ditemukan (mungkin sudah dihapus).',
+                content: '❌ Giveaway not found (it may have been deleted).',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (gw.ended) {
-            return interaction.reply({ content: '❌ Giveaway sudah berakhir.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ This giveaway has already ended.', flags: MessageFlags.Ephemeral });
         }
         if (gw.guildId !== interaction.guild.id) {
             return interaction.reply({
-                content: '❌ Giveaway ini bukan dari guild ini.',
+                content: '❌ This giveaway does not belong to this guild.',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Cek required role — HANYA untuk join.
-        // v3.9.24 FIX: sebelumnya cek ini juga berlaku untuk LEAVE, jadi member
-        // yang kehilangan required role TIDAK BISA keluar dari giveaway (stuck).
+        // Required role check — ONLY for join.
+        // v3.9.24 FIX: previously this check also applied to LEAVE, so a member
+        // who lost the required role COULD NOT leave the giveaway (stuck).
         if (gw.requiredRoleId && action === 'gw_join') {
             const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
             if (!member || !member.roles.cache.has(gw.requiredRoleId)) {
                 const role = interaction.guild.roles.cache.get(gw.requiredRoleId);
                 return interaction.reply({
-                    content: `❌ Kamu harus punya role ${role || '`' + gw.requiredRoleId + '`'} untuk ikut giveaway ini.`,
+                    content: `❌ You must have the ${role || '`' + gw.requiredRoleId + '`'} role to join this giveaway.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
         }
 
-        // v3.9.2 FIX: wrap join/leave dalam per-user lock untuk mencegah
-        // TOCTOU race condition. Sebelumnya, 2 klik cepat (<100ms) bisa
-        // lolos cek `includes()` keduanya, lalu keduanya push userId →
-        // participant dobel. Lock memaksa klik kedua nunggu klik pertama
-        // selesai (di mana save() sudah menulis data terbaru ke disk).
+        // v3.9.2 FIX: wrap join/leave in a per-user lock to prevent a
+        // TOCTOU race condition. Previously, 2 quick clicks (<100ms) could
+        // both pass the `includes()` check, then both push userId →
+        // duplicate participant. The lock forces the second click to wait for
+        // the first to finish (by which point save() has written the latest data to disk).
         const lockResult = await withUserLock('gw', interaction.user.id, async () => {
-            // Refresh gw dari disk di dalam lock supaya baca data terbaru
+            // Refresh gw from disk inside the lock so we read the latest data
             const gwFresh = getGiveaway(gwId);
             if (!gwFresh) return { type: 'notfound' };
             if (gwFresh.ended) return { type: 'ended' };
@@ -107,9 +107,9 @@ async function handleGiveawayButton(interaction) {
         });
 
         if (lockResult === null) {
-            // Lock gagal acquire — user klik terlalu cepat
+            // Lock acquisition failed — user clicked too fast
             return interaction.reply({
-                content: '⏳ Tunggu sebentar, kamu lagi klik terlalu cepat. Coba lagi dalam 1 detik.',
+                content: '⏳ Hold on, you are clicking too fast. Try again in 1 second.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -117,41 +117,41 @@ async function handleGiveawayButton(interaction) {
         switch (lockResult.type) {
             case 'notfound':
                 return interaction.reply({
-                    content: '❌ Giveaway tidak ditemukan (mungkin sudah dihapus).',
+                    content: '❌ Giveaway not found (it may have been deleted).',
                     flags: MessageFlags.Ephemeral
                 });
             case 'ended':
-                return interaction.reply({ content: '❌ Giveaway sudah berakhir.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: '❌ This giveaway has already ended.', flags: MessageFlags.Ephemeral });
             case 'already_joined':
                 return interaction.reply({
-                    content: 'ℹ️ Kamu sudah join giveaway ini.',
+                    content: 'ℹ️ You have already joined this giveaway.',
                     flags: MessageFlags.Ephemeral
                 });
             case 'not_joined':
                 return interaction.reply({
-                    content: 'ℹ️ Kamu belum join giveaway ini.',
+                    content: 'ℹ️ You have not joined this giveaway yet.',
                     flags: MessageFlags.Ephemeral
                 });
             case 'joined':
                 return interaction.reply({
-                    content: `✅ Kamu join giveaway **${gw.prize}**! 🎉\n👥 Total peserta: ${lockResult.total}`,
+                    content: `✅ You joined the giveaway **${gw.prize}**! 🎉\n👥 Total participants: ${lockResult.total}`,
                     flags: MessageFlags.Ephemeral
                 });
             case 'left':
                 return interaction.reply({
-                    content: `🚪 Kamu keluar dari giveaway **${gw.prize}**.`,
+                    content: `🚪 You left the giveaway **${gw.prize}**.`,
                     flags: MessageFlags.Ephemeral
                 });
             default:
                 return interaction.reply({
-                    content: '❌ Tidak ada aksi yang dilakukan.',
+                    content: '❌ No action was taken.',
                     flags: MessageFlags.Ephemeral
                 });
         }
     } catch (err) {
         console.error('Giveaway button error:', err);
         if (interaction.isRepliable() && !interaction.replied) {
-            await interaction.reply({ content: '❌ Terjadi error.', flags: MessageFlags.Ephemeral }).catch(() => {});
+            await interaction.reply({ content: '❌ An error occurred.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
     }
 }
@@ -168,17 +168,17 @@ async function updateGiveawayMessage(interaction, gw) {
             .setTitle('🎉 GIVEAWAY!')
             .setDescription(
                 `🎁 **Prize:** ${gw.prize}\n\n` +
-                    `👥 **Pemenang:** ${gw.winnersCount}\n` +
-                    `⏰ **Berakhir:** <t:${Math.floor(gw.endsAt / 1000)}:R> (<t:${Math.floor(gw.endsAt / 1000)}:F>)\n` +
-                    `🎟️ **Peserta:** ${gw.participantIds.length}\n` +
-                    (gw.requiredRoleId ? `🔐 **Syarat:** <@&${gw.requiredRoleId}>\n` : '') +
-                    `\n👇 Klik tombol **🎉 Join** di bawah untuk ikut!`
+                    `👥 **Winners:** ${gw.winnersCount}\n` +
+                    `⏰ **Ends:** <t:${Math.floor(gw.endsAt / 1000)}:R> (<t:${Math.floor(gw.endsAt / 1000)}:F>)\n` +
+                    `🎟️ **Participants:** ${gw.participantIds.length}\n` +
+                    (gw.requiredRoleId ? `🔐 **Requirement:** <@&${gw.requiredRoleId}>\n` : '') +
+                    `\n👇 Click the **🎉 Join** button below to enter!`
             )
             .setColor(timeLeft < 60000 ? 0xe67e22 : 0xf1c40f)
             .setFooter({ text: `Host: ${gw.hostTag} | ID: ${gw.id}` })
             .setTimestamp();
         await msg.edit({ embeds: [embed] });
     } catch (err) {
-        console.warn('Gagal update giveaway message:', err.message);
+        console.warn('Failed to update giveaway message:', err.message);
     }
 }

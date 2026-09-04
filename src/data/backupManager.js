@@ -1,14 +1,14 @@
 /**
- * Auto-Backup System — backup file JSON penting ke folder backups/.
+ * Auto-Backup System — backs up important JSON files to the backups/ folder.
  *
- * v3.9.24 FIX: FILES_TO_BACKUP sebelumnya bolong — 5 file data live TIDAK
- * pernah di-backup: automod.json (word rules!), levels.json, responders.json,
- * afk.json, panels.json. Akibatnya /restore-backup tidak bisa memulihkan
- * konfigurasi auto-mod & leveling sama sekali. Sekarang semua file data
- * layer ada di list (dijaga test: setiap file data/*.json live wajib ada
- * di FILES_TO_BACKUP).
+ * v3.9.24 FIX: FILES_TO_BACKUP previously had holes — 5 live data files were NEVER
+ * backed up: automod.json (word rules!), levels.json, responders.json,
+ * afk.json, panels.json. As a result, /restore-backup couldn't restore the
+ * auto-mod & leveling configuration at all. Now every live data-layer file is
+ * in the list (guarded by a test: every live data/*.json file must be present
+ * in FILES_TO_BACKUP).
  *
- * Struktur folder:
+ * Folder structure:
  *   backups/
  *     2026-07-31_15-30-00/
  *       config.json
@@ -17,11 +17,11 @@
  *     2026-07-31_09-00-00/
  *       ...
  *
- * Auto-clean: maks 7 backup terbaru disimpan, sisanya dihapus.
+ * Auto-clean: at most the 7 newest backups are kept, the rest are deleted.
  *
- * Backup otomatis:
- *   - Saat bot start (backup-on-boot)
- *   - Setiap 24 jam (interval)
+ * Automatic backups:
+ *   - At bot start (backup-on-boot)
+ *   - Every 24 hours (interval)
  */
 
 const fs = require('fs');
@@ -31,11 +31,11 @@ const rootDir = path.join(__dirname, '..', '..');
 const dataDir = path.join(rootDir, 'data');
 const backupsDir = path.join(rootDir, 'backups');
 
-// v3.9.10: file JSON data sekarang ada di data/ folder (sebelumnya di root).
-// FILES_TO_BACKUP tetap list nama file, tapi path prefix pakai dataDir.
+// v3.9.10: data JSON files now live in the data/ folder (previously in root).
+// FILES_TO_BACKUP stays a list of file names, but the path prefix uses dataDir.
 // v3.9.24: + automod.json, levels.json, responders.json, afk.json, panels.json
-// (sebelumnya 5 file ini TIDAK di-backup padahal dipakai live oleh fitur
-// auto-mod word rules, leveling, responder, AFK, dan panel tiket).
+// (before, these 5 files were NOT backed up even though they're used live by the
+// auto-mod word rules, leveling, responder, AFK, and ticket panel features).
 const FILES_TO_BACKUP = [
     'config.json',
     'keys.json',
@@ -48,20 +48,20 @@ const FILES_TO_BACKUP = [
     'stats.json',
     'tempVoice.json',
     'tickets.json',
-    // v3.9.24 tambahan:
+    // v3.9.24 additions:
     'automod.json',
     'levels.json',
     'responders.json',
     'afk.json',
     'panels.json',
-    // v3.9.37 FIX: deals.json (rekber v3.9.32+) bolong — restore-backup
-    // sebelumnya memutus SEMUA deal escrow aktif (pembeli/penjual terkunci
-    // selamanya karena meta hilang). Ketemu oleh guard test "file live harus
-    // di-backup" begitu deals.json ada di data/.
+    // v3.9.37 FIX: deals.json (escrow v3.9.32+) was missing — restore-backup
+    // previously broke ALL active escrow deals (buyers/sellers locked
+    // forever because the meta was gone). Caught by the guard test "live files must
+    // be backed up" as soon as deals.json existed in data/.
     'deals.json'
 ];
 
-// v3.9.10: helper untuk resolve path file data (ke data/ folder).
+// v3.9.10: helper to resolve data file paths (to the data/ folder).
 function dataFilePath(file) {
     return path.join(dataDir, file);
 }
@@ -70,7 +70,7 @@ const MAX_BACKUPS = 7;
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 /**
- * Bikin folder backups/ kalau belum ada.
+ * Create the backups/ folder if it doesn't exist yet.
  */
 function ensureBackupsDir() {
     if (!fs.existsSync(backupsDir)) {
@@ -79,7 +79,7 @@ function ensureBackupsDir() {
 }
 
 /**
- * Format timestamp jadi nama folder yang aman untuk filesystem.
+ * Format a timestamp into a filesystem-safe folder name.
  * Format: YYYY-MM-DD_HH-mm-ss
  */
 function formatTimestamp(ts = new Date()) {
@@ -92,7 +92,7 @@ function formatTimestamp(ts = new Date()) {
 }
 
 /**
- * Bikin backup sekarang.
+ * Create a backup now.
  * @returns {Object} { ok, backupName, filesCopied, totalSize, errors[] }
  */
 function createBackup() {
@@ -118,10 +118,10 @@ function createBackup() {
         }
     }
 
-    // Tentukan status backup berdasarkan jumlah file yang berhasil vs error.
-    // File yang TIDAK ada (existsSync=false) BUKAN error — feature belum dipakai.
-    // Yang dihitung error: file ada tapi gagal di-copy (permission, disk full, dst).
-    //   - errors.length === 0 → sukses (semua file yang exist berhasil di-copy)
+    // Determine the backup status from the count of successfully copied files vs errors.
+    // Files that DON'T exist (existsSync=false) are NOT errors — the feature isn't used yet.
+    // What counts as an error: a file exists but the copy failed (permission, disk full, etc).
+    //   - errors.length === 0 → success (every existing file was copied)
     //   - errors.length > 0 && filesCopied > 0 → partial failure
     //   - errors.length > 0 && filesCopied === 0 → total failure
     if (result.errors.length > 0) {
@@ -133,11 +133,11 @@ function createBackup() {
         }
     }
 
-    // Auto-clean backup lama
+    // Auto-clean old backups
     try {
         cleanOldBackups();
     } catch (err) {
-        // Tidak fatal — backup tetap dibuat, hanya cleanup yang gagal.
+        // Not fatal — the backup is still created, only the cleanup failed.
         result.errors.push(`cleanOldBackups: ${err.message}`);
     }
 
@@ -145,14 +145,14 @@ function createBackup() {
 }
 
 /**
- * Hapus backup lama, simpan maks MAX_BACKUPS terbaru.
- * @returns {number} jumlah backup yang dihapus
+ * Delete old backups, keeping at most MAX_BACKUPS newest ones.
+ * @returns {number} number of backups removed
  */
 function cleanOldBackups() {
     ensureBackupsDir();
-    // v3.9.8 FIX: wrap statSync di try/catch. Sebelumnya, kalau directory
-    // dihapus antara readdirSync & statSync (race dengan process lain / admin
-    // manual delete), statSync throw → crash createBackup.
+    // v3.9.8 FIX: wrap statSync in try/catch. Before, if a directory was
+    // deleted between readdirSync & statSync (a race with another process /
+    // manual admin delete), statSync threw → createBackup crashed.
     const entries = fs
         .readdirSync(backupsDir, { withFileTypes: true })
         .filter(e => e.isDirectory())
@@ -165,7 +165,7 @@ function cleanOldBackups() {
             }
         })
         .filter(e => e !== null)
-        .sort((a, b) => b.mtime - a.mtime); // terbaru di depan
+        .sort((a, b) => b.mtime - a.mtime); // newest first
 
     let removed = 0;
     for (let i = MAX_BACKUPS; i < entries.length; i++) {
@@ -178,13 +178,13 @@ function cleanOldBackups() {
 }
 
 /**
- * List semua backup yang ada.
+ * List all existing backups.
  * @returns {Array} [{ name, size, fileCount, mtime }]
  */
 function listBackups() {
     ensureBackupsDir();
-    // v3.9.8 FIX: wrap statSync di try/catch supaya kalau ada directory yang
-    // dihapus race-condition, listBackups tidak crash.
+    // v3.9.8 FIX: wrap statSync in try/catch so that if a directory gets
+    // deleted in a race condition, listBackups doesn't crash.
     const entries = fs.readdirSync(backupsDir, { withFileTypes: true }).filter(e => e.isDirectory());
 
     return entries
@@ -194,7 +194,7 @@ function listBackups() {
             try {
                 stat = fs.statSync(dir);
             } catch (_) {
-                // Directory dihapus race — skip.
+                // Directory deleted in a race — skip.
                 return null;
             }
             let fileCount = 0;
@@ -220,25 +220,25 @@ function listBackups() {
 }
 
 /**
- * v3.9.1: In-process lock supaya dua admin tidak restore bersamaan.
- * Jika restoreInProgress = true, panggilan restoreBackup() berikutnya akan
- * langsung ditolak (bukan di-antrikan) supaya file tidak saling overwrite.
+ * v3.9.1: In-process lock so two admins can't restore at the same time.
+ * If restoreInProgress = true, the next restoreBackup() call is
+ * rejected immediately (not queued) so the files don't overwrite each other.
  */
 let restoreInProgress = false;
 
 /**
- * Restore backup berdasarkan nama folder.
- * @param {string} name - nama folder backup (mis. "2026-07-31_15-30-00")
- *   atau "pre-restore_2026-07-31_15-30-00" (auto-backup sebelum restore).
+ * Restore a backup by folder name.
+ * @param {string} name - the backup folder name (e.g. "2026-07-31_15-30-00")
+ *   or "pre-restore_2026-07-31_15-30-00" (auto-backup taken before a restore).
  * @returns {Object} { ok, filesRestored, errors[] }
  */
 function restoreBackup(name) {
-    // v3.9.1 FIX: cegah concurrent restore (race condition antar admin).
+    // v3.9.1 FIX: prevent concurrent restores (race condition between admins).
     if (restoreInProgress) {
         return {
             ok: false,
             filesRestored: 0,
-            errors: ['Restore lain sedang berjalan. Tunggu sampai selesai sebelum retry.']
+            errors: ['Another restore is in progress. Wait for it to finish before retrying.']
         };
     }
     restoreInProgress = true;
@@ -250,28 +250,28 @@ function restoreBackup(name) {
 }
 
 function _restoreBackupImpl(name) {
-    // Sanitize name — kalau ada slash/dot, reject.
-    // v3.9.1: izinkan prefix `pre-restore_` selain format YYYY-MM-DD_HH-mm-ss.
-    // Sebelumnya, backup pre-restore tidak bisa di-restore via /restore-backup
-    // karena regex hanya match format timestamp polos. Sekarang pre-restore
-    // juga bisa di-restore ( berguna untuk rollback kalau restore sebelumnya
-    // salah pilih backup).
+    // Sanitize the name — if it contains slashes/dots, reject.
+    // v3.9.1: allow the `pre-restore_` prefix in addition to the YYYY-MM-DD_HH-mm-ss format.
+    // Before, pre-restore backups couldn't be restored via /restore-backup
+    // because the regex only matched the plain timestamp format. Now pre-restore
+    // backups can be restored too (useful for rolling back if a previous restore
+    // picked the wrong backup).
     const isPlainTimestamp = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(name);
     const isPreRestore = /^pre-restore_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/.test(name);
     if (!isPlainTimestamp && !isPreRestore) {
         return { ok: false, filesRestored: 0, errors: ['Invalid backup name format'] };
     }
-    // Defense-in-depth: pastikan name tidak mengandung `..` atau slash.
+    // Defense-in-depth: make sure the name contains no `..` or slashes.
     if (name.includes('..') || name.includes('/') || name.includes('\\')) {
         return { ok: false, filesRestored: 0, errors: ['Invalid backup name (path traversal detected)'] };
     }
 
     const srcDir = path.join(backupsDir, name);
     if (!fs.existsSync(srcDir)) {
-        return { ok: false, filesRestored: 0, errors: [`Backup '${name}' tidak ditemukan`] };
+        return { ok: false, filesRestored: 0, errors: [`Backup '${name}' not found`] };
     }
 
-    // Sebelum restore, bikin backup "pre-restore" supaya aman
+    // Before restoring, create a "pre-restore" backup for safety
     const preRestoreName = `pre-restore_${formatTimestamp()}`;
     const preRestoreDir = path.join(backupsDir, preRestoreName);
     fs.mkdirSync(preRestoreDir, { recursive: true });
@@ -284,7 +284,7 @@ function _restoreBackupImpl(name) {
         }
     }
 
-    // Restore: copy file dari backup ke root
+    // Restore: copy files from the backup to the data dir
     const result = { ok: true, filesRestored: 0, errors: [], preRestoreName };
     for (const file of FILES_TO_BACKUP) {
         const src = path.join(srcDir, file);
@@ -299,34 +299,34 @@ function _restoreBackupImpl(name) {
         }
     }
 
-    // v3.9.1: invalidate in-memory cache statsManager supaya data hasil restore
-    // tidak ditimpa oleh cache lama saat flush berikutnya.
+    // v3.9.1: invalidate the statsManager in-memory cache so the restored data
+    // isn't overwritten by the old cache at the next flush.
     try {
         const stats = require('./statsManager');
         if (typeof stats.reload === 'function') stats.reload();
     } catch (_) {}
 
-    // v3.9.4: invalidate permissions admin role cache juga.
-    // Sebelumnya, kalau restore backup punya admin role ID berbeda, isAdmin()
-    // masih pakai admin role lama sampai TTL 30 detik habis → admin lockout.
+    // v3.9.4: invalidate the admin role permissions cache too.
+    // Before, if the restored backup had a different admin role ID, isAdmin()
+    // kept using the old admin role until the 30-second TTL expired → admin lockout.
     try {
         const { invalidateAdminRoleCache } = require('../infra/permissions');
         invalidateAdminRoleCache();
     } catch (_) {}
 
-    // v3.9.8 FIX: invalidate cache panel setelah restore. Sebelumnya (salah sasaran)
-    // memanggil selfRoleManager.invalidateCache — fungsi itu TIDAK PERNAH ADA di
-    // selfRoleManager (silent no-op). Yang benar: panelManager punya cache 30s
-    // (panels.json) — dan sejak v3.9.24 panels.json ikut di-restore, cache lama
-    // harus di-invalidate supaya panel hasil restore langsung terpakai.
+    // v3.9.8 FIX: invalidate the panel cache after a restore. Before (wrong target)
+    // it called selfRoleManager.invalidateCache — a function that NEVER EXISTED in
+    // selfRoleManager (silent no-op). The correct target: panelManager has a 30s
+    // cache (panels.json) — and since v3.9.24 panels.json is restored too, the old
+    // cache must be invalidated so the restored panels take effect immediately.
     try {
         const panelManager = require('./panelManager');
         if (typeof panelManager.invalidateCache === 'function') panelManager.invalidateCache();
     } catch (_) {}
 
-    // v3.9.26: invalidate cache manager yang baru dapat read-through cache
-    // (automod/afk/responders/levels). Semua file ini ikut di-restore — tanpa
-    // invalidasi, hot path masih baca cache 15 detik yang isinya data LAMA.
+    // v3.9.26: invalidate the caches of managers that now have read-through caches
+    // (automod/afk/responders/levels). All of these files get restored — without
+    // invalidation, the hot path keeps reading a 15-second cache holding OLD data.
     for (const mod of ['./automodManager', './afkManager', './responderManager', './levelManager']) {
         try {
             const m = require(mod);
@@ -338,23 +338,23 @@ function _restoreBackupImpl(name) {
 }
 
 /**
- * Start auto-backup interval (dipanggil di index.js saat bot online).
- * @param {Client} client - Discord client (untuk log kalau perlu)
- * @returns {Object} { stop } - function buat stop interval
+ * Start the auto-backup interval (called in index.js when the bot comes online).
+ * @param {Client} client - Discord client (for logging if needed)
+ * @returns {Object} { stop } - function to stop the interval
  */
 function startAutoBackup(client) {
-    // Backup saat start
+    // Backup at start
     const initial = createBackup();
     if (client)
         console.log(
-            `💾 Auto-backup saat start: ${initial.backupName} (${initial.filesCopied} files, ${(initial.totalSize / 1024).toFixed(1)} KB)`
+            `💾 Auto-backup at startup: ${initial.backupName} (${initial.filesCopied} files, ${(initial.totalSize / 1024).toFixed(1)} KB)`
         );
 
-    // Backup tiap 24 jam
-    // P3-10 FIX: .unref() supaya interval tidak block process exit.
+    // Backup every 24 hours
+    // P3-10 FIX: .unref() so the interval doesn't block process exit.
     const interval = setInterval(() => {
         const result = createBackup();
-        if (client) console.log(`💾 Auto-backup berkala: ${result.backupName} (${result.filesCopied} files)`);
+        if (client) console.log(`💾 Scheduled auto-backup: ${result.backupName} (${result.filesCopied} files)`);
     }, BACKUP_INTERVAL_MS);
     if (typeof interval.unref === 'function') interval.unref();
 
@@ -364,7 +364,7 @@ function startAutoBackup(client) {
 }
 
 /**
- * Format byte ke human-readable.
+ * Format bytes into human-readable form.
  */
 function formatSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;

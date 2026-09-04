@@ -1,12 +1,12 @@
 /**
- * Config interaction domain handler — modal submit untuk /edit-message.
+ * Config interaction domain handler — modal submits for /edit-message.
  *
- * v3.9.12: Handle modal_edit_message:<tipe> — modal editor untuk message config.
- * Admin pakai /edit-message untuk buka modal (textarea multi-line),
- * lalu submit → handler ini apply perubahan ke config.messages[tipe].
+ * v3.9.12: Handle modal_edit_message:<type> — the modal editor for message config.
+ * Admins use /edit-message to open the modal (multi-line textarea),
+ * then submit → this handler applies the change to config.messages[type].
  *
- * CustomId: modal_edit_message:<tipe>
- * tipe: welcomeTitle, welcomeBody, goodbyeTitle, goodbyeBody,
+ * CustomId: modal_edit_message:<type>
+ * type: welcomeTitle, welcomeBody, goodbyeTitle, goodbyeBody,
  *       verifyTitle, verifyBody, ticketTitle, ticketBody, ticketPriceHeader
  */
 
@@ -31,18 +31,18 @@ const VALID_TYPES = new Set([
 ]);
 
 module.exports = async function (interaction) {
-    // === MODAL: edit_message:<tipe> ===
+    // === MODAL: edit_message:<type> ===
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_edit_message:')) {
-        // Bungkus seluruh body dalam try/catch.
-        // Kalau setField atau logAudit throw (disk error / permission),
-        // balas error jelas ke admin — jangan biarin error propagate ke top-level handler.
+        // Wrap the whole body in try/catch.
+        // If setField or logAudit throws (disk error / permission),
+        // reply with a clear error to the admin — don't let it propagate to the top-level handler.
         try {
             const tipe = interaction.customId.split(':')[1];
 
-            // Validate tipe (defense-in-depth — admin bisa attempt customId manipulation)
+            // Validate type (defense-in-depth — admins could attempt customId manipulation)
             if (!VALID_TYPES.has(tipe)) {
                 return interaction.reply({
-                    content: `❌ Tipe pesan \`${tipe}\` tidak valid.`,
+                    content: `❌ Invalid message type \`${tipe}\`.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -50,7 +50,7 @@ module.exports = async function (interaction) {
             const newText = interaction.fields.getTextInputValue('message_text');
             if (!newText || newText.trim().length === 0) {
                 return interaction.reply({
-                    content: '❌ Teks tidak boleh kosong.',
+                    content: '❌ Text cannot be empty.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -60,32 +60,32 @@ module.exports = async function (interaction) {
             const limit = isTitle ? EMBED_LIMITS.TITLE : EMBED_LIMITS.DESCRIPTION;
             if (newText.length > limit) {
                 return interaction.reply({
-                    content: `❌ Teks terlalu panjang (${newText.length} char, maks ${limit} char untuk ${isTitle ? 'title' : 'body'}).`,
+                    content: `❌ Text is too long (${newText.length} chars, max ${limit} chars for ${isTitle ? 'title' : 'body'}).`,
                     flags: MessageFlags.Ephemeral
                 });
             }
 
-            // Apply perubahan
+            // Apply the change
             const oldValue = getConfig().messages?.[tipe];
             setField(`messages.${tipe}`, newText);
 
-            // logAudit async — kalau gagal, config udah tersimpan. Tetap balas sukses,
-            // tapi log warning biar kelihatan di console.
+            // logAudit is async — if it fails, the config is already saved. Still reply success,
+            // but log a warning so it's visible in the console.
             try {
                 await logAudit(interaction.client, {
                     action: 'SET_MESSAGE',
                     actorId: interaction.user.id,
                     actorTag: interaction.user.tag,
-                    details: `Edit pesan **${tipe}** via modal (${newText.length} char, sebelumnya ${oldValue?.length || 0} char)`,
+                    details: `Edit message **${tipe}** via modal (${newText.length} chars, previously ${oldValue?.length || 0} chars)`,
                     guildId: interaction.guild.id
                 });
             } catch (auditErr) {
-                console.warn(`⚠️ logAudit gagal saat edit-message (config tetap tersimpan): ${auditErr.message}`);
+                console.warn(`⚠️ logAudit failed during edit-message (config is still saved): ${auditErr.message}`);
             }
 
-            // Reply dengan preview
+            // Reply with a preview
             return interaction.reply({
-                content: `✅ Pesan **${tipe}** diperbarui via modal editor.\n\n**Preview:**\n\`\`\`\n${newText.slice(0, 1500)}${newText.length > 1500 ? '\n...(dipotong untuk preview)' : ''}\n\`\`\``,
+                content: `✅ Message **${tipe}** updated via the modal editor.\n\n**Preview:**\n\`\`\`\n${newText.slice(0, 1500)}${newText.length > 1500 ? '\n...(truncated for preview)' : ''}\n\`\`\``,
                 flags: MessageFlags.Ephemeral
             });
         } catch (err) {
@@ -93,7 +93,7 @@ module.exports = async function (interaction) {
             if (!interaction.replied && !interaction.deferred) {
                 return interaction
                     .reply({
-                        content: `❌ Gagal menyimpan perubahan: ${err.message}`,
+                        content: `❌ Failed to save the change: ${err.message}`,
                         flags: MessageFlags.Ephemeral
                     })
                     .catch(() => {});

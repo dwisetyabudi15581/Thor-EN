@@ -2,27 +2,26 @@ const { PermissionFlagsBits } = require('discord.js');
 const { getConfig } = require('../data/configManager');
 
 /**
- * Cek apakah seorang member adalah admin/staff bot.
- * Member dianggap admin kalau:
- *   1. Punya role Admin (yang sudah di-set via /set-role admin), ATAU
- *   2. Punya Discord permission ManageGuild, ATAU
- *   3. Punya Discord permission Administrator (super admin Discord)
+ * Check whether a member is a bot admin/staff.
+ * A member is considered admin if:
+ *   1. They have the Admin role (set via /set-role admin), OR
+ *   2. They have the Discord ManageGuild permission, OR
+ *   3. They have the Discord Administrator permission (Discord super admin)
  *
- * v3.9.2 OPTIMIZATION: cache admin role ID dari config selama 30 detik.
- * Sebelumnya, setiap interaction masuk manggil getConfig() yang baca
- * config.json dari disk secara sync. Untuk server aktif dengan banyak
- * slash command, ini bisa 50-100 disk read/detik yang sebenarnya tidak
- * perlu (config jarang berubah).
+ * v3.9.2 OPTIMIZATION: cache the admin role ID from config for 30 seconds.
+ * Previously, every incoming interaction called getConfig() which reads
+ * config.json from disk synchronously. For an active server with lots of slash
+ * commands, that could be 50-100 unnecessary disk reads per second (config rarely changes).
  *
- * Cache di-invalidate otomatis setelah 30 detik, jadi kalau admin baru
- * set role admin, maks 30 detik sudah terbaca.
+ * The cache is invalidated automatically after 30 seconds, so when an admin
+ * newly sets the admin role, it takes effect within at most 30 seconds.
  *
  * @param {import('discord.js').GuildMember} member
  * @returns {boolean}
  */
 
-const CACHE_TTL_MS = 30 * 1000; // 30 detik
-let cachedAdminRoleId = undefined; // undefined = belum dicek; null = tidak di-set
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds
+let cachedAdminRoleId = undefined; // undefined = not checked yet; null = not set
 let cacheExpiresAt = 0;
 
 function getAdminRoleId() {
@@ -30,12 +29,12 @@ function getAdminRoleId() {
     if (now < cacheExpiresAt) {
         return cachedAdminRoleId;
     }
-    // Cache expired — baca ulang dari config
+    // Cache expired — re-read from config
     try {
         const config = getConfig();
         cachedAdminRoleId = config.roles?.admin || null;
     } catch (_err) {
-        // Defensive: kalau getConfig throw (mis. config rusak), anggap tidak ada admin role
+        // Defensive: if getConfig throws (e.g. corrupt config), assume there is no admin role
         cachedAdminRoleId = null;
     }
     cacheExpiresAt = now + CACHE_TTL_MS;
@@ -43,8 +42,8 @@ function getAdminRoleId() {
 }
 
 /**
- * Invalidate cache manual. Dipanggil saat admin role di-set/unset via /set-role
- * supaya perubahan langsung efektif tanpa nunggu TTL.
+ * Manually invalidate the cache. Called when the admin role is set/unset via /set-role
+ * so the change takes effect immediately without waiting for the TTL.
  */
 function invalidateAdminRoleCache() {
     cachedAdminRoleId = undefined;
@@ -54,11 +53,11 @@ function invalidateAdminRoleCache() {
 function isAdmin(member) {
     if (!member) return false;
 
-    // Cek Discord permission langsung (paling andal, tidak butuh cache)
+    // Check Discord permissions directly (most reliable, no cache needed)
     if (member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
     if (member.permissions?.has(PermissionFlagsBits.Administrator)) return true;
 
-    // Cek role admin dari config (cached)
+    // Check the config admin role (cached)
     const adminRoleId = getAdminRoleId();
     if (adminRoleId && member.roles?.cache?.has(adminRoleId)) return true;
 

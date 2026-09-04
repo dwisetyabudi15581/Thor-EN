@@ -1,10 +1,10 @@
 # ============================================
 # CI Pipeline — auto-run on every push & PR
 # ============================================
-# Mencegah merge kode yang:
-#   - Gagal syntax check
-#   - Gagal unit tests
-#   - Break behavior fungsi existing
+# Prevents merging code that:
+#   - Fails the syntax check
+#   - Fails unit tests
+#   - Breaks the behavior of existing functions
 # ============================================
 
 name: CI
@@ -39,12 +39,12 @@ jobs:
 
       - name: 🔍 Lint (ESLint)
         run: npm run lint
-        continue-on-error: true # soft fail dulu, akan di-strict setelah codebase clean
+        continue-on-error: true # soft-fail for now; will be made strict once the codebase is clean
 
       - name: 🧪 Run tests
         run: npm test
 
-      - name: 📊 Upload coverage artifact (jika ada)
+      - name: 📊 Upload coverage artifact (if any)
         if: always()
         uses: actions/upload-artifact@v4
         with:

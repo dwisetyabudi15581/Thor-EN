@@ -1,5 +1,5 @@
 /**
- * Scheduled Announcements — kirim embed ke channel pada waktu tertentu.
+ * Scheduled Announcements — send an embed to a channel at a specific time.
  *
  * File: scheduledAnnouncements.json
  * [
@@ -20,19 +20,19 @@
  * ]
  *
  * Recurring:
- *   - daily: sendAt di-update ke next day, same time
- *   - weekly: sendAt di-update ke next week, same time
- *   - monthly: sendAt di-update ke next month, same day+time
+ *   - daily: sendAt is updated to next day, same time
+ *   - weekly: sendAt is updated to next week, same time
+ *   - monthly: sendAt is updated to next month, same day+time
  */
 
 const fs = require('fs');
 const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
-// v3.9.38 FIX: absolute time diparse dengan offset eksplisit (default WITA +8,
-// sesuai teks bantuan /announce-schedule) — bukan timezone host. VPS UTC
-// sebelumnya bikin semua announcement absolute telat 8 jam. Configurable via
-// env TZ_OFFSET_HOURS (valid -12..14, di luar range → fallback 8).
+// v3.9.38 FIX: absolute times are parsed with an explicit offset (default WITA +8,
+// matching the /announce-schedule help text) — not the host timezone. A UTC VPS
+// previously made every absolute announcement 8 hours late. Configurable via
+// env TZ_OFFSET_HOURS (valid -12..14, outside range → fallback 8).
 const DEFAULT_TZ_OFFSET_HOURS = 8;
 function getTzOffsetHours() {
     const n = parseInt(process.env.TZ_OFFSET_HOURS ?? String(DEFAULT_TZ_OFFSET_HOURS), 10);
@@ -46,8 +46,8 @@ function load() {
         if (!fs.existsSync(filePath)) return [];
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (err) {
-        console.warn('⚠️ scheduledAnnouncements.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ scheduledAnnouncements.json is corrupt:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         return [];
     }
@@ -108,19 +108,19 @@ function markSent(id) {
     entry.sent = true;
     entry.sentAt = Date.now();
 
-    // Kalau recurring, bikin entry baru untuk next cycle
-    // v3.9.17 FIX: catch-up loop. Sebelumnya, kalau bot offline lama (mis. 30 hari
-    // untuk daily recurring), nextSendAt masih di masa lalu → scheduler tick
-    // berikutnya (60s) fires lagi → bikin entry baru lagi → spam 1 announce per
-    // menit sampai catch up ke now.
-    // Sekarang: while-loop nextSendAt sampai > now, supaya entry baru selalu
-    // di masa depan. Tapi batasi maks 365 iterasi (defense-in-depth kalau ada
-    // bug di computeNextRecurring yang return timestamp tetap).
+    // If recurring, create a new entry for the next cycle
+    // v3.9.17 FIX: catch-up loop. Previously, if the bot was offline for a long
+    // time (e.g. 30 days for a daily recurring), nextSendAt would still be in
+    // the past → the next scheduler tick (60s) fires again → creates another
+    // new entry → spamming 1 announce per minute until catching up to now.
+    // Now: while-loop nextSendAt until > now, so the new entry is always in
+    // the future. But cap it at 365 iterations max (defense-in-depth in case
+    // computeNextRecurring has a bug and returns a stale timestamp).
     if (entry.recurring) {
         let nextSendAt = computeNextRecurring(entry.sendAt, entry.recurring);
         const now = Date.now();
         let iter = 0;
-        const MAX_ITER = 366; // 1 tahun cycle maximum
+        const MAX_ITER = 366; // 1 year cycle maximum
         while (nextSendAt && nextSendAt <= now && iter < MAX_ITER) {
             nextSendAt = computeNextRecurring(nextSendAt, entry.recurring);
             iter++;
@@ -154,9 +154,9 @@ function remove(id) {
 
 /**
  * Compute next recurring timestamp.
- * @param {number} fromTs - timestamp referensi
+ * @param {number} fromTs - reference timestamp
  * @param {string} type - 'daily' | 'weekly' | 'monthly'
- * @returns {number|null} next timestamp, atau null kalau invalid
+ * @returns {number|null} next timestamp, or null if invalid
  */
 function computeNextRecurring(fromTs, type) {
     const d = new Date(fromTs);
@@ -176,33 +176,35 @@ function computeNextRecurring(fromTs, type) {
 }
 
 /**
- * Parse natural language time string ke timestamp.
- * Format yang didukung:
- *   - ISO: "2026-01-15 20:00" → di-asumsikan zona waktu bot (default WITA/UTC+8,
- *     v3.9.38 — sebelumnya timezone host, bikin offset 8 jam di VPS UTC)
+ * Parse a natural language time string into a timestamp.
+ * Supported formats:
+ *   - ISO: "2026-01-15 20:00" → assumed to be in the bot's timezone (default
+ *     WITA/UTC+8, v3.9.38 — previously the host timezone, causing an 8 hour
+ *     offset on UTC VPSes)
  *   - Relative: "30m", "2h", "1d" → now + duration
  *
- * v3.9.1 FIX: tambah range validation supaya admin tidak schedule announce
- *   1000000 hari ke depan (yang akan bikin recurring ghost entries forever).
- *   - Relative: maks 365 hari (8760 jam)
- *   - Absolute: maks 5 tahun ke depan
- *   - Past time: null (akan di-reject oleh caller juga, tapi set di sini juga)
+ * v3.9.1 FIX: added range validation so admins can't schedule an announce
+ *   1000000 days into the future (which would keep creating ghost recurring
+ *   entries forever).
+ *   - Relative: max 365 days (8760 hours)
+ *   - Absolute: max 5 years into the future
+ *   - Past time: null (also rejected by the caller, but set here too)
  *
- * @returns {number|null} timestamp ms, atau null kalau invalid
+ * @returns {number|null} timestamp in ms, or null if invalid
  */
 function parseTime(input) {
     if (!input) return null;
     const trimmed = input.trim().toLowerCase();
     const now = Date.now();
     const MAX_RELATIVE_DAYS = 365;
-    const MAX_ABSOLUTE_FUTURE_MS = 5 * 365 * 24 * 60 * 60 * 1000; // 5 tahun
+    const MAX_ABSOLUTE_FUTURE_MS = 5 * 365 * 24 * 60 * 60 * 1000; // 5 years
 
     // Relative: 30m, 2h, 1d, 1h30m
     const relMatch = trimmed.match(/^(\d+)([mhd])$/);
     if (relMatch) {
         const num = parseInt(relMatch[1]);
         const unit = relMatch[2];
-        // v3.9.1: range check — angka terlalu besar = invalid.
+        // v3.9.1: range check — a number that's too large is invalid.
         if (num <= 0 || num > 1000000) return null;
 
         let deltaMs;
@@ -211,13 +213,13 @@ function parseTime(input) {
         else if (unit === 'd') deltaMs = num * 86400000;
         else return null;
 
-        // Cek batas atas (maks 365 hari)
+        // Check the upper bound (max 365 days)
         if (deltaMs > MAX_RELATIVE_DAYS * 86400000) return null;
 
         return now + deltaMs;
     }
 
-    // ISO-like: "2026-01-15 20:00" atau "2026-01-15T20:00"
+    // ISO-like: "2026-01-15 20:00" or "2026-01-15T20:00"
     const isoMatch = input.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
     if (isoMatch) {
         const [, y, mo, d, h, mi, s] = isoMatch;
@@ -227,11 +229,12 @@ function parseTime(input) {
         const hourNum = parseInt(h, 10);
         const minNum = parseInt(mi, 10);
         const secNum = s ? parseInt(s, 10) : 0;
-        // v3.9.38 FIX: bangun dari komponen input sebagai UTC murni dulu —
-        // dipakai untuk validasi rollover (dan bebas dari timezone host).
-        // v3.9.8 FIX: Date constructor auto-rolls invalid components (mis. month 13
-        // → January next year, day 40 → 9th of next month). Sebelumnya, "2026-13-40 99:99"
-        // silently menjadi valid date di tahun 2027. Sekarang: verify components match.
+        // v3.9.38 FIX: build from the input components as pure UTC first — used
+        // for rollover validation (and free from the host timezone).
+        // v3.9.8 FIX: the Date constructor auto-rolls invalid components (e.g.
+        // month 13 → January next year, day 40 → 9th of next month). Previously,
+        // "2026-13-40 99:99" silently became a valid date in 2027. Now: verify
+        // components match.
         const wall = new Date(Date.UTC(yearNum, monthNum - 1, dayNum, hourNum, minNum, secNum));
         if (isNaN(wall.getTime())) return null;
         if (
@@ -244,12 +247,12 @@ function parseTime(input) {
             return null;
         }
 
-        // v3.9.38 FIX: konversi wall-clock (zona bot, default WITA +8) → timestamp
-        // UTC absolut dengan offset eksplisit. Sebelumnya pakai `new Date(y, mo, d,
-        // ...)` (timezone host) → di VPS UTC semua absolute announcement telat
-        // 8 jam dari yang dijanjikan teks bantuan.
+        // v3.9.38 FIX: convert the wall-clock (bot timezone, default WITA +8) →
+        // an absolute UTC timestamp with an explicit offset. Previously used
+        // `new Date(y, mo, d, ...)` (host timezone) → on a UTC VPS every absolute
+        // announcement was 8 hours later than promised by the help text.
         const ts = wall.getTime() - getTzOffsetHours() * 3600 * 1000;
-        // v3.9.1: reject kalau di masa lalu ATAU lebih dari 5 tahun ke depan.
+        // v3.9.1: reject if in the past OR more than 5 years into the future.
         if (ts < now) return null;
         if (ts > now + MAX_ABSOLUTE_FUTURE_MS) return null;
         return ts;
@@ -259,17 +262,17 @@ function parseTime(input) {
 }
 
 /**
- * v3.9.26 (GC): hapus entry announcement yang sudah terkirim lebih dari
- * `olderThanMs` lalu. Entry sent dipertahankan selamanya sebelumnya + setiap
- * cycle recurring bikin entry BARU → 365 entry/tahun per announce harian.
- * Dipanggil scheduler harian. Return jumlah entry yang dihapus.
+ * v3.9.26 (GC): delete announcement entries that were sent more than
+ * `olderThanMs` ago. Sent entries used to be kept forever + every recurring
+ * cycle created a NEW entry → 365 entries/year per daily announce.
+ * Called by the daily scheduler. Returns the number of entries removed.
  */
 function pruneSentOlderThan(olderThanMs) {
     const list = load();
     const cutoff = Date.now() - olderThanMs;
     const keep = list.filter(e => {
         if (!e) return false;
-        if (!e.sent) return true; // pending tidak pernah di-touch
+        if (!e.sent) return true; // pending entries are never touched
         const sentAt = e.sentAt || e.sendAt || 0;
         return sentAt > cutoff;
     });
@@ -289,6 +292,6 @@ module.exports = {
     parseTime,
     // v3.9.26
     pruneSentOlderThan,
-    // v3.9.38: offset zona waktu absolut (default WITA +8) — untuk test & help text
+    // v3.9.38: absolute timezone offset (default WITA +8) — for tests & help text
     getTzOffsetHours
 };

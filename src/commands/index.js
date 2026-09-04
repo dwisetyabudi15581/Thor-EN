@@ -1,9 +1,9 @@
 /**
- * Command Router — distribusi slash command ke handler per-domain.
+ * Command Router — routes slash commands to per-domain handlers.
  *
- * Arsitektur (v3.9.9 refactor):
- *   Slash command dipisah per file domain di src/commands/<domain>.js.
- *   Router ini cek permission (admin/public), lalu panggil handler domain.
+ * Architecture (v3.9.9 refactor):
+ *   Slash commands are split per domain file in src/commands/<domain>.js.
+ *   This router checks permissions (admin/public), then calls the domain handler.
  *
  * Domain mapping:
  *   - help                                → help.js
@@ -34,15 +34,15 @@
  *   - setup-tempvoice, tempvoice-remove  → tempvoice.js
  *   - send-message                       → send-message.js
  *
- * Status: FULL SPLIT (v3.9.9). Semua command sudah di-domain-kan.
- * handlers/commandHandler.js di-deprecate — tidak dipakai router ini lagi.
+ * Status: FULL SPLIT (v3.9.9). All commands are domain-ized.
+ * handlers/commandHandler.js is deprecated — no longer used by this router.
  */
 
 const { MessageFlags } = require('discord.js');
 const { isAdmin: checkIsAdmin } = require('../infra/permissions');
 
 // === Domain handlers ===
-// Tiap file export satu async function (interaction) → void.
+// Each file exports a single async function (interaction) → void.
 const helpHandler = require('./help');
 const configHandler = require('./config');
 const productsHandler = require('./products');
@@ -60,14 +60,14 @@ const sendMessageHandler = require('./send-message');
 // v3.9.11 Phase 2 & 3: new domains
 const categoriesHandler = require('./categories');
 const panelsHandler = require('./panels');
-// v3.9.14: panel management (list/delete/update/refresh) — handler terpisah
+// v3.9.14: panel management (list/delete/update/refresh) — separate handler
 const panelsMgmtHandler = require('./panels-mgmt');
 // v3.9.13: new community features
 const responderHandler = require('./responder');
 const automodHandler = require('./automod');
 const afkHandler = require('./afk');
 const levelingHandler = require('./leveling');
-// v3.9.32: midman/rekber commands (/set-midman-fee, /midman-deals)
+// v3.9.32: midman/escrow commands (/set-midman-fee, /midman-deals)
 const midmanHandler = require('./midman');
 
 const DOMAIN_HANDLERS = {
@@ -99,7 +99,7 @@ const DOMAIN_HANDLERS = {
     midman: midmanHandler
 };
 
-// Mapping commandName → domain key (di DOMAIN_HANDLERS).
+// Mapping commandName → domain key (in DOMAIN_HANDLERS).
 const COMMAND_TO_DOMAIN = {
     // help
     help: 'help',
@@ -116,10 +116,10 @@ const COMMAND_TO_DOMAIN = {
     'reset-message': 'config',
     'reset-config': 'config',
     'config-show': 'config',
-    // v3.9.12: modal editor untuk message config
+    // v3.9.12: modal editor for message config
     'edit-message': 'config',
 
-    // v3.9.32: midman/rekber
+    // v3.9.32: midman/escrow
     'set-midman-fee': 'midman',
     'midman-deals': 'midman',
 
@@ -187,16 +187,16 @@ const COMMAND_TO_DOMAIN = {
     'add-category': 'categories',
     'list-categories': 'categories',
     'remove-category': 'categories',
-    // v3.9.24 FIX: dua command ini sebelumnya TERDAFTAR di registry + punya
-    // handler + diiklankan di /help, tapi TIDAK di-map di sini → selalu error
-    // "Command belum didukung oleh router". Bug ini ketutup karena router
-    // gak error, cuma balas pesan "hubungi dev".
+    // v3.9.24 FIX: these two commands were previously REGISTERED in the registry + had a
+    // handler + were advertised in /help, but were NOT mapped here → always errored
+    // with "Command not supported by router". The bug stayed hidden because the
+    // router didn't error, it just replied "contact the dev".
     'update-category': 'categories',
     'update-product': 'products',
 
     // v3.9.11 Phase 1 & 3: panels (verify button, multi-panel ticket)
-    // v3.9.30: /set-transcript-channel dihapus — digabung ke /set-channel
-    // tipe:transcript (domain config) supaya admin cuma hafal satu command channel.
+    // v3.9.30: /set-transcript-channel removed — merged into /set-channel
+    // type:transcript (config domain) so admins only memorize one channel command.
     'set-verify-button': 'panels',
     'setup-ticket-panel': 'panels',
 
@@ -216,7 +216,7 @@ const COMMAND_TO_DOMAIN = {
     'automod-show': 'automod',
     'automod-toggle': 'automod',
     'add-link-whitelist': 'automod',
-    // v3.9.23: word flex — kelola kata blocklist/exempt per kata
+    // v3.9.23: word flex — manage blocklist/exempt words per word
     'add-word': 'automod',
     'remove-word': 'automod',
     'list-words': 'automod',
@@ -236,12 +236,12 @@ const COMMAND_TO_DOMAIN = {
     'leaderboard-level': 'leveling'
 };
 
-// Command yang boleh dipakai member biasa (bukan admin).
-// v3.9.13: tambah afk, afk-clear, rank, leaderboard-level (public community features)
+// Commands that regular members (non-admins) may use.
+// v3.9.13: added afk, afk-clear, rank, leaderboard-level (public community features)
 const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'afk', 'afk-clear', 'rank', 'leaderboard-level'];
 
 /**
- * Router utama — dipanggil dari index.js saat InteractionCreate (chatInputCommand).
+ * Main router — called from index.js on InteractionCreate (chatInputCommand).
  */
 async function routeCommand(interaction) {
     if (!interaction.isChatInputCommand()) return;
@@ -250,7 +250,7 @@ async function routeCommand(interaction) {
     if (!checkIsAdmin(interaction.member) && !PUBLIC_COMMANDS.includes(interaction.commandName)) {
         return interaction.reply({
             content:
-                '🚫 **Akses Ditolak.**\n\nSlash command hanya bisa dipakai oleh **Admin/Staff**.\n\nKalau kamu merasa ini salah, hubungi server admin.',
+                '🚫 **Access Denied.**\n\nSlash commands can only be used by **Admin/Staff**.\n\nIf you believe this is a mistake, contact a server admin.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -262,21 +262,21 @@ async function routeCommand(interaction) {
         return handler(interaction);
     }
 
-    // Unknown command — kirim ephemeral error supaya admin tahu command belum didukung.
-    // (Sebelumnya fallback ke handlers/commandHandler.js — sekarang sudah FULL SPLIT,
-    //  jadi gak ada command yang harusnya lewat sini kecuali ada command baru yang
-    //  belum di-map di COMMAND_TO_DOMAIN.)
+    // Unknown command — send an ephemeral error so the admin knows the command isn't supported yet.
+    // (Previously it fell back to handlers/commandHandler.js — now it's a FULL SPLIT,
+    //  so no command should end up here except a new command that hasn't been
+    //  mapped in COMMAND_TO_DOMAIN yet.)
     console.warn(`[router] Unmapped command: ${interaction.commandName}`);
     if (interaction.deferred || interaction.replied) return;
     return interaction.reply({
-        content: `⚠️ Command \`${interaction.commandName}\` belum didukung oleh router. Hubungi dev.`,
+        content: `⚠️ Command \`${interaction.commandName}\` is not supported by the router yet. Contact the dev.`,
         flags: MessageFlags.Ephemeral
     });
 }
 
-// v3.9.24: export mapping domain supaya bisa di-unit-test (guard anti
-// "command terdaftar di registry tapi tidak pernah di-route" — bug yang
-// persis kejadian pada /update-category & /update-product sebelum fix ini).
+// v3.9.24: export the domain mapping so it can be unit-tested (guard against
+// "command registered in the registry but never routed" — the exact bug that
+// happened to /update-category & /update-product before this fix).
 routeCommand.COMMAND_TO_DOMAIN = COMMAND_TO_DOMAIN;
 routeCommand.DOMAIN_HANDLERS = DOMAIN_HANDLERS;
 

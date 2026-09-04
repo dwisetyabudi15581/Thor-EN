@@ -1,12 +1,12 @@
 /**
- * Warn Manager — track warning member + auto-action berdasarkan threshold.
+ * Warn Manager — track member warnings + auto-actions based on thresholds.
  *
  * File: warns.json
  * {
  *   "<guildId>:<userId>": [
  *     {
  *       id: "warn_<timestamp>_<rand>",
- *       reason: "Spam di #general",
+ *       reason: "Spam in #general",
  *       warnedBy: "adminId",
  *       warnedByTag: "Admin#1234",
  *       guildId: "...",
@@ -17,16 +17,16 @@
  *   ]
  * }
  *
- * Threshold default:
- *   3 warn → mute 1 jam
- *   5 warn → mute 1 hari
- *   7 warn → kick
+ * Default thresholds:
+ *   3 warnings → 1 hour mute
+ *   5 warnings → 1 day mute
+ *   7 warnings → kick
  *
- * v3.9.0 FIX: key diganti dari `userId` (global) → `${guildId}:${userId}` (composite).
- *   Sebelumnya, kalau bot di-deploy multi-guild, warn di Guild A ikut dihitung
- *   untuk threshold kick di Guild B. Sekarang scoped per guild.
- *   Backward compat: kalau load() nemu key lama (tanpa `:`), auto-migrate pakai
- *   guildId dari field `guildId` di dalam entry.
+ * v3.9.0 FIX: key changed from `userId` (global) → `${guildId}:${userId}` (composite).
+ *   Previously, if the bot was deployed multi-guild, warnings in Guild A also
+ *   counted toward the kick threshold in Guild B. Now scoped per guild.
+ *   Backward compat: if load() finds an old key (without `:`), it auto-migrates
+ *   using the guildId field inside the entry.
  */
 
 const fs = require('fs');
@@ -36,8 +36,8 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 const filePath = path.join(__dirname, '..', '..', 'data', 'warns.json');
 
 const DEFAULT_THRESHOLDS = {
-    mute1h: 3, // 3 warnings → mute 1 jam
-    mute1d: 5, // 5 warnings → mute 1 hari
+    mute1h: 3, // 3 warnings → 1 hour mute
+    mute1d: 5, // 5 warnings → 1 day mute
     kick: 7 // 7 warnings → kick
 };
 
@@ -59,20 +59,20 @@ function load() {
         if (!fs.existsSync(filePath)) return {};
         raw = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (err) {
-        console.warn('⚠️ warns.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ warns.json is corrupt:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         return {};
     }
 
     // v3.9.0: detect old format (key is plain userId, no `:`) and migrate.
     // Old keys look like "1234567890" (just digits). New keys have `:`.
-    // v3.9.17 FIX: entry tanpa guildId jangan di-drop. Sebelumnya, entry orphan
-    // di-skip + dihapus dari file saat save. Sekarang: assign ke default guild
-    // supaya data tidak hilang (admin bisa investigasi manual).
+    // v3.9.17 FIX: don't drop entries without a guildId. Previously, orphan
+    // entries were skipped + deleted from the file on save. Now: assign them to
+    // a default guild so the data isn't lost (an admin can investigate manually).
     let needsMigration = false;
     const migrated = {};
-    const DEFAULT_GUILD_ID = 'legacy'; // placeholder guild untuk entry orphan
+    const DEFAULT_GUILD_ID = 'legacy'; // placeholder guild for orphan entries
     for (const [k, warns] of Object.entries(raw)) {
         if (k.includes(':')) {
             // New format — keep as-is.
@@ -83,9 +83,9 @@ function load() {
             if (!Array.isArray(warns)) continue;
             for (const w of warns) {
                 if (!w.guildId) {
-                    // v3.9.17: assign ke default guild 'legacy' supaya entry tidak hilang.
+                    // v3.9.17: assign to the default 'legacy' guild so the entry isn't lost.
                     console.warn(
-                        `⚠️ Warn entry ${w.id} untuk user ${k} tidak punya guildId, assign ke guild 'legacy'.`
+                        `⚠️ Warn entry ${w.id} for user ${k} has no guildId, assigning to guild 'legacy'.`
                     );
                     w.guildId = DEFAULT_GUILD_ID;
                 }
@@ -99,11 +99,11 @@ function load() {
     }
 
     if (needsMigration) {
-        console.log('🔄 warns.json di-migrate dari format lama (userId key) ke format baru (guildId:userId key).');
+        console.log('🔄 warns.json migrated from the old format (userId key) to the new format (guildId:userId key).');
         try {
             safeWriteJSON(filePath, migrated);
         } catch (err) {
-            console.warn('⚠️ Gagal save hasil migrasi warns.json:', err.message);
+            console.warn('⚠️ Failed to save the warns.json migration result:', err.message);
         }
     }
 
@@ -120,10 +120,10 @@ function genId() {
 }
 
 /**
- * Tambah warn ke user (scoped to guild).
+ * Add a warning to a user (scoped to a guild).
  *
- * @param {string} guildId - ID guild tempat warn terjadi (WAJIB)
- * @param {string} userId - ID user yang di-warn
+ * @param {string} guildId - ID of the guild where the warning was issued (REQUIRED)
+ * @param {string} userId - ID of the user being warned
  * @param {Object} data - { reason, warnedBy, warnedByTag }
  * @returns {Object} { warnEntry, count, actionToTake, actionAlreadyTaken }
  */
@@ -146,13 +146,13 @@ function addWarn(guildId, userId, data) {
 
     const count = all[k].length;
 
-    // Tentukan action berdasarkan threshold
+    // Determine the action based on the thresholds
     let actionToTake = null;
     if (count >= DEFAULT_THRESHOLDS.kick) actionToTake = 'kick';
     else if (count >= DEFAULT_THRESHOLDS.mute1d) actionToTake = 'mute_1d';
     else if (count >= DEFAULT_THRESHOLDS.mute1h) actionToTake = 'mute_1h';
 
-    // P1-7 FIX: cek apakah action yang sama sudah pernah diambil sebelumnya.
+    // P1-7 FIX: check whether the same action has already been taken before.
     let actionAlreadyTaken = false;
     if (actionToTake && actionToTake !== 'kick') {
         const previouslyTookSameAction = all[k].some(w => w.id !== entry.id && w.actionTaken === actionToTake);
@@ -166,7 +166,7 @@ function addWarn(guildId, userId, data) {
 }
 
 /**
- * Ambil semua warn user di guild tertentu.
+ * Get all warnings for a user in a given guild.
  */
 function getWarns(guildId, userId) {
     const all = load();
@@ -200,8 +200,8 @@ function clearWarns(guildId, userId) {
 }
 
 /**
- * Tandai warn tertentu sudah menyebabkan action tertentu.
- * v3.9.0 FIX: return boolean supaya caller tahu apakah mark berhasil.
+ * Mark a specific warning as having triggered a specific action.
+ * v3.9.0 FIX: returns a boolean so the caller knows if the mark succeeded.
  */
 function markActionTaken(guildId, userId, warnId, action) {
     const all = load();

@@ -1,5 +1,5 @@
 /**
- * Unit tests untuk keyManager (data layer)
+ * Unit tests for keyManager (data layer)
  *
  * Verify: addKey uniqueness, findAllByUser guild-scoped, getActiveKeys, expiry logic
  */
@@ -10,19 +10,19 @@ const fs = require('fs');
 const path = require('path');
 
 // ====================================================
-// === v3.9.24 FIX: keys.json produksi di-snapshot & restore ===
+// === v3.9.24 FIX: production keys.json is snapshotted & restored ===
 // ====================================================
-// Test sebelumnya meng-claim pakai temp file (mock Module._resolveFilename),
-// tapi scaffolding itu TIDAK PERNAH BERFUNGSI — test menulis langsung ke
-// data/keys.json produksi. Sekarang: keys.json asli di-backup sebelum test
-// dan di-restore saat process exit (exit handler harus sync).
+// The previous test claimed to use a temp file (mocking Module._resolveFilename),
+// but that scaffolding NEVER WORKED — the test wrote directly to the
+// production data/keys.json. Now: the real keys.json is backed up before the test
+// and restored on process exit (the exit handler must be sync).
 const realKeysPath = path.join(__dirname, '..', '..', 'data', 'keys.json');
 const keysBackupPath = realKeysPath + '.test-backup';
 let keysBackedUp = false;
 if (fs.existsSync(realKeysPath)) {
     fs.copyFileSync(realKeysPath, keysBackupPath);
     keysBackedUp = true;
-    // Mulai dari state kosong yang deterministik (seperti fresh checkout).
+    // Start from a deterministic empty state (like a fresh checkout).
     fs.unlinkSync(realKeysPath);
 }
 process.on('exit', () => {
@@ -31,7 +31,7 @@ process.on('exit', () => {
             fs.copyFileSync(keysBackupPath, realKeysPath);
             fs.rmSync(keysBackupPath, { force: true });
         } else if (fs.existsSync(realKeysPath)) {
-            // Tidak ada file asli → hapus file hasil test.
+            // No original file existed → remove the file the test created.
             fs.unlinkSync(realKeysPath);
         }
     } catch (_) {}
@@ -39,7 +39,7 @@ process.on('exit', () => {
 
 test('keyManager: addKey throws on duplicate key (v3.9.8 fix)', () => {
     const { addKey } = require('../../src/data/keyManager');
-    // Add pertama
+    // First add
     addKey({
         key: 'TEST-DUPLICATE-001',
         userId: 'user_test_1',
@@ -49,7 +49,7 @@ test('keyManager: addKey throws on duplicate key (v3.9.8 fix)', () => {
         days: 30,
         guildId: 'guild_test'
     });
-    // Add kedua dengan key yang sama → harus throw
+    // Second add with the same key → must throw
     assert.throws(() => {
         addKey({
             key: 'TEST-DUPLICATE-001',
@@ -60,7 +60,7 @@ test('keyManager: addKey throws on duplicate key (v3.9.8 fix)', () => {
             days: 30,
             guildId: 'guild_test'
         });
-    }, /sudah ada di database.*duplicate/i);
+    }, /already exists in the database.*duplicate/i);
 
     // Cleanup
     const { removeAllKeysByUser } = require('../../src/data/keyManager');
@@ -100,7 +100,7 @@ test('keyManager: addKey with days=0 creates permanent key (expireAt=null)', () 
 test('keyManager: findAllByUser guild-scoped (v3.9.8 fix)', () => {
     const { addKey, findAllByUser, removeAllKeysByUser } = require('../../src/data/keyManager');
 
-    // Add key di guild A
+    // Add a key in guild A
     addKey({
         key: 'TEST-SCOPE-A-' + Date.now(),
         userId: 'user_scope_test',
@@ -109,7 +109,7 @@ test('keyManager: findAllByUser guild-scoped (v3.9.8 fix)', () => {
         days: 30,
         guildId: 'guild_A'
     });
-    // Add key di guild B
+    // Add a key in guild B
     addKey({
         key: 'TEST-SCOPE-B-' + Date.now(),
         userId: 'user_scope_test',
@@ -119,14 +119,14 @@ test('keyManager: findAllByUser guild-scoped (v3.9.8 fix)', () => {
         guildId: 'guild_B'
     });
 
-    // findAllByUser dengan guildId=A → hanya return key guild_A
+    // findAllByUser with guildId=A → only returns the guild_A key
     const keysInA = findAllByUser('user_scope_test', 'guild_A');
     assert.ok(
         keysInA.every(k => k.guildId === 'guild_A' || !k.guildId),
         'should only return keys from guild_A (or legacy without guildId)'
     );
 
-    // findAllByUser tanpa guildId → return semua key user (backward compat)
+    // findAllByUser without guildId → returns all the user's keys (backward compat)
     const allKeys = findAllByUser('user_scope_test');
     assert.ok(allKeys.length >= 2, 'should return all keys for user');
 
@@ -140,8 +140,8 @@ test('keyManager: getActiveKeysByUserAndRole filters expired', () => {
     const userId = 'user_active_test';
     const roleId = 'role_active';
 
-    // Add expired key (days=-1 tidak mungkin, jadi pakai trik: add dengan days=1 lalu manual edit)
-    // Sebenarnya kita test active key saja.
+    // Add an expired key (days=-1 is impossible, so the trick would be: add with days=1 then manually edit)
+    // In practice we only test the active key here.
     addKey({
         key: 'TEST-ACTIVE-' + Date.now(),
         userId,
@@ -187,11 +187,11 @@ test('keyManager: removeAllKeysByUser respects guildId scope', () => {
     addKey({ key: 'TEST-RM-A-' + Date.now(), userId, roleId: 'r', productName: 'P', days: 30, guildId: 'guild_X' });
     addKey({ key: 'TEST-RM-B-' + Date.now(), userId, roleId: 'r', productName: 'P', days: 30, guildId: 'guild_Y' });
 
-    // Remove only dari guild_X
+    // Remove only from guild_X
     const removed = removeAllKeysByUser(userId, 'guild_X');
     assert.ok(removed >= 1, 'should remove at least 1 key from guild_X');
 
-    // guild_Y key masih ada
+    // The guild_Y key must still exist
     const remaining = findAllByUser(userId, 'guild_Y');
     assert.ok(remaining.length >= 1, 'guild_Y keys should remain');
 

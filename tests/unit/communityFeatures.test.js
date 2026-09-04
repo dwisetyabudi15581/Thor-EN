@@ -1,5 +1,5 @@
 /**
- * Unit tests untuk v3.9.13 — 4 fitur community baru
+ * Unit tests for v3.9.13 — 4 new community features
  * - responderManager (auto-responder)
  * - automodManager (anti-spam)
  * - afkManager (AFK system)
@@ -50,7 +50,7 @@ test('responderManager: duplicate trigger rejected', () => {
         createdByTag: 'U'
     });
     assert.ok(!result.ok);
-    assert.match(result.error, /sudah ada/);
+    assert.match(result.error, /already exists/i);
     removeResponder('test_guild_dup', '!dup-test');
 });
 
@@ -67,7 +67,7 @@ test('responderManager: findMatch returns correct responder', () => {
     assert.ok(match);
     assert.strictEqual(match.trigger, '!sosmed-test');
 
-    // No match untuk trigger lain
+    // No match for other triggers
     const noMatch = findMatch('test_guild_match', '!lain');
     assert.strictEqual(noMatch, null);
 
@@ -158,8 +158,8 @@ test('automodManager: checkSpam detects spam pattern', () => {
     const config = { ...getDefaultConfig(), spamThreshold: 3, spamWindowMs: 10000, enabled: true };
     resetSpamTracker('test_guild_spam', 'test_user_spam');
 
-    // 3 pesan dalam window → spam (threshold 3, jadi pesan ke-4 yang trigger)
-    // Actually checkSpam returns true kalau length > threshold
+    // 3 messages within the window → spam (threshold 3, so the 4th message triggers)
+    // Actually checkSpam returns true when length > threshold
     assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 1 msg
     assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 2 msg
     assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 3 msg (== threshold, not >)
@@ -198,10 +198,10 @@ test('afkManager: AFK scoped per guild', () => {
 test('afkManager: formatDuration returns readable string', () => {
     const { formatDuration } = require('../../src/data/afkManager');
     const now = Date.now();
-    assert.match(formatDuration(now - 30 * 1000, now), /detik/);
-    assert.match(formatDuration(now - 5 * 60 * 1000, now), /menit/);
-    assert.match(formatDuration(now - 2 * 60 * 60 * 1000, now), /jam/);
-    assert.match(formatDuration(now - 24 * 60 * 60 * 1000, now), /hari/);
+    assert.match(formatDuration(now - 30 * 1000, now), /second/);
+    assert.match(formatDuration(now - 5 * 60 * 1000, now), /minute/);
+    assert.match(formatDuration(now - 2 * 60 * 60 * 1000, now), /hour/);
+    assert.match(formatDuration(now - 24 * 60 * 60 * 1000, now), /day/);
 });
 
 // ============ LEVEL MANAGER ============
@@ -218,9 +218,9 @@ test('levelManager: xpForLevel formula', () => {
 test('levelManager: levelFromXp correct calculation', () => {
     const { levelFromXp, xpForLevel } = require('../../src/data/levelManager');
     assert.strictEqual(levelFromXp(0), 0);
-    assert.strictEqual(levelFromXp(99), 0); // kurang dari 100 = level 0
+    assert.strictEqual(levelFromXp(99), 0); // below 100 = level 0
     assert.strictEqual(levelFromXp(100), 1); // exactly 100 = level 1
-    assert.strictEqual(levelFromXp(299), 1); // kurang dari 300 = level 1
+    assert.strictEqual(levelFromXp(299), 1); // below 300 = level 1
     assert.strictEqual(levelFromXp(300), 2); // exactly 300 = level 2
     assert.strictEqual(levelFromXp(1500), 5); // exactly 1500 = level 5
 });
@@ -285,8 +285,8 @@ test('levelManager: getRoleForLevel returns array of roles for stacking (v3.9.14
     assert.deepStrictEqual(getRoleForLevel(5, config), []); // below any threshold
     assert.deepStrictEqual(getRoleForLevel(10, config), ['role_10']); // cap level 10
     assert.deepStrictEqual(getRoleForLevel(30, config), ['role_10']); // still only role_10 (level 50 not yet capped)
-    assert.deepStrictEqual(getRoleForLevel(50, config), ['role_10', 'role_50']); // STACKING: dapat keduanya
-    assert.deepStrictEqual(getRoleForLevel(100, config), ['role_10', 'role_50']); // tetap keduanya
+    assert.deepStrictEqual(getRoleForLevel(50, config), ['role_10', 'role_50']); // STACKING: gets both
+    assert.deepStrictEqual(getRoleForLevel(100, config), ['role_10', 'role_50']); // still both
 });
 
 // ============ CONFIG MANAGER — leveling config ============
@@ -302,11 +302,11 @@ test('configManager: leveling config defaults applied', () => {
 });
 
 // ============ v3.9.23: AUTOMOD WORD FLEX ============
-// - addWords: append tanpa replace daftar lama + dedupe + action per kata
-// - removeWord: hapus 1 kata spesifik
+// - addWords: appends without replacing the old list + dedupe + per-word action
+// - removeWord: removes one specific word
 // - matchWord: whole-word vs substring
-// - findViolatedWord: action per kata + exempt list
-// - migrasi legacy blockWords → wordRules
+// - findViolatedWord: per-word action + exempt list
+// - legacy blockWords → wordRules migration
 
 test('automodWordFlex: getDefaultConfig has new v3.9.23 fields', () => {
     const { getDefaultConfig } = require('../../src/data/automodManager');
@@ -318,24 +318,24 @@ test('automodWordFlex: getDefaultConfig has new v3.9.23 fields', () => {
 
 test('automodWordFlex: addWords appends without destroying existing list', () => {
     const { addWords, getGuildConfig } = require('../../src/data/automodManager');
-    // Guild ID unik per run — test ini APPEND data, jadi gak boleh nabrak residue run sebelumnya
-    // (pola sama dengan levelManager tests: 'test_guild_lvl_' + Date.now()).
+    // Unique guild ID per run — this test APPENDS data, so it must not collide with residue from previous runs
+    // (same pattern as the levelManager tests: 'test_guild_lvl_' + Date.now()).
     const gid = 'test_guild_wflex_add_' + Date.now();
     const uid = 'admin_user';
 
-    // Tambah batch pertama
+    // Add the first batch
     const r1 = addWords(gid, 'kata1, kata2', null, uid);
     assert.deepStrictEqual(r1.added, ['kata1', 'kata2']);
     assert.strictEqual(r1.skipped.length, 0);
 
-    // Tambah batch kedua — daftar lama HARUS tetap ada (append, bukan replace)
+    // Add a second batch — the old list MUST survive (append, not replace)
     const r2 = addWords(gid, 'kata3', 'mute_10m', uid);
     assert.deepStrictEqual(r2.added, ['kata3']);
 
     const config = getGuildConfig(gid);
     const words = config.wordRules.map(r => r.word);
     assert.deepStrictEqual(words, ['kata1', 'kata2', 'kata3'], 'old words must survive append');
-    // kata3 punya action khusus, kata1/kata2 tidak (null → fallback global)
+    // kata3 has a custom action, kata1/kata2 do not (null → global fallback)
     const kata3 = config.wordRules.find(r => r.word === 'kata3');
     assert.strictEqual(kata3.action, 'mute_10m');
     const kata1 = config.wordRules.find(r => r.word === 'kata1');
@@ -377,21 +377,21 @@ test('automodWordFlex: removeWord removes only the target word', () => {
     const words = config.wordRules.map(w => w.word);
     assert.deepStrictEqual(words, ['kataa', 'katac'], 'other words untouched');
 
-    // Remove kata yang tidak ada → ok:false, error message
+    // Remove a word that does not exist → ok:false, error message
     const r2 = removeWord(gid, 'tidakada');
     assert.ok(!r2.ok);
 });
 
 test('automodWordFlex: matchWord whole-word does not match substrings', () => {
     const { matchWord } = require('../../src/data/automodManager');
-    // whole_word: "asu" TIDAK match "asus" (anti false-positive)
+    // whole_word: "asu" does NOT match "asus" (anti false-positive)
     assert.ok(matchWord('asu banget', 'asu', 'whole_word'));
     assert.ok(matchWord('kamu asu!', 'asu', 'whole_word'), 'punctuation counts as boundary');
     assert.ok(matchWord('ASU KAMU', 'asu', 'whole_word'), 'case-insensitive');
     assert.ok(matchWord('asu', 'asu', 'whole_word'), 'exact single word');
     assert.ok(!matchWord('asus bagus', 'asu', 'whole_word'), 'must NOT match inside asus');
     assert.ok(!matchWord('biasasaja', 'asu', 'whole_word'), 'must NOT match inside word');
-    // substring mode: behavior lama
+    // substring mode: the old behavior
     assert.ok(matchWord('asus bagus', 'asu', 'substring'), 'substring mode matches inside word');
 });
 
@@ -412,7 +412,7 @@ test('automodWordFlex: findViolatedWord returns per-word action', () => {
     const v2 = findViolatedWord('ini berat banget', config);
     assert.strictEqual(v2.action, 'mute_1h');
 
-    // Kata tanpa action khusus → action null (caller fallback ke config.wordAction)
+    // Word without a custom action → action null (caller falls back to config.wordAction)
     const v3 = findViolatedWord('ini normal banget', config);
     assert.strictEqual(v3.action, null);
 
@@ -429,23 +429,23 @@ test('automodWordFlex: exempt words cancel false-positive matches', () => {
     } = require('../../src/data/automodManager');
     const gid = 'test_guild_wflex_exempt_' + Date.now();
 
-    // Mode substring: block "asu" akan false-positive pada "asus" — exempt menyelamatkan.
+    // Substring mode: blocking "asu" would false-positive on "asus" — the exempt list saves it.
     addWords(gid, 'asu', null, 'u');
     setGuildModeSubstring(gid);
 
-    // Tanpa exempt → "asus bagus" kena flag (substring match)
+    // Without the exempt → "asus bagus" gets flagged (substring match)
     let config = getGuildConfig(gid);
     assert.ok(findViolatedWord('asus bagus', config), 'substring mode should flag asus');
 
-    // Tambah exempt "asus" → pesan berisi asus tidak di-flag
+    // Add exempt "asus" → messages containing asus are not flagged
     const r = addExemptWords(gid, 'asus');
     assert.deepStrictEqual(r.added, ['asus']);
     config = getGuildConfig(gid);
     assert.strictEqual(findViolatedWord('asus bagus', config), null, 'exempt word should cancel flag');
-    // Tapi "asu" berdiri sendiri tetap di-flag
+    // But standalone "asu" is still flagged
     assert.ok(findViolatedWord('asu banget', config), 'standalone blocked word still flagged');
 
-    // Hapus exempt → flag balik
+    // Remove the exempt → the flag returns
     const rm = removeExemptWord(gid, 'asus');
     assert.ok(rm.ok);
     config = getGuildConfig(gid);
@@ -456,10 +456,10 @@ test('automodWordFlex: legacy blockWords auto-migrate to wordRules', () => {
     const { setGuildConfig, getGuildConfig } = require('../../src/data/automodManager');
     const gid = 'test_guild_wflex_migrate_' + Date.now();
 
-    // Simulasi config lama v3.9.22 (flat blockWords array)
+    // Simulate an old v3.9.22 config (flat blockWords array)
     setGuildConfig(gid, {
-        blockWords: ['katalama1', 'KataLama2', 'katalama1'], // ada duplicate & case beda
-        wordRules: undefined // pastikan kosong dulu (bukan default [])
+        blockWords: ['katalama1', 'KataLama2', 'katalama1'], // has a duplicate & different casing
+        wordRules: undefined // make sure it starts empty (not the default [])
     });
 
     const config = getGuildConfig(gid);
@@ -477,7 +477,7 @@ test('automodWordFlex: setGuildConfig bulk replace via wordRules (pattern /set-a
     const gid = 'test_guild_wflex_bulk_' + Date.now();
 
     addWords(gid, 'lama1, lama2', null, 'u');
-    // Bulk replace — seperti yang dilakukan handler /set-automod block_words
+    // Bulk replace — the same thing the /set-automod block_words handler does
     setGuildConfig(gid, {
         wordRules: [{ word: 'baru1', action: null, addedBy: 'u', addedAt: Date.now() }],
         blockWords: []
@@ -492,7 +492,7 @@ test('automodWordFlex: word with regex special chars matches safely', () => {
     const { matchWord, addWords, getGuildConfig, findViolatedWord } = require('../../src/data/automodManager');
     const gid = 'test_guild_wflex_regex_' + Date.now();
 
-    // Kata dengan karakter special regex — tidak boleh crash atau mismatch
+    // Word with regex special characters — must not crash or mismatch
     addWords(gid, 'a.b*c', null, 'u');
     const config = getGuildConfig(gid);
 
@@ -534,8 +534,8 @@ test('registry: /add-word /remove-word /list-words /remove-link-whitelist regist
 });
 
 test('router: automod domain routes new word commands (v3.9.23)', () => {
-    // v3.9.24: cek mapping lewat objek RUNTIME yang di-export router — bukan
-    // grep source text (grep tetap lolos walau dispatch rusak).
+    // v3.9.24: check the mapping through the RUNTIME object exported by the router — not
+    // by grepping source text (a grep still passes even if dispatch is broken).
     const routeCommand = require('../../src/commands');
     const map = routeCommand.COMMAND_TO_DOMAIN;
     for (const cmd of ['add-word', 'remove-word', 'list-words', 'remove-link-whitelist']) {
@@ -545,13 +545,13 @@ test('router: automod domain routes new word commands (v3.9.23)', () => {
 });
 
 // ====================================================
-// === v3.9.24: cleanup residue guild test dari file data ===
+// === v3.9.24: cleanup of test-guild residue from data files ===
 // ====================================================
-// Test automod/level/responder sebelumnya menulis entry guild test
-// (test_guild_*, smoke_guild_*) ke data/automod.json, levels.json, dll dan
-// tidak pernah membersihkannya — file data produksi makin bengkak setiap
-// kali npm test jalan. Test ini menghapus semua residue di akhir run.
-test('v3.9.24 cleanup: hapus residue guild test dari file data', () => {
+// Earlier automod/level/responder tests wrote test guild entries
+// (test_guild_*, smoke_guild_*) into data/automod.json, levels.json, etc. and
+// never cleaned them up — the production data files kept bloating every
+// time npm test ran. This test removes all residue at the end of the run.
+test('v3.9.24 cleanup: remove test-guild residue from data files', () => {
     const fs = require('fs');
     const path = require('path');
     const { safeWriteJSON } = require('../../src/infra/safeWrite');
@@ -564,7 +564,7 @@ test('v3.9.24 cleanup: hapus residue guild test dari file data', () => {
         if (!fs.existsSync(p)) continue;
         try {
             const data = JSON.parse(fs.readFileSync(p, 'utf8'));
-            // Struktur harus object keyed top-level (bukan array) supaya aman di-scan.
+            // Structure must be a top-level keyed object (not an array) so scanning is safe.
             if (!data || typeof data !== 'object' || Array.isArray(data)) continue;
             let removed = 0;
             for (const key of Object.keys(data)) {
@@ -578,12 +578,12 @@ test('v3.9.24 cleanup: hapus residue guild test dari file data', () => {
                 totalRemoved += removed;
             }
         } catch (_) {
-            // File korup/bentuk aneh — bukan urusan test ini.
+            // Corrupt/oddly-shaped file — not this test's concern.
         }
     }
-    // v3.9.26: manager automod/afk/responders/levels sekarang punya read-through
-    // cache — file di-write langsung lewat safeWriteJSON (bypass manager), jadi
-    // cache harus di-invalidasi manual supaya run test berikutnya tidak baca stale.
+    // v3.9.26: the automod/afk/responders/levels managers now have a read-through
+    // cache — the file was written directly via safeWriteJSON (bypassing the manager),
+    // so the cache must be invalidated manually so the next test run doesn't read stale data.
     for (const mod of [
         '../../src/data/automodManager',
         '../../src/data/afkManager',
@@ -595,12 +595,12 @@ test('v3.9.24 cleanup: hapus residue guild test dari file data', () => {
             if (typeof m.invalidateCache === 'function') m.invalidateCache();
         } catch (_) {}
     }
-    // Tidak assert jumlah (boleh 0 kalau sudah bersih) — yang penting run ini
-    // tidak meninggalkan residue BARU.
-    assert.ok(true, `cleanup selesai (${totalRemoved} residue dihapus)`);
+    // No count assertion (0 is fine if already clean) — what matters is that this run
+    // doesn't leave NEW residue behind.
+    assert.ok(true, `cleanup done (${totalRemoved} residue entries removed)`);
 });
 
-// Helper: set mode substring langsung lewat setGuildConfig (tipe internal).
+// Helper: set substring mode directly via setGuildConfig (internal type).
 function setGuildModeSubstring(guildId) {
     const { setGuildConfig } = require('../../src/data/automodManager');
     setGuildConfig(guildId, { wordMatchMode: 'substring' });

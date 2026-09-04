@@ -2,12 +2,12 @@
  * Domain: announce
  * Slash commands: /announce, /announce-schedule, /announce-list, /announce-cancel
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: kirim embed announce ke channel (quick / scheduled).
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: send an announce embed to a channel (quick / scheduled).
  *
- * v3.9.1: validasi mention ketat (no injection).
+ * v3.9.1: strict mention validation (no injection).
  * v3.9.3: validate Discord embed length limits.
- * v3.9.8: pisahkan logAudit dari send supaya audit failure tidak abort announce.
+ * v3.9.8: separate logAudit from send so an audit failure doesn't abort the announce.
  */
 
 const {
@@ -23,11 +23,11 @@ const {
     safeEditReply,
     EMBED_LIMITS
 } = require('./_shared');
-// v3.9.24: normalisasi \n literal → newline asli (input command di PC tidak bisa Enter).
-// v3.9.38: truncateUtf8Safe — potong teks per code point (emoji aman) untuk cap description.
+// v3.9.24: normalize literal \n → real newlines (command input on PC can't press Enter).
+// v3.9.38: truncateUtf8Safe — truncate text per code point (emoji-safe) to cap description.
 const { normalizeNewlines, truncateUtf8Safe } = require('../infra/text');
-// v3.9.38 FIX: ChannelType untuk validasi tipe channel tujuan announce
-// (kategori/forum/voice tidak bisa menerima pesan announce).
+// v3.9.38 FIX: ChannelType for validating the announce target channel type
+// (category/forum/voice channels can't receive announce messages).
 const { ChannelType } = require('discord.js');
 
 module.exports = async function (interaction) {
@@ -39,18 +39,18 @@ module.exports = async function (interaction) {
 
         const channel = interaction.options.getChannel('channel');
 
-        // v3.9.38 FIX: validasi tipe channel — kategori/forum/voice tidak bisa
-        // terima announce. Sebelumnya baru gagal di send() dengan error generik.
-        // GuildAnnouncement (type 5) boleh — channel itu memang untuk broadcast.
+        // v3.9.38 FIX: validate channel type — category/forum/voice channels
+        // can't receive announces. Previously it only failed at send() with a generic error.
+        // GuildAnnouncement (type 5) is allowed — that channel is meant for broadcasts.
         if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
             return safeEditReply(interaction, {
-                content: '❌ Channel harus text channel biasa (bukan kategori/forum/voice).'
+                content: '❌ Channel must be a regular text channel (not a category/forum/voice channel).'
             });
         }
 
         const title = interaction.options.getString('title');
-        // v3.9.24: dukung \n literal → newline asli (dulu cuma /send-message yang support).
-        // Normalisasi SEBELUM validasi panjang supaya limit dihitung pada teks final.
+        // v3.9.24: support literal \n → real newlines (previously only /send-message supported it).
+        // Normalize BEFORE length validation so the limit is computed on the final text.
         const description = normalizeNewlines(interaction.options.getString('description'));
         const colorStr = interaction.options.getString('color');
         const image = interaction.options.getString('image');
@@ -63,33 +63,33 @@ module.exports = async function (interaction) {
             const parsed = parseColor(colorStr);
             if (parsed === null) {
                 return safeEditReply(interaction, {
-                    content: `❌ Color tidak valid: \`${colorStr}\`. Pakai format hex 6 digit, mis. \`#FF0000\` atau \`FF0000\`.`
+                    content: `❌ Invalid color: \`${colorStr}\`. Use 6-digit hex format, e.g. \`#FF0000\` or \`FF0000\`.`
                 });
             }
             color = parsed;
         }
 
-        // v3.9.3: validate Discord embed length limits sebelum setTitle/setDescription.
-        // Discord API akan throw RangeError kalau title > 256 atau description > 4096,
-        // yang sebelumnya ditangkap outer try-catch sebagai "Terjadi error" generik.
+        // v3.9.3: validate Discord embed length limits before setTitle/setDescription.
+        // The Discord API throws a RangeError if title > 256 or description > 4096,
+        // which previously got caught by the outer try-catch as a generic "An error occurred".
         if (title.length > EMBED_LIMITS.TITLE) {
             return safeEditReply(interaction, {
-                content: `❌ Title terlalu panjang (${title.length} char, maks ${EMBED_LIMITS.TITLE}).`
+                content: `❌ Title is too long (${title.length} chars, max ${EMBED_LIMITS.TITLE}).`
             });
         }
         if (description.length > EMBED_LIMITS.DESCRIPTION) {
             return safeEditReply(interaction, {
-                content: `❌ Description terlalu panjang (${description.length} char, maks ${EMBED_LIMITS.DESCRIPTION}).`
+                content: `❌ Description is too long (${description.length} chars, max ${EMBED_LIMITS.DESCRIPTION}).`
             });
         }
 
         // Validate URLs
         if (image && !/^https?:\/\//i.test(image)) {
-            return safeEditReply(interaction, { content: '❌ Image URL harus mulai dengan `http://` atau `https://`' });
+            return safeEditReply(interaction, { content: '❌ Image URL must start with `http://` or `https://`' });
         }
         if (thumbnail && !/^https?:\/\//i.test(thumbnail)) {
             return safeEditReply(interaction, {
-                content: '❌ Thumbnail URL harus mulai dengan `http://` atau `https://`'
+                content: '❌ Thumbnail URL must start with `http://` or `https://`'
             });
         }
 
@@ -99,7 +99,7 @@ module.exports = async function (interaction) {
             .setDescription(description)
             .setColor(color)
             .setFooter({
-                text: `Diumumkan oleh ${interaction.user.tag}`,
+                text: `Announced by ${interaction.user.tag}`,
                 iconURL: interaction.user.displayAvatarURL({ dynamic: true })
             })
             .setTimestamp();
@@ -109,20 +109,20 @@ module.exports = async function (interaction) {
         // Resolve target channel
         const targetChannel = interaction.guild.channels.cache.get(channel.id);
         if (!targetChannel) {
-            return safeEditReply(interaction, { content: '❌ Channel tidak ditemukan.' });
+            return safeEditReply(interaction, { content: '❌ Channel not found.' });
         }
 
         // Build content (mention)
-        // v3.9.1 FIX: validasi mention secara ketat. Sebelumnya, admin bisa
-        // oper string bebas sebagai `mention` (mis. "halo @everyone dunia")
-        // yang akan bocor ke channel tujuan dan trigger ping yang tidak
-        // diinginkan. Sekarang hanya format berikut yang diterima:
+        // v3.9.1 FIX: validate mentions strictly. Previously, an admin could
+        // pass an arbitrary string as `mention` (e.g. "hello @everyone world")
+        // which would leak into the target channel and trigger unwanted
+        // pings. Now only the following formats are accepted:
         //   - @everyone / everyone
         //   - @here / here
         //   - <@&ROLE_ID>      (role mention)
         //   - <@USER_ID>       (user mention)
         //   - <@!USER_ID>      (user mention, old format)
-        // Selain itu → reject dengan pesan error.
+        // Anything else → rejected with an error message.
         let content = undefined;
         if (mention) {
             const m = mention.trim().toLowerCase();
@@ -139,39 +139,39 @@ module.exports = async function (interaction) {
             } else {
                 return safeEditReply(interaction, {
                     content:
-                        `❌ Format mention tidak valid: \`${mention}\`\n\n` +
-                        `Format yang didukung:\n` +
-                        `• \`@everyone\` atau \`everyone\`\n` +
-                        `• \`@here\` atau \`here\`\n` +
-                        `• \`<@&ROLE_ID>\` (mention role)\n` +
-                        `• \`<@USER_ID>\` (mention user)\n\n` +
-                        `Tip: untuk mention role, ketik \`@rolename\` di Discord lalu copy hasilnya.`
+                        `❌ Invalid mention format: \`${mention}\`\n\n` +
+                        `Supported formats:\n` +
+                        `• \`@everyone\` or \`everyone\`\n` +
+                        `• \`@here\` or \`here\`\n` +
+                        `• \`<@&ROLE_ID>\` (role mention)\n` +
+                        `• \`<@USER_ID>\` (user mention)\n\n` +
+                        `Tip: to mention a role, type \`@rolename\` in Discord then copy the result.`
                 });
             }
         }
 
         try {
             await targetChannel.send({ content, embeds: [embed] });
-            // v3.9.8 FIX: pisahkan logAudit dari send supaya kalau audit throw
-            // (audit channel hilang / DB write error), admin tidak diberi tahu
-            // "Gagal kirim ke channel" padahal announce sudah terkirim.
+            // v3.9.8 FIX: separate logAudit from send so if audit throws
+            // (audit channel missing / DB write error), the admin isn't told
+            // "Failed to send to channel" when the announce actually went through.
             try {
                 await logAudit(interaction.client, {
                     action: 'ANNOUNCE_SEND',
                     actorId: interaction.user.id,
                     actorTag: interaction.user.tag,
-                    details: `Kirim announce ke ${targetChannel}: **${title}**${mention ? ` | mention: ${mention}` : ''}`,
+                    details: `Send announce to ${targetChannel}: **${title}**${mention ? ` | mention: ${mention}` : ''}`,
                     guildId: interaction.guild.id
                 });
             } catch (auditErr) {
-                console.warn(`⚠️ Gagal log audit announce (announce tetap terkirim): ${auditErr.message}`);
+                console.warn(`⚠️ Failed to log announce audit (announce still sent): ${auditErr.message}`);
             }
             return safeEditReply(interaction, {
-                content: `✅ Announce terkirim ke ${targetChannel}!\n\n📋 **Preview:**`,
+                content: `✅ Announce sent to ${targetChannel}!\n\n📋 **Preview:**`,
                 embeds: [embed]
             });
         } catch (err) {
-            return safeEditReply(interaction, { content: `❌ Gagal kirim ke ${targetChannel}: ${err.message}` });
+            return safeEditReply(interaction, { content: `❌ Failed to send to ${targetChannel}: ${err.message}` });
         }
     }
 
@@ -182,17 +182,17 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const channel = interaction.options.getChannel('channel');
 
-        // v3.9.38 FIX: validasi tipe channel — sama seperti /announce. Sebelumnya
-        // kategori/voice lolos → announce terjadwal, lalu GAGAL SENYAP saat fire
-        // time (entry mubazir, admin baru sadar announce tidak pernah terkirim).
+        // v3.9.38 FIX: validate channel type — same as /announce. Previously
+        // category/voice channels passed → the announce got scheduled, then FAILED
+        // SILENTLY at fire time (wasted entry; the admin only later realized the announce never sent).
         if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) {
             return safeEditReply(interaction, {
-                content: '❌ Channel harus text channel biasa (bukan kategori/forum/voice).'
+                content: '❌ Channel must be a regular text channel (not a category/forum/voice channel).'
             });
         }
 
         const title = interaction.options.getString('title');
-        // v3.9.24: dukung \n literal → newline asli (konsisten dengan /announce).
+        // v3.9.24: support literal \n → real newlines (consistent with /announce).
         const description = normalizeNewlines(interaction.options.getString('description'));
         const at = interaction.options.getString('at');
         const color = interaction.options.getString('color');
@@ -206,12 +206,12 @@ module.exports = async function (interaction) {
         if (!sendAt) {
             return safeEditReply(interaction, {
                 content:
-                    '❌ Format waktu tidak valid.\n\nFormat yang didukung:\n• Relative: `30m`, `2h`, `1d`\n• Absolute: `2026-01-15 20:00` (zona waktu bot — default WITA/UTC+8, bisa diubah via env TZ_OFFSET_HOURS; format YYYY-MM-DD HH:MM)'
+                    '❌ Invalid time format.\n\nSupported formats:\n• Relative: `30m`, `2h`, `1d`\n• Absolute: `2026-01-15 20:00` (bot timezone — default WITA/UTC+8, changeable via env TZ_OFFSET_HOURS; format YYYY-MM-DD HH:MM)'
             });
         }
         if (sendAt <= Date.now()) {
             return safeEditReply(interaction, {
-                content: '❌ Waktu yang dimasukkan sudah lewat. Pakai waktu di masa depan.'
+                content: '❌ The time you entered is in the past. Use a time in the future.'
             });
         }
 
@@ -221,39 +221,39 @@ module.exports = async function (interaction) {
             const parsed = parseColor(color);
             if (parsed === null) {
                 return safeEditReply(interaction, {
-                    content: `❌ Color tidak valid: \`${color}\`. Pakai format hex 6 digit, mis. \`#FF0000\` atau \`FF0000\`.`
+                    content: `❌ Invalid color: \`${color}\`. Use 6-digit hex format, e.g. \`#FF0000\` or \`FF0000\`.`
                 });
             }
             colorNum = parsed;
         }
 
-        // v3.9.3: validate Discord embed length limits (sama seperti /announce).
-        // Embedded announce dikirim saat scheduled time; kalau title/description
-        // kelebihan, EmbedBuilder akan throw saat processScheduledAnnouncement
-        // jalan → announce gagal terkirim dan entry stuck di scheduledAnns.json.
+        // v3.9.3: validate Discord embed length limits (same as /announce).
+        // The embedded announce is sent at the scheduled time; if title/description
+        // is over the limit, EmbedBuilder throws while processScheduledAnnouncement
+        // runs → the announce fails to send and the entry is stuck in scheduledAnns.json.
         if (title.length > EMBED_LIMITS.TITLE) {
             return safeEditReply(interaction, {
-                content: `❌ Title terlalu panjang (${title.length} char, maks ${EMBED_LIMITS.TITLE}).`
+                content: `❌ Title is too long (${title.length} chars, max ${EMBED_LIMITS.TITLE}).`
             });
         }
         if (description.length > EMBED_LIMITS.DESCRIPTION) {
             return safeEditReply(interaction, {
-                content: `❌ Description terlalu panjang (${description.length} char, maks ${EMBED_LIMITS.DESCRIPTION}).`
+                content: `❌ Description is too long (${description.length} chars, max ${EMBED_LIMITS.DESCRIPTION}).`
             });
         }
 
         // Validate URLs
         if (image && !/^https?:\/\//.test(image)) {
-            return safeEditReply(interaction, { content: '❌ Image URL harus mulai dengan `http://` atau `https://`' });
+            return safeEditReply(interaction, { content: '❌ Image URL must start with `http://` or `https://`' });
         }
         if (thumbnail && !/^https?:\/\//.test(thumbnail)) {
             return safeEditReply(interaction, {
-                content: '❌ Thumbnail URL harus mulai dengan `http://` atau `https://`'
+                content: '❌ Thumbnail URL must start with `http://` or `https://`'
             });
         }
 
-        // v3.9.1 FIX: validasi mention (sama seperti /announce) supaya admin
-        // tidak bisa inject string bebas yang memicu ping tidak diinginkan.
+        // v3.9.1 FIX: validate mention (same as /announce) so an admin
+        // can't inject arbitrary strings that trigger unwanted pings.
         if (mention) {
             const m = mention.trim().toLowerCase();
             const isValidMention =
@@ -265,7 +265,7 @@ module.exports = async function (interaction) {
                 /^<@!?\d{17,20}>$/.test(mention);
             if (!isValidMention) {
                 return safeEditReply(interaction, {
-                    content: `❌ Format mention tidak valid: \`${mention}\`\n\nFormat yang didukung: \`@everyone\`, \`@here\`, \`<@&ROLE_ID>\`, \`<@USER_ID>\`.`
+                    content: `❌ Invalid mention format: \`${mention}\`\n\nSupported formats: \`@everyone\`, \`@here\`, \`<@&ROLE_ID>\`, \`<@USER_ID>\`.`
                 });
             }
         }
@@ -289,19 +289,19 @@ module.exports = async function (interaction) {
             action: 'ANNOUNCE_SCHEDULE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Schedule announce ke ${channel} pada <t:${Math.floor(sendAt / 1000)}:F>${recurring ? ` (recurring: ${recurring})` : ''} — Title: "${title}"`,
+            details: `Schedule announce to ${channel} at <t:${Math.floor(sendAt / 1000)}:F>${recurring ? ` (recurring: ${recurring})` : ''} — Title: "${title}"`,
             guildId: interaction.guild.id
         });
 
         return safeEditReply(interaction, {
             content:
-                `✅ **Announce dijadwalkan!**\n\n` +
+                `✅ **Announce scheduled!**\n\n` +
                 `📍 Channel: ${channel}\n` +
-                `⏰ Kirim pada: <t:${Math.floor(sendAt / 1000)}:F> (<t:${Math.floor(sendAt / 1000)}:R>)\n` +
+                `⏰ Send at: <t:${Math.floor(sendAt / 1000)}:F> (<t:${Math.floor(sendAt / 1000)}:R>)\n` +
                 (recurring ? `🔄 Recurring: **${recurring}**\n` : '') +
                 `📝 Title: ${title}\n` +
                 `🆔 ID: \`${entry.id}\`\n\n` +
-                `💡 Cek dengan \`/announce-list\`, batalkan dengan \`/announce-cancel id:${entry.id}\``
+                `💡 Check with \`/announce-list\`, cancel with \`/announce-cancel id:${entry.id}\``
         });
     }
 
@@ -314,34 +314,34 @@ module.exports = async function (interaction) {
         const pending = entries.filter(e => !e.sent);
         if (pending.length === 0) {
             return safeEditReply(interaction, {
-                content: '📭 Tidak ada announce terjadwal yang pending. Pakai `/announce-schedule` untuk bikin.'
+                content: '📭 No pending scheduled announces. Use `/announce-schedule` to create one.'
             });
         }
-        // v3.9.38 FIX: cap entry yang ditampilkan (15) + suffix; total description
-        // SELALU dihitung terhadap limit 4096 — sebelumnya lines unbounded →
-        // setDescription throw RangeError di ~27 pending (command /announce-list
-        // mati total sampai entry berkurang lewat send/cancel).
+        // v3.9.38 FIX: cap displayed entries (15) + suffix; total description
+        // is ALWAYS computed against the 4096 limit — previously lines were unbounded →
+        // setDescription threw a RangeError at ~27 pending (the /announce-list
+        // command was completely dead until entries dropped via send/cancel).
         const MAX_SHOWN_ENTRIES = 15;
         const entryLine = e => {
-            return `• 📝 **${e.data.title}**\n  🆔 \`${e.id}\`\n  📍 <#${e.channelId}> | ⏰ <t:${Math.floor(e.sendAt / 1000)}:F> (<t:${Math.floor(e.sendAt / 1000)}:R>)\n  ${e.recurring ? `🔄 Recurring: ${e.recurring}\n  ` : ''}👤 Oleh: ${e.data.authorTag}`;
+            return `• 📝 **${e.data.title}**\n  🆔 \`${e.id}\`\n  📍 <#${e.channelId}> | ⏰ <t:${Math.floor(e.sendAt / 1000)}:F> (<t:${Math.floor(e.sendAt / 1000)}:R>)\n  ${e.recurring ? `🔄 Recurring: ${e.recurring}\n  ` : ''}👤 By: ${e.data.authorTag}`;
         };
-        const listHeader = `Total **${pending.length}** announce pending.\n\n`;
+        const listHeader = `Total **${pending.length}** pending announcements.\n\n`;
         let listDescription = '';
         for (let n = Math.min(MAX_SHOWN_ENTRIES, pending.length); n >= 1; n--) {
             const shown = pending.slice(0, n);
             const hidden = pending.length - shown.length;
-            const footerNote = hidden > 0 ? `\n\n… +${hidden} announcement lainnya` : '';
+            const footerNote = hidden > 0 ? `\n\n… +${hidden} more announcements` : '';
             listDescription = `${listHeader}${shown.map(entryLine).join('\n\n')}${footerNote}`;
             if (listDescription.length <= EMBED_LIMITS.DESCRIPTION) break;
         }
-        // Defense terakhir: entry tunggal super panjang (praktis mustahil —
-        // title ≤ 256 divalidasi saat schedule) → potong per code point.
-        // maxLen - 1 supaya total DENGAN ellipsis tetap ≤ 4096 code unit.
+        // Last line of defense: a single super-long entry (practically impossible —
+        // title ≤ 256 is validated at schedule time) → truncate per code point.
+        // maxLen - 1 so the total WITH ellipsis still stays ≤ 4096 code units.
         if (listDescription.length > EMBED_LIMITS.DESCRIPTION) {
             listDescription = truncateUtf8Safe(listDescription, EMBED_LIMITS.DESCRIPTION - 1);
         }
         const embed = new EmbedBuilder()
-            .setTitle('⏰ ANNOUNCE TERJADWAL')
+            .setTitle('⏰ SCHEDULED ANNOUNCES')
             .setDescription(listDescription)
             .setColor(0x5865f2)
             .setFooter({
@@ -359,11 +359,11 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const id = interaction.options.getString('id');
         const entry = getScheduledAnn(id);
-        if (!entry) return safeEditReply(interaction, { content: `❌ Announce ID \`${id}\` tidak ditemukan.` });
+        if (!entry) return safeEditReply(interaction, { content: `❌ Announce ID \`${id}\` not found.` });
         if (entry.sent)
-            return safeEditReply(interaction, { content: `❌ Announce sudah terkirim, tidak bisa dibatalkan.` });
+            return safeEditReply(interaction, { content: `❌ This announce has already been sent and can't be canceled.` });
         if (entry.guildId !== interaction.guild.id)
-            return safeEditReply(interaction, { content: '❌ Announce ini bukan dari guild ini.' });
+            return safeEditReply(interaction, { content: "❌ This announce doesn't belong to this guild." });
         removeScheduledAnn(id);
         await logAudit(interaction.client, {
             action: 'ANNOUNCE_CANCEL',
@@ -372,6 +372,6 @@ module.exports = async function (interaction) {
             details: `Cancel scheduled announce \`${id}\` (Title: "${entry.data.title}")`,
             guildId: interaction.guild.id
         });
-        return safeEditReply(interaction, { content: `✅ Announce \`${id}\` (${entry.data.title}) dibatalkan.` });
+        return safeEditReply(interaction, { content: `✅ Announce \`${id}\` (${entry.data.title}) canceled.` });
     }
 };

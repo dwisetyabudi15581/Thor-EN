@@ -1,5 +1,5 @@
 /**
- * Unit tests untuk Phase 1+2+3 features:
+ * Unit tests for the Phase 1+2+3 features:
  * - config.verifyButton (custom label/emoji/style)
  * - config.ticketCategories (default + custom)
  * - config.messages.ticketPriceHeader

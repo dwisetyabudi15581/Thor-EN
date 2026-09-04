@@ -1,11 +1,11 @@
 /**
- * Constants — pusat untuk magic numbers, Discord limits, dan timing.
+ * Constants — central place for magic numbers, Discord limits, and timing.
  *
- * Tujuan: hilangkan magic number yang bertebaran di kode (P3-6 fix).
- * Pakai: const C = require('./utils/constants');
+ * Purpose: eliminate magic numbers scattered across the code (P3-6 fix).
+ * Usage: const C = require('./utils/constants');
  */
 
-// === Discord embed limits (dari API docs) ===
+// === Discord embed limits (from the API docs) ===
 const EMBED_LIMITS = {
     TITLE: 256,
     DESCRIPTION: 4096,
@@ -44,17 +44,17 @@ const MS = {
 
 // === Scheduler / interval timing ===
 const SCHEDULER = {
-    MAIN_LOOP_INTERVAL_MS: 60 * 1000, // 1 menit — cek expired keys/roles/giveaways/announcements
-    STATS_FLUSH_INTERVAL_MS: 30 * 1000, // 30 detik — flush stats cache ke disk
-    AUTO_BACKUP_INTERVAL_MS: 24 * 60 * 60 * 1000, // 24 jam
+    MAIN_LOOP_INTERVAL_MS: 60 * 1000, // 1 minute — check expired keys/roles/giveaways/announcements
+    STATS_FLUSH_INTERVAL_MS: 30 * 1000, // 30 seconds — flush stats cache to disk
+    AUTO_BACKUP_INTERVAL_MS: 24 * 60 * 60 * 1000, // 24 hours
     MAX_BACKUPS_KEPT: 7,
-    AUDIT_LOG_WINDOW_MS: 10 * 1000, // v3.9.8: naikkan dari 5s ke 10s — lebih toleran latency Discord
-    AUDIT_LOG_FETCH_LIMIT: 5, // v3.9.8: turunkan dari 10 ke 5 — pakai type filter, lebih efisien
-    EMBED_SESSION_TTL_MS: 60 * 60 * 1000, // 1 jam — TTL session embed builder
-    EMBED_SESSION_CLEANUP_MS: 10 * 60 * 1000, // 10 menit — interval cleanup
-    // v3.9.8: naikkan dari 5 menit ke 15 menit — match Discord interaction token lifetime
+    AUDIT_LOG_WINDOW_MS: 10 * 1000, // v3.9.8: raised from 5s to 10s — more tolerant of Discord latency
+    AUDIT_LOG_FETCH_LIMIT: 5, // v3.9.8: lowered from 10 to 5 — uses a type filter, more efficient
+    EMBED_SESSION_TTL_MS: 60 * 60 * 1000, // 1 hour — embed builder session TTL
+    EMBED_SESSION_CLEANUP_MS: 10 * 60 * 1000, // 10 minutes — cleanup interval
+    // v3.9.8: raised from 5 minutes to 15 minutes — match Discord interaction token lifetime
     PROCESSED_INTERACTIONS_TTL_MS: 15 * 60 * 1000,
-    INTERACTION_DEDUP_CLEANUP_MS: 60 * 1000 // v3.9.8: cleanup tiap 1 menit (per-entry prune, bukan bulk clear)
+    INTERACTION_DEDUP_CLEANUP_MS: 60 * 1000 // v3.9.8: cleanup every 1 minute (per-entry prune, not a bulk clear)
 };
 
 // === Warn thresholds ===
@@ -65,8 +65,8 @@ const WARN_THRESHOLDS = {
 };
 
 const WARN_ACTION_DURATIONS_MS = {
-    MUTE_1H: 60 * 60 * 1000, // 1 jam
-    MUTE_1D: 24 * 60 * 60 * 1000 // 1 hari
+    MUTE_1H: 60 * 60 * 1000, // 1 hour
+    MUTE_1D: 24 * 60 * 60 * 1000 // 1 day
 };
 
 // === Giveaway limits ===
@@ -106,8 +106,8 @@ const COLORS = {
 };
 
 // v3.9.17: ButtonStyle string → ButtonStyle enum mapping (shared).
-// Dipakai panels.js, config.js (2x), selfRolePanelBuilder.js, selfRoleManager.js.
-// Import dari discord.js supaya gak duplikat.
+// Used by panels.js, config.js (2x), selfRolePanelBuilder.js, selfRoleManager.js.
+// Imported from discord.js so it isn't duplicated.
 const { ButtonStyle } = require('discord.js');
 const BUTTON_STYLE_MAP = {
     Primary: ButtonStyle.Primary,

@@ -1,31 +1,31 @@
 /**
- * Ticket domain handler — semua customId terkait tiket.
+ * Ticket domain handler — all ticket-related customIds.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — only moved to its own file.
  *
- * CustomId yang ditangani:
- *   - ticket_trade                (button)  → tampilkan dropdown produk
- *   - select_product              (select)  → buat tiket produk
- *   - ticket_help / ticket_report(button)  → buat tiket help/report
- *   - ticket_close                (button)  → tampilkan tombol konfirmasi
- *   - ticket_close_abort / _abort2(button) → batal tutup (jangan tutup channel)
- *   - ticket_close_success        (button)  → tutup tiket help/report (sukses)
- *   - ticket_close_cancel_trans   (button)  → tutup tiket transaksi tanpa key
- *   - ticket_close_cancel         (button)  → v3.9.35: tutup tiket help/report/
- *                                             claim/giveaway TANPA selesai
- *                                             (label: "❌ Tutup Tanpa Selesai")
- *   - ticket_set_key              (button)  → buka modal set key
- *   - modal_set_key:<value>       (modal)   → full flow set key
- *   - ticket_deliver              (button)  → v3.9.27: buka modal kirim pesanan
- *                                             (produk transaksi non-key: akun/jasa)
- *   - modal_deliver_order:<value> (modal)   → v3.9.27: full flow kirim pesanan
+ * CustomIds handled:
+ *   - ticket_trade                (button)  → show the product dropdown
+ *   - select_product              (select)  → create a product ticket
+ *   - ticket_help / ticket_report(button)  → create a help/report ticket
+ *   - ticket_close                (button)  → show the confirmation buttons
+ *   - ticket_close_abort / _abort2(button) → cancel close (don't close the channel)
+ *   - ticket_close_success        (button)  → close a help/report ticket (successful)
+ *   - ticket_close_cancel_trans   (button)  → close a transaction ticket without a key
+ *   - ticket_close_cancel         (button)  → v3.9.35: close a help/report/
+ *                                             claim/giveaway ticket WITHOUT
+ *                                             completing (label: "❌ Close Without Completing")
+ *   - ticket_set_key              (button)  → open the Set Key modal
+ *   - modal_set_key:<value>       (modal)   → full Set Key flow
+ *   - ticket_deliver              (button)  → v3.9.27: open the deliver order modal
+ *                                             (non-key transaction products: accounts/services)
+ *   - modal_deliver_order:<value> (modal)   → v3.9.27: full deliver order flow
  *
- * Router (src/interactions/index.js) sudah apply:
+ * Router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
- * Jadi domain handler fokus ke logic-nya saja.
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
+ * So the domain handler focuses on its logic only.
  */
 
 const {
@@ -46,41 +46,41 @@ const {
     getTicketMeta,
     patchTicketMeta,
     resolveTicketType,
-    // v3.9.38 FIX (FIX 3): satu helper lookup produk by meta (value stabil dulu,
-    // label fallback) — dipakai semua site lookup produk di file ini.
+    // v3.9.38 FIX (FIX 3): a single product-by-meta lookup helper (stable value
+    // first, label fallback) — used by every product lookup site in this file.
     resolveProduct
 } = require('../data/ticketManager');
 const { addKey, getActiveKeysByUserAndRole, formatRemaining } = require('../data/keyManager');
 const { recordPurchase, parsePrice } = require('../data/statsManager');
 const { scheduleRoleRemoval } = require('../data/roleScheduler');
-// v3.9.32: redirect kategori midman/rekber (dropdown) ke domain midman.
+// v3.9.32: redirect the midman/escrow category (dropdown) to the midman domain.
 const midmanDomain = require('./midman');
 
-// v3.9.38 FIX (FIX 2c/4): per-channel completion lock — cegah 2 admin
-// memproses flow completion (Set Key / Kirim Pesanan / ✅ Pesanan Sukses)
-// untuk channel tiket yang sama secara bersamaan. Dedup router hanya per
-// interaction.id — 2 klik/2 admin TIDAK ter-dedup, dan gate isCompleted baru
-// efektif SETELAH patch meta jalan. Set ini menutup jendela race tersebut:
-// check-and-acquire atomik di awal handler, release di finally.
-// (Mirror ticketLocks/closeTicketLocks di ticketManager.js.)
+// v3.9.38 FIX (FIX 2c/4): per-channel completion lock — prevents 2 admins from
+// processing the completion flow (Set Key / Deliver Order / ✅ Order Successful)
+// for the same ticket channel at the same time. The router dedup is only per
+// interaction.id — 2 clicks/2 admins are NOT deduped, and the isCompleted gate
+// only becomes effective AFTER the meta patch runs. This set closes that race
+// window: atomic check-and-acquire at the start of the handler, release in finally.
+// (Mirrors ticketLocks/closeTicketLocks in ticketManager.js.)
 const completionLocks = new Set();
 
 /**
- * v3.9.17 FIX: helper untuk cek verified role — konsisten di semua handler.
- * Policy: kalau config.roles.verified belum di-set, ALLOW through (jangan
- * lockout admin yang belum setup). Kalau sudah di-set, user harus punya role itu.
- * Sebelumnya, 2 handler pakai `if (!config.roles.verified || ...)` (block kalau
- * unset), 2 handler lain pakai `if (config.roles.verified && ...)` (allow kalau
- * unset). Inkonsistensi ini bikin UX confusing.
+ * v3.9.17 FIX: helper to check the verified role — consistent across all handlers.
+ * Policy: if config.roles.verified is not set yet, ALLOW through (don't lock
+ * out admins who haven't finished setting up). If it is set, the user must
+ * have that role. Previously, 2 handlers used `if (!config.roles.verified || ...)`
+ * (block when unset), 2 other handlers used `if (config.roles.verified && ...)`
+ * (allow when unset). That inconsistency made the UX confusing.
  *
- * @returns {boolean} true kalau user LULUS check (boleh lanjut), false kalau ditolak.
+ * @returns {boolean} true if the user PASSES the check (may proceed), false if rejected.
  */
 function passesVerifiedCheck(interaction, config) {
-    // Kalau member.roles gak ada (partial member / user leave), anggap ditolak.
+    // If member.roles is missing (partial member / user left), treat as rejected.
     if (!interaction.member?.roles?.cache) return false;
-    // Kalau verified role belum di-set di config, allow through.
+    // If the verified role is not set in the config, allow through.
     if (!config.roles.verified) return true;
-    // Kalau sudah di-set, user harus punya role itu.
+    // If it is set, the user must have that role.
     return interaction.member.roles.cache.has(config.roles.verified);
 }
 
@@ -88,19 +88,19 @@ module.exports = async function (interaction) {
     const config = getConfig();
 
     // ====================================================
-    // === v3.9.14: TIKET KATEGORI SELECT MENU (DROPDOWN PANEL) ===
-    // === customId: ticket_cat_select (exact match)         ===
+    // === v3.9.14: TICKET CATEGORY SELECT MENU (DROPDOWN PANEL) ===
+    // === customId: ticket_cat_select (exact match)          ===
     // ====================================================
-    // Saat panel pakai use_dropdown=true, kategori dirender sebagai select menu.
-    // User pilih kategori di dropdown → handler ini jalan.
-    // v3.9.19: Behavior berbasis "ada produk atau tidak" (fleksibel):
-    //   - Kategori dengan produk → tampilkan dropdown produk
-    //   - Kategori tanpa produk → langsung create ticket (help/report/claim_giveaway/dll)
+    // When the panel uses use_dropdown=true, categories are rendered as a select menu.
+    // The user picks a category in the dropdown → this handler runs.
+    // v3.9.19: Behavior based on "has products or not" (flexible):
+    //   - Category with products → show the product dropdown
+    //   - Category without products → create the ticket directly (help/report/claim_giveaway/etc)
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_cat_select') {
         const categoryId = interaction.values && interaction.values[0];
         if (!categoryId) {
             return interaction.reply({
-                content: '❌ Tidak ada kategori yang dipilih.',
+                content: '❌ No category selected.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -109,64 +109,65 @@ module.exports = async function (interaction) {
 
         if (!catConfig) {
             return interaction.reply({
-                content: `❌ Kategori \`${categoryId}\` tidak ditemukan di config.`,
+                content: `❌ Category \`${categoryId}\` not found in the config.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.17: pakai helper passesVerifiedCheck (konsisten di semua handler).
+        // v3.9.17: use the passesVerifiedCheck helper (consistent across all handlers).
         if (!passesVerifiedCheck(interaction, config)) {
-            return interaction.reply({ content: '❌ Verifikasi dulu!', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Please verify first!', flags: MessageFlags.Ephemeral });
         }
 
-        // v3.9.32: kategori midman/rekber → buka modal deal rekber, BUKAN tiket.
-        // (Tombol `ticket_cat:midman` sudah di-intercept router → domain midman;
-        // redirect ini khusus path dropdown yang value-nya tidak bisa di-route.)
+        // v3.9.32: midman/escrow category → open the escrow deal modal, NOT a ticket.
+        // (The `ticket_cat:midman` button is already intercepted by the router → midman
+        // domain; this redirect is specifically for the dropdown path whose value
+        // can't be routed.)
         if (categoryId === 'midman') {
             return midmanDomain.openCreateModal(interaction);
         }
 
-        // v3.9.19 FLEXIBILITY FIX: logic sekarang berbasis "ada produk atau tidak",
-        // bukan requiresKey. Ini lebih intuitive & fleksibel:
-        //   - Kategori dengan produk (transaction, jasa, dll)     → tampilkan dropdown
-        //     produk. Bisa campur produk key & non-key.
-        //   - Kategori tanpa produk (help, report, claim_giveaway) → langsung buat
-        //     tiket tanpa produk. Pakai catConfig.label sebagai label.
+        // v3.9.19 FLEXIBILITY FIX: the logic is now based on "has products or not",
+        // not requiresKey. This is more intuitive & flexible:
+        //   - Category with products (transaction, jasa, etc)   → show the product
+        //     dropdown. Can mix key & non-key products.
+        //   - Category without products (help, report, claim_giveaway) → create
+        //     the ticket directly without a product. Uses catConfig.label as the label.
         //
-        // Sebelumnya (v3.9.18): pakai requiresKey=false untuk skip dropdown. Tapi
-        // ini bikin kategori "jasa" yang punya beberapa produk non-key malah skip
-        // dropdown → user gak bisa pilih jasa yang mana. Bug fixed sekarang.
+        // Previously (v3.9.18): used requiresKey=false to skip the dropdown. But
+        // that made a "jasa" category with several non-key products skip the
+        // dropdown → users couldn't choose which service they wanted. Bug fixed now.
         const productsInCat = (config.products || []).filter(p => {
             const pCat = p.category || 'transaction';
             return pCat === categoryId;
         });
 
         if (productsInCat.length === 0) {
-            // Tidak ada produk di kategori ini → langsung buat tiket.
+            // No products in this category → create the ticket directly.
             const product = {
-                label: catConfig.label || 'Bantuan',
+                label: catConfig.label || 'Support',
                 duration: '-',
                 price: '-',
                 isHelp: true,
                 category: categoryId,
-                // v3.9.19: requiresKey=false supaya tombol Set Key tidak muncul.
+                // v3.9.19: requiresKey=false so the Set Key button doesn't appear.
                 requiresKey: false
             };
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             return createTicket(interaction, product);
         }
 
-        // Ada produk → tampilkan dropdown produk filtered by category
-        // v3.9.26: label/price di-slice 100 (limit Discord select option).
-        // v3.9.27: emoji per-produk — 📦 non-key (akun/jasa) vs 🔑 pakai key,
-        // supaya pembeli langsung tahu produk mana yang butuh key.
+        // Has products → show the product dropdown filtered by category
+        // v3.9.26: label/price sliced to 100 (Discord select option limit).
+        // v3.9.27: per-product emoji — 📦 non-key (account/service) vs 🔑 uses a key,
+        // so buyers immediately know which product needs a key.
         const selectMenu = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('select_product')
-                .setPlaceholder(`Pilih produk — ${catConfig.label}...`.slice(0, 100))
+                .setPlaceholder(`Select a product — ${catConfig.label}...`.slice(0, 100))
                 .addOptions(
                     productsInCat.map(p => ({
-                        label: String(p.label || 'Produk').slice(0, 100),
+                        label: String(p.label || 'Product').slice(0, 100),
                         description: String(p.price || '-').slice(0, 100),
                         value: p.value,
                         emoji: p.requiresKey === false ? '📦' : '🔑'
@@ -174,21 +175,21 @@ module.exports = async function (interaction) {
                 )
         );
         return interaction.reply({
-            content: `Silakan pilih produk di kategori **${catConfig.label}** ${catConfig.emoji || ''}:`,
+            content: `Please select a product in the **${catConfig.label}** category ${catConfig.emoji || ''}:`,
             components: [selectMenu],
             flags: MessageFlags.Ephemeral
         });
     }
 
     // ====================================================
-    // === v3.9.11 Phase 2: TIKET KATEGORI BUTTON → DROPDOWN PRODUK FILTERED ===
+    // === v3.9.11 Phase 2: TICKET CATEGORY BUTTON → FILTERED PRODUCT DROPDOWN ===
     // === customId: ticket_cat:<categoryId>                ===
     // ====================================================
-    // v3.9.19: Saat user klik tombol kategori di panel tiket dinamis:
-    //   - Kalau kategori punya produk → tampilkan dropdown produk filtered.
-    //   - Kalau kategori kosong produk → langsung buat tiket (help/report/custom).
-    // Bisa campur produk key & non-key dalam 1 kategori (mis. "Jasa" dengan
-    // "Joki" non-key + "Booster" pakai key).
+    // v3.9.19: When a user clicks a category button on the dynamic ticket panel:
+    //   - If the category has products → show the filtered product dropdown.
+    //   - If the category has no products → create the ticket directly (help/report/custom).
+    // Key & non-key products can be mixed in 1 category (e.g. "Jasa" with
+    // a non-key "Joki" + a key-based "Booster").
     if (interaction.isButton() && interaction.customId.startsWith('ticket_cat:')) {
         const categoryId = interaction.customId.split(':')[1];
         const categories = config.ticketCategories || [];
@@ -196,30 +197,30 @@ module.exports = async function (interaction) {
 
         if (!catConfig) {
             return interaction.reply({
-                content: `❌ Kategori \`${categoryId}\` tidak ditemukan di config.`,
+                content: `❌ Category \`${categoryId}\` not found in the config.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.17: pakai helper passesVerifiedCheck (konsisten di semua handler).
+        // v3.9.17: use the passesVerifiedCheck helper (consistent across all handlers).
         if (!passesVerifiedCheck(interaction, config)) {
-            return interaction.reply({ content: '❌ Verifikasi dulu!', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Please verify first!', flags: MessageFlags.Ephemeral });
         }
 
-        // v3.9.19 FLEXIBILITY FIX: logic sama dengan ticket_cat_select di atas.
-        //   - Ada produk di kategori → tampilkan dropdown produk.
-        //   - Tidak ada produk         → langsung buat tiket (help/report/custom).
-        // Bisa campur produk key & non-key dalam 1 kategori (mis. "Jasa" dengan
-        // "Joki" non-key + "Booster" pakai key).
+        // v3.9.19 FLEXIBILITY FIX: same logic as ticket_cat_select above.
+        //   - Has products in the category → show the product dropdown.
+        //   - No products              → create the ticket directly (help/report/custom).
+        // Key & non-key products can be mixed in 1 category (e.g. "Jasa" with
+        // a non-key "Joki" + a key-based "Booster").
         const productsInCat = (config.products || []).filter(p => {
             const pCat = p.category || 'transaction';
             return pCat === categoryId;
         });
 
         if (productsInCat.length === 0) {
-            // Tidak ada produk → langsung buat tiket dengan label = catConfig.label.
+            // No products → create the ticket directly with label = catConfig.label.
             const product = {
-                label: catConfig.label || 'Bantuan',
+                label: catConfig.label || 'Support',
                 duration: '-',
                 price: '-',
                 isHelp: true,
@@ -230,18 +231,18 @@ module.exports = async function (interaction) {
             return createTicket(interaction, product);
         }
 
-        // Ada produk → tampilkan dropdown produk filtered by category
-        // v3.9.26: label/price di-slice 100 (Discord select option limit) — data
-        // lama/restore bisa melebihi batas → addOptions throw → flow tiket kategori
-        // ini mati total sampai produk diperbaiki.
-        // v3.9.27: emoji per-produk 📦/🔑 (lihat ticket_cat_select di atas).
+        // Has products → show the product dropdown filtered by category
+        // v3.9.26: label/price sliced to 100 (Discord select option limit) — old/restored
+        // data can exceed the limit → addOptions throws → this ticket category flow
+        // dies completely until the product is fixed.
+        // v3.9.27: per-product emoji 📦/🔑 (see ticket_cat_select above).
         const selectMenu = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('select_product')
-                .setPlaceholder(`Pilih produk — ${catConfig.label}...`.slice(0, 100))
+                .setPlaceholder(`Select a product — ${catConfig.label}...`.slice(0, 100))
                 .addOptions(
                     productsInCat.map(p => ({
-                        label: String(p.label || 'Produk').slice(0, 100),
+                        label: String(p.label || 'Product').slice(0, 100),
                         description: String(p.price || '-').slice(0, 100),
                         value: p.value,
                         emoji: p.requiresKey === false ? '📦' : '🔑'
@@ -249,33 +250,33 @@ module.exports = async function (interaction) {
                 )
         );
         return interaction.reply({
-            content: `Silakan pilih produk di kategori **${catConfig.label}** ${catConfig.emoji || ''}:`,
+            content: `Please select a product in the **${catConfig.label}** category ${catConfig.emoji || ''}:`,
             components: [selectMenu],
             flags: MessageFlags.Ephemeral
         });
     }
 
     // ====================================================
-    // === TIKET: TOMBOL TRANSAKSI → DROPDOWN PRODUK (LEGACY) ===
+    // === TICKET: TRANSACTION BUTTON → PRODUCT DROPDOWN (LEGACY) ===
     // ====================================================
     if (interaction.isButton() && interaction.customId === 'ticket_trade') {
-        // v3.9.17: pakai helper passesVerifiedCheck (konsisten di semua handler).
+        // v3.9.17: use the passesVerifiedCheck helper (consistent across all handlers).
         if (!passesVerifiedCheck(interaction, config)) {
-            return interaction.reply({ content: '❌ Verifikasi dulu!', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Please verify first!', flags: MessageFlags.Ephemeral });
         }
         if (!config.products || config.products.length === 0) {
-            return interaction.reply({ content: '❌ Belum ada produk.', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ No products yet.', flags: MessageFlags.Ephemeral });
         }
         const selectMenu = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('select_product')
-                .setPlaceholder('Pilih produk yang ingin dibeli...')
+                .setPlaceholder('Select the product you want to buy...')
                 .addOptions(
-                    // v3.9.26: slice 100 (limit Discord select option) — lihat ticket_cat:.
-                    // v3.9.27: emoji per-produk 📦/🔑 + teks generik (dulu "paket key"
-                    // padahal dropdown bisa berisi produk non-key).
+                    // v3.9.26: slice to 100 (Discord select option limit) — see ticket_cat:.
+                    // v3.9.27: per-product emoji 📦/🔑 + generic text (previously
+                    // "key package" even though the dropdown could contain non-key products).
                     config.products.map(p => ({
-                        label: String(p.label || 'Produk').slice(0, 100),
+                        label: String(p.label || 'Product').slice(0, 100),
                         description: String(p.price || '-').slice(0, 100),
                         value: p.value,
                         emoji: p.requiresKey === false ? '📦' : '🔑'
@@ -283,22 +284,22 @@ module.exports = async function (interaction) {
                 )
         );
         return interaction.reply({
-            content: 'Silakan pilih produk di bawah ini:',
+            content: 'Please select a product below:',
             components: [selectMenu],
             flags: MessageFlags.Ephemeral
         });
     }
 
     // ====================================================
-    // === TIKET: PILIH PRODUK / HELP / REPORT → BUAT TIKET ===
+    // === TICKET: PICK PRODUCT / HELP / REPORT → CREATE TICKET ===
     // ====================================================
     if (
         (interaction.isStringSelectMenu() && interaction.customId === 'select_product') ||
         (interaction.isButton() && (interaction.customId === 'ticket_help' || interaction.customId === 'ticket_report'))
     ) {
-        // v3.9.17: pakai helper passesVerifiedCheck (konsisten di semua handler).
+        // v3.9.17: use the passesVerifiedCheck helper (consistent across all handlers).
         if (!passesVerifiedCheck(interaction, config)) {
-            return interaction.reply({ content: '❌ Verifikasi dulu!', flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: '❌ Please verify first!', flags: MessageFlags.Ephemeral });
         }
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -306,194 +307,194 @@ module.exports = async function (interaction) {
         if (interaction.customId === 'select_product') {
             const selectedValue = interaction.values[0];
             product = config.products.find(p => p.value === selectedValue);
-            if (!product) return safeEditReply(interaction, { content: '❌ Produk tidak ditemukan.' });
+            if (!product) return safeEditReply(interaction, { content: '❌ Product not found.' });
         } else if (interaction.customId === 'ticket_help') {
-            // v3.9.18: label diupdate dari "Bantuan Staff" → "Help" (sesuai default baru).
+            // v3.9.18: label updated from "Bantuan Staff" → "Help" (per the new default).
             product = { label: 'Help', duration: '-', price: '-', isHelp: true, category: 'help' };
         } else if (interaction.customId === 'ticket_report') {
-            // v3.9.18: label diupdate dari "Laporkan Member" → "Report" (sesuai default baru).
+            // v3.9.18: label updated from "Laporkan Member" → "Report" (per the new default).
             product = { label: 'Report', duration: '-', price: '-', isHelp: true, category: 'report' };
         } else {
             // v3.9.11 Phase 3: multi-panel ticket — customId `ticket_cat:<categoryId>`
-            // akan di-handle di sini. Untuk sekarang, fallback ke help.
+            // will be handled here. For now, fall back to help.
             product = { label: 'Help', duration: '-', price: '-', isHelp: true, category: 'help' };
         }
         return createTicket(interaction, product);
     }
 
     // ====================================================
-    // === TIKET: TUTUP TIKET (ADMIN) ===
+    // === TICKET: CLOSE TICKET (ADMIN) ===
     // ====================================================
     if (interaction.isButton() && interaction.customId === 'ticket_close') {
         const isAdmin = checkIsAdmin(interaction.member);
         if (!isAdmin) {
             return interaction.reply({
-                content: '❌ Hanya Admin/Staff yang dapat menutup tiket ini!',
+                content: '❌ Only Admin/Staff can close this ticket!',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.31 FIX (pola P1-8): guard channel masih ada. Sebelumnya
-        // `interaction.channel.id` di bawah tanpa `?.` — kalau channel terhapus
-        // tepat sebelum admin klik tombol (partial/uncached), throw TypeError
-        // yang ditelan handler global sebagai error generik tanpa pesan jelas.
+        // v3.9.31 FIX (pattern P1-8): guard that the channel still exists. Previously
+        // `interaction.channel.id` below had no `?.` — if the channel was deleted
+        // right before the admin clicked the button (partial/uncached), it threw a
+        // TypeError swallowed by the global handler as a generic error with no clear message.
         if (!interaction.channel) {
             return interaction.reply({
-                content: '❌ Channel tiket sudah tidak ada (mungkin sudah ditutup admin lain).',
+                content: '❌ The ticket channel no longer exists (another admin may have already closed it).',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.4 FIX: pakai getTicketMeta (sumber utama tickets.json) bukan parse topic langsung.
+        // v3.9.4 FIX: use getTicketMeta (the primary tickets.json source), not direct topic parsing.
         const meta = getTicketMeta(interaction.channel.id, interaction.channel?.topic || '');
-        // v3.9.27 FIX (bug user-reported): produk non-key (jual akun ML, jasa,
-        // dll) tadinya dianggap tiket BANTUAN di sini karena isTransaction
-        // ditarik dari meta.requiresKey. Akibatnya tombol "✅ Pesanan Sukses /
-        // ❌ Tidak Jadi Beli" tidak pernah muncul untuk produk tanpa key.
-        // Sekarang: resolveTicketType() baca flag isTransaction eksplisit
-        // (disimpan saat createTicket v3.9.27+) — transaksi non-key akhirnya
-        // dapat tombol close yang benar.
+        // v3.9.27 FIX (user-reported bug): non-key products (selling ML accounts,
+        // services, etc) used to be treated as HELP tickets here because isTransaction
+        // was derived from meta.requiresKey. As a result, the "✅ Order Successful /
+        // ❌ Purchase Cancelled" buttons never appeared for products without a key.
+        // Now: resolveTicketType() reads the explicit isTransaction flag
+        // (saved at createTicket since v3.9.27+) — non-key transactions finally
+        // get the correct close buttons.
         const type = resolveTicketType(meta);
         const isTransaction = type.isTransaction;
         const requiresKey = type.requiresKey;
 
-        // v3.9.20: cek apakah Set Key / Kirim Pesanan sudah dilakukan. Kalau ya,
-        // transaksi sudah sukses → tombol close hanya "Selesai" (skip "Tidak Jadi Beli").
+        // v3.9.20: check whether Set Key / Deliver Order was already done. If so,
+        // the transaction is already successful → the close buttons only offer "Done" (skip "Purchase Cancelled").
         const isCompleted = type.isCompleted;
 
-        // 5 skenario tombol konfirmasi close:
-        // - Transaksi pakai key + SUDAH Set Key (isCompleted=true):
-        //     • ✅ Selesai (close sukses — kirim invoice & transcript)
-        //     • ⏏️ Batal Tutup
+        // 5 close-confirmation button scenarios:
+        // - Key transaction + Set Key already DONE (isCompleted=true):
+        //     • ✅ Done (close successful — send invoice & transcript)
+        //     • ⏏️ Cancel Close
         //
-        // - Transaksi pakai key + BELUM Set Key (requiresKey=true, isCompleted=false):
-        //     • ❌ Tidak Jadi Beli (close tanpa invoice)
-        //     • ⏏️ Batal Tutup
-        //   (sukses ditandai via Set Key, jadi gak perlu tombol sukses di sini)
+        // - Key transaction + Set Key NOT done (requiresKey=true, isCompleted=false):
+        //     • ❌ Purchase Cancelled (close without invoice)
+        //     • ⏏️ Cancel Close
+        //   (success is marked via Set Key, so no success button needed here)
         //
-        // - Transaksi non-key + SUDAH Kirim Pesanan (isCompleted=true) — v3.9.27:
-        //     • ✅ Selesai (close + transcript; invoice sudah terkirim saat Kirim Pesanan)
-        //     • ⏏️ Batal Tutup
+        // - Non-key transaction + order already DELIVERED (isCompleted=true) — v3.9.27:
+        //     • ✅ Done (close + transcript; the invoice was already sent at Deliver Order)
+        //     • ⏏️ Cancel Close
         //
-        // - Transaksi non-key + BELUM dikirim (requiresKey=false, isCompleted=false):
-        //     • ✅ Pesanan Sukses (close + kirim invoice/testimoni + role + stats)
-        //     • ❌ Tidak Jadi Beli (close tanpa invoice)
-        //     • ⏏️ Batal Tutup
+        // - Non-key transaction + not delivered (requiresKey=false, isCompleted=false):
+        //     • ✅ Order Successful (close + send invoice/testimonial + role + stats)
+        //     • ❌ Purchase Cancelled (close without invoice)
+        //     • ⏏️ Cancel Close
         //
         // - Help / Report / Claim / Giveaway (isTransaction=false):
-        //     • ✅ Selesai (close sukses — transcript ditandai selesai)
-        //     • ❌ Tutup Tanpa Selesai (close TANPA sukses — transcript
-        //       ditandai tidak selesai; channel tetap dihapus)
-        //     • ⏏️ Batal Tutup (jangan tutup channel)
+        //     • ✅ Done (close successful — transcript marked complete)
+        //     • ❌ Close Without Completing (close WITHOUT completing — transcript
+        //       marked not complete; the channel is still deleted)
+        //     • ⏏️ Cancel Close (don't close the channel)
         //
-        // v3.9.35 FIX (bug user-reported): tombol "❌ Tutup Tanpa Selesai"
-        // dulunya salah pakai customId `ticket_close_abort` — sama dengan
-        // "⏏️ Batal Tutup". Akibatnya KEDUA tombol hanya membatalkan
-        // penutupan; tiket help/report/claim/giveaway tidak bisa ditutup
-        // tanpa selesai. Sekarang tombol itu memakai customId
-        // `ticket_close_cancel` yang benar-benar menutup tiket.
+        // v3.9.35 FIX (user-reported bug): the "❌ Close Without Completing" button
+        // previously used the wrong customId `ticket_close_abort` — the same as
+        // "⏏️ Cancel Close". As a result, BOTH buttons only cancelled the closing;
+        // help/report/claim/giveaway tickets couldn't be closed without completing.
+        // Now that button uses the `ticket_close_cancel` customId, which actually
+        // closes the ticket.
         const confirmRow = new ActionRowBuilder();
         if (isTransaction && requiresKey && isCompleted) {
-            // v3.9.20: Set Key sudah dilakukan → transaksi sudah sukses.
-            // Hanya tampilkan "Selesai" + "Batal Tutup" (tidak ada "Tidak Jadi Beli"
-            // karena key sudah dikirim & role sudah diberikan).
+            // v3.9.20: Set Key already done → the transaction is already successful.
+            // Only show "Done" + "Cancel Close" (no "Purchase Cancelled" because
+            // the key was already sent & the role already granted).
             confirmRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_close_success')
-                    .setLabel('✅ Selesai')
+                    .setLabel('✅ Done')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_abort')
-                    .setLabel('⏏️ Batal Tutup')
+                    .setLabel('⏏️ Cancel Close')
                     .setStyle(ButtonStyle.Secondary)
             );
         } else if (isTransaction && !requiresKey && isCompleted) {
-            // v3.9.27: Kirim Pesanan / Pesanan Sukses sudah dilakukan untuk produk
-            // non-key → mirror cabang Set Key: hanya "Selesai" + "Batal Tutup".
+            // v3.9.27: Deliver Order / Order Successful already done for a non-key
+            // product → mirrors the Set Key branch: only "Done" + "Cancel Close".
             confirmRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_close_success')
-                    .setLabel('✅ Selesai')
+                    .setLabel('✅ Done')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_abort')
-                    .setLabel('⏏️ Batal Tutup')
+                    .setLabel('⏏️ Cancel Close')
                     .setStyle(ButtonStyle.Secondary)
             );
         } else if (isTransaction && requiresKey) {
-            // Transaksi pakai key — sukses via Set Key, di sini cuma batal/abort
+            // Key transaction — success comes via Set Key; here it's only cancel/abort
             confirmRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_close_cancel_trans')
-                    .setLabel('❌ Tidak Jadi Beli')
+                    .setLabel('❌ Purchase Cancelled')
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_abort')
-                    .setLabel('⏏️ Batal Tutup')
+                    .setLabel('⏏️ Cancel Close')
                     .setStyle(ButtonStyle.Secondary)
             );
         } else if (isTransaction && !requiresKey) {
-            // Transaksi non-key — butuh tombol sukses buat kirim invoice
+            // Non-key transaction — needs a success button to send the invoice
             confirmRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_close_success')
-                    .setLabel('✅ Pesanan Sukses')
+                    .setLabel('✅ Order Successful')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_cancel_trans')
-                    .setLabel('❌ Tidak Jadi Beli')
+                    .setLabel('❌ Purchase Cancelled')
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_abort')
-                    .setLabel('⏏️ Batal Tutup')
+                    .setLabel('⏏️ Cancel Close')
                     .setStyle(ButtonStyle.Secondary)
             );
         } else {
-            // Help / Report / Claim / Giveaway (non-transaksi).
-            // v3.9.35 FIX: "Tutup Tanpa Selesai" pakai customId
-            // `ticket_close_cancel` (dulunya salah `ticket_close_abort`
-            // → kedua tombol sama-sama cuma batal). "Batal Tutup" kini
-            // konsisten pakai `ticket_close_abort` seperti cabang lain
-            // (`_abort2` tetap di-handle untuk ephemeral lama).
+            // Help / Report / Claim / Giveaway (non-transaction).
+            // v3.9.35 FIX: "Close Without Completing" uses the
+            // `ticket_close_cancel` customId (previously the wrong `ticket_close_abort`
+            // → both buttons only cancelled). "Cancel Close" now consistently
+            // uses `ticket_close_abort` like the other branches
+            // (`_abort2` is still handled for old ephemerals).
             confirmRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId('ticket_close_success')
-                    .setLabel('✅ Selesai')
+                    .setLabel('✅ Done')
                     .setStyle(ButtonStyle.Success),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_cancel')
-                    .setLabel('❌ Tutup Tanpa Selesai')
+                    .setLabel('❌ Close Without Completing')
                     .setStyle(ButtonStyle.Danger),
                 new ButtonBuilder()
                     .setCustomId('ticket_close_abort')
-                    .setLabel('⏏️ Batal Tutup')
+                    .setLabel('⏏️ Cancel Close')
                     .setStyle(ButtonStyle.Secondary)
             );
         }
-        // v3.9.20: pesan konfirmasi berbeda untuk 5 skenario.
+        // v3.9.20: different confirmation message for the 5 scenarios.
         let msg;
         if (isTransaction && requiresKey && isCompleted) {
-            // Set Key sudah dilakukan → transaksi sukses → close + save transcript.
+            // Set Key already done → transaction successful → close + save transcript.
             msg =
-                '✅ Transaksi sudah sukses (Set Key sudah dilakukan).\nKlik **✅ Selesai** untuk menutup tiket & menyimpan transcript.';
+                '✅ The transaction is already successful (Set Key was done).\nClick **✅ Done** to close the ticket & save the transcript.';
         } else if (isTransaction && !requiresKey && isCompleted) {
-            // v3.9.27: pesanan non-key sudah dikirim → mirror Set Key.
+            // v3.9.27: the non-key order was already delivered → mirrors Set Key.
             msg =
-                '✅ Pesanan sudah terkirim ke pembeli.\nKlik **✅ Selesai** untuk menutup tiket & menyimpan transcript.';
+                '✅ The order has already been delivered to the buyer.\nClick **✅ Done** to close the ticket & save the transcript.';
         } else if (isTransaction && requiresKey) {
-            msg = '⚠️ Tutup tiket tanpa memberi key? Klik **❌ Tidak Jadi Beli**.';
+            msg = '⚠️ Close the ticket without providing the key? Click **❌ Purchase Cancelled**.';
         } else if (isTransaction && !requiresKey) {
             msg =
-                '⚠️ Tutup tiket transaksi ini?\n' +
-                '• **✅ Pesanan Sukses** — transaksi berhasil, kirim invoice/testimoni\n' +
-                '• **❌ Tidak Jadi Beli** — batal, tanpa invoice';
+                '⚠️ Close this transaction ticket?\n' +
+                '• **✅ Order Successful** — transaction successful, send invoice/testimonial\n' +
+                '• **❌ Purchase Cancelled** — cancelled, no invoice';
         } else {
-            // v3.9.35: pesan konfirmasi help/report — terangkas per tombol
-            // (pola yang sama dengan cabang transaksi non-key di atas).
+            // v3.9.35: help/report confirmation message — broken down per button
+            // (the same pattern as the non-key transaction branch above).
             msg =
-                '⚠️ Tutup tiket ini?\n' +
-                '• **✅ Selesai** — selesai, transcript ditandai sukses\n' +
-                '• **❌ Tutup Tanpa Selesai** — tutup tiket sekarang, transcript ditandai tidak selesai';
+                '⚠️ Close this ticket?\n' +
+                '• **✅ Done** — completed, transcript marked successful\n' +
+                '• **❌ Close Without Completing** — close the ticket now, transcript marked not completed';
         }
         return interaction.reply({ content: msg, components: [confirmRow], flags: MessageFlags.Ephemeral });
     }
@@ -502,44 +503,44 @@ module.exports = async function (interaction) {
         interaction.isButton() &&
         (interaction.customId === 'ticket_close_abort' || interaction.customId === 'ticket_close_abort2')
     ) {
-        // Wrap interaction.update dalam try/catch. Kalau ephemeral sudah di-dismiss (10008)
-        // atau token expired (10062), fallback ke reply ephemeral.
+        // Wrap interaction.update in a try/catch. If the ephemeral was dismissed (10008)
+        // or the token expired (10062), fall back to an ephemeral reply.
         try {
-            return await interaction.update({ content: '❌ Penutupan tiket dibatalkan.', embeds: [], components: [] });
+            return await interaction.update({ content: '❌ Ticket closing cancelled.', embeds: [], components: [] });
         } catch (err) {
             if (err.code === 10008 || err.code === 10062) {
                 return interaction
-                    .reply({ content: '❌ Penutupan tiket dibatalkan.', flags: MessageFlags.Ephemeral })
+                    .reply({ content: '❌ Ticket closing cancelled.', flags: MessageFlags.Ephemeral })
                     .catch(() => {});
             }
             console.warn('ticket_close_abort update error:', err.message);
             if (!interaction.replied) {
                 return interaction
-                    .reply({ content: '❌ Penutupan tiket dibatalkan.', flags: MessageFlags.Ephemeral })
+                    .reply({ content: '❌ Ticket closing cancelled.', flags: MessageFlags.Ephemeral })
                     .catch(() => {});
             }
         }
     }
 
     if (interaction.isButton() && interaction.customId === 'ticket_close_success') {
-        // Untuk tiket help/report (selesai) ATAU transaksi non-key (pesanan sukses).
-        // isSuccess=true → closeTicket akan kirim invoice ke channel invoice (kalau di-set).
+        // For help/report tickets (completed) OR non-key transactions (order successful).
+        // isSuccess=true → closeTicket will send the invoice to the invoice channel (if set).
         //
-        // v3.9.24 FIX: re-check admin + validasi channel adalah tiket terdaftar.
-        // Sebelumnya tombol konfirmasi ini langsung closeTicket TANPA cek apapun
-        // (aman cuma karena row-nya ephemeral — bukan karena cek server-side).
-        // closeTicket akan menghapus channel apa pun yang dikirim kepadanya,
-        // jadi forged/legacy customId bisa menghapus channel non-tiket.
+        // v3.9.24 FIX: re-check admin + validate the channel is a registered ticket.
+        // Previously this confirmation button went straight to closeTicket WITHOUT any
+        // check (safe only because the row was ephemeral — not because of a server-side
+        // check). closeTicket deletes whatever channel it is given, so a forged/legacy
+        // customId could delete a non-ticket channel.
         if (!checkIsAdmin(interaction.member)) {
             return interaction.reply({
-                content: '❌ Hanya Admin/Staff yang bisa menutup tiket!',
+                content: '❌ Only Admin/Staff can close tickets!',
                 flags: MessageFlags.Ephemeral
             });
         }
         const closeMeta = getTicketMeta(interaction.channel?.id, interaction.channel?.topic || '');
         if (!closeMeta) {
             return interaction.reply({
-                content: '❌ Channel ini bukan tiket yang terdaftar (mungkin sudah ditutup admin lain).',
+                content: '❌ This channel is not a registered ticket (another admin may have already closed it).',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -551,51 +552,51 @@ module.exports = async function (interaction) {
             }
         }
 
-        // v3.9.27: transaksi NON-KEY yang di-close sebagai "✅ Pesanan Sukses"
-        // TANPA lewat 📦 Kirim Pesanan → jalankan side-effect di sini: auto-role
-        // (janji /set-product-role yang selama ini tidak pernah ditepati untuk
-        // produk non-key), catat pembelian ke stats, tandai isCompleted.
-        // Invoice tetap ditangani closeTicket (isSuccess=true + isTransaction).
-        // Kalau sudah isCompleted (lewat Kirim Pesanan), skip — jangan dobel.
+        // v3.9.27: NON-KEY transactions closed as "✅ Order Successful"
+        // WITHOUT going through 📦 Deliver Order → run the side effects here:
+        // auto-role (the long-standing unfulfilled /set-product-role promise for
+        // non-key products), record the purchase to stats, mark isCompleted.
+        // The invoice is still handled by closeTicket (isSuccess=true + isTransaction).
+        // If already isCompleted (via Deliver Order), skip — don't double up.
         const closeType = resolveTicketType(closeMeta);
         if (closeType.isTransaction && !closeType.requiresKey && !closeType.isCompleted) {
-            // v3.9.38 FIX (FIX 4): race double-click "✅ Pesanan Sukses" — 2 klik
-            // (atau 2 admin) sebelum patch isCompleted oleh klik pertama jalan →
-            // completeNonKeyOrder dobel (recordPurchase 2x, auto-role 2x). Pakai
-            // completionLocks (FIX 2): check-and-acquire channel lock sebelum
-            // side-effect, release di finally. Klik pertama menang; klik kedua
-            // yang kebetulan datang SETELAH release tetap aman — meta di-re-read
-            // di bawah lock sehingga isCompleted dari klik pertama terlihat.
+            // v3.9.38 FIX (FIX 4): "✅ Order Successful" double-click race — 2 clicks
+            // (or 2 admins) before the first click's isCompleted patch runs →
+            // completeNonKeyOrder runs twice (recordPurchase 2x, auto-role 2x). Uses
+            // completionLocks (FIX 2): check-and-acquire the channel lock before the
+            // side effects, release in finally. The first click wins; a second click
+            // that happens to arrive AFTER the release is still safe — the meta is
+            // re-read under the lock so the first click's isCompleted is visible.
             const closeChId = interaction.channel.id;
             if (completionLocks.has(closeChId)) {
                 await interaction
-                    .followUp({ content: '⏳ Tiket sedang diproses admin lain.', flags: MessageFlags.Ephemeral })
+                    .followUp({ content: '⏳ The ticket is being processed by another admin.', flags: MessageFlags.Ephemeral })
                     .catch(() => {});
                 return;
             }
             completionLocks.add(closeChId);
             try {
-                // v3.9.38 FIX (FIX 4): re-read meta DI BAWAH LOCK — closeMeta di atas
-                // bisa stale (dibaca sebelum deferUpdate). Kalau admin lain barusan
-                // menyelesaikan tiket, isCompleted sekarang terlihat → skip dobel.
+                // v3.9.38 FIX (FIX 4): re-read the meta UNDER THE LOCK — closeMeta above
+                // may be stale (read before deferUpdate). If another admin just
+                // completed the ticket, isCompleted is now visible → skip the double.
                 const freshMeta = getTicketMeta(closeChId, interaction.channel?.topic || '');
                 const freshType = resolveTicketType(freshMeta);
                 if (freshType.isTransaction && !freshType.requiresKey && !freshType.isCompleted) {
                     const warnings = await completeNonKeyOrder(interaction, freshMeta);
                     if (warnings.length > 0) {
-                        // Tiket tetap ditutup (intent admin jelas), tapi kasih tau kendalanya
-                        // supaya bisa ditindaklanjuti manual (ephemeral — tetap muncul
-                        // walau channel sudah terhapus).
+                        // The ticket is still closed (the admin's intent is clear), but
+                        // report the issues so they can be followed up manually (ephemeral
+                        // — still visible even after the channel is deleted).
                         await interaction
                             .followUp({
-                                content: `⚠️ Tiket ditutup sebagai **Pesanan Sukses**, tapi ada kendala:\n• ${warnings.join('\n• ')}`,
+                                content: `⚠️ The ticket was closed as **Order Successful**, but there were issues:\n• ${warnings.join('\n• ')}`,
                                 flags: MessageFlags.Ephemeral
                             })
                             .catch(() => {});
                     }
                 }
             } finally {
-                // v3.9.38 FIX (FIX 4): pastikan lock dilepas walau ada error.
+                // v3.9.38 FIX (FIX 4): make sure the lock is released even on error.
                 completionLocks.delete(closeChId);
             }
         }
@@ -607,23 +608,23 @@ module.exports = async function (interaction) {
         interaction.isButton() &&
         (interaction.customId === 'ticket_close_cancel_trans' || interaction.customId === 'ticket_close_cancel')
     ) {
-        // Tutup tiket TANPA sukses — dua pintu, satu perilaku:
-        //   - ticket_close_cancel_trans ("❌ Tidak Jadi Beli")  → tiket TRANSAKSI
-        //     yang dibatalkan (tanpa invoice).
-        //   - ticket_close_cancel ("❌ Tutup Tanpa Selesai")    → v3.9.35: tiket
-        //     help/report/claim/giveaway yang ditutup tanpa diselesaikan.
-        //     Dulunya tombol ini salah wiring ke `ticket_close_abort` (bug
-        //     user-reported: "tutup tanpa selesai" cuma membatalkan penutupan).
-        // v3.9.24 FIX: re-check admin + validasi tiket (sama seperti ticket_close_success).
+        // Close the ticket WITHOUT success — two doors, one behavior:
+        //   - ticket_close_cancel_trans ("❌ Purchase Cancelled") → a TRANSACTION
+        //     ticket that was cancelled (no invoice).
+        //   - ticket_close_cancel ("❌ Close Without Completing")   → v3.9.35: a
+        //     help/report/claim/giveaway ticket closed without being resolved.
+        //     This button was previously miswired to `ticket_close_abort` (a
+        //     user-reported bug: "close without completing" only cancelled the closing).
+        // v3.9.24 FIX: re-check admin + validate the ticket (same as ticket_close_success).
         if (!checkIsAdmin(interaction.member)) {
             return interaction.reply({
-                content: '❌ Hanya Admin/Staff yang bisa menutup tiket!',
+                content: '❌ Only Admin/Staff can close tickets!',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (!getTicketMeta(interaction.channel?.id, interaction.channel?.topic || '')) {
             return interaction.reply({
-                content: '❌ Channel ini bukan tiket yang terdaftar (mungkin sudah ditutup admin lain).',
+                content: '❌ This channel is not a registered ticket (another admin may have already closed it).',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -639,98 +640,98 @@ module.exports = async function (interaction) {
     }
 
     // ====================================================
-    // === TIKET: TOMBOL SET KEY (ADMIN) → MODAL ===
+    // === TICKET: SET KEY BUTTON (ADMIN) → MODAL ===
     // ====================================================
     if (interaction.isButton() && interaction.customId === 'ticket_set_key') {
         const isAdmin = checkIsAdmin(interaction.member);
         if (!isAdmin) {
             return interaction.reply({
-                content: '❌ Hanya Admin/Staff yang bisa set key!',
+                content: '❌ Only Admin/Staff can set a key!',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.31 FIX (pola P1-8): guard channel masih ada — konsisten dengan
-        // guard yang sudah ada di modal Set Key (line ~654). `interaction.channel.id`
-        // di bawah tanpa `?.` bisa throw TypeError kalau channel terhapus tepat
-        // sebelum admin klik (partial/uncached).
+        // v3.9.31 FIX (pattern P1-8): guard that the channel still exists — consistent
+        // with the existing guard in the Set Key modal (line ~654). `interaction.channel.id`
+        // below without `?.` could throw a TypeError if the channel was deleted right
+        // before the admin clicked (partial/uncached).
         if (!interaction.channel) {
             return interaction.reply({
-                content: '❌ Channel tiket sudah tidak ada (mungkin sudah ditutup admin lain).',
+                content: '❌ The ticket channel no longer exists (another admin may have already closed it).',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.4 FIX: pakai getTicketMeta (sumber utama tickets.json) bukan parse topic langsung.
+        // v3.9.4 FIX: use getTicketMeta (the primary tickets.json source), not direct topic parsing.
         const meta = getTicketMeta(interaction.channel.id, interaction.channel?.topic || '');
         const productName = meta?.productName || null;
-        // v3.9.27: pakai resolveTicketType (satu sumber kebenaran) — Set Key hanya
-        // untuk tiket transaksi yang memang pakai key.
+        // v3.9.27: use resolveTicketType (one source of truth) — Set Key is only
+        // for transaction tickets that actually use a key.
         const setType = resolveTicketType(meta);
-        // v3.9.38 FIX (FIX 2a): gate isCompleted — tombol Set Key yang sudah
-        // pernah dijalankan (Set Key / Kirim Pesanan / Pesanan Sukses) tidak
-        // boleh membuka modal lagi. Sebelumnya gate ini cuma ada di tombol
-        // deliver & close flow — flow Set Key bocor: invoice dobel, stats dobel,
-        // pembeli dapat 2 key. (Layer 1 dari 3 — lihat modal handler untuk layer 2-3.)
+        // v3.9.38 FIX (FIX 2a): isCompleted gate — a Set Key button that has already
+        // been used (Set Key / Deliver Order / Order Successful) must not open
+        // the modal again. Previously this gate only existed on the deliver & close
+        // flows — the Set Key flow leaked: duplicate invoice, duplicate stats,
+        // buyer gets 2 keys. (Layer 1 of 3 — see the modal handler for layers 2-3.)
         if (setType.isCompleted) {
             return interaction.reply({
-                content: 'ℹ️ Key untuk tiket ini sudah di-set sebelumnya. Tiket sudah selesai.',
+                content: 'ℹ️ The key for this ticket has already been set. The ticket is already complete.',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (!productName || !setType.isTransaction) {
             return interaction.reply({
-                content: '❌ Tombol Set Key hanya untuk tiket transaksi.',
+                content: '❌ The Set Key button is only for transaction tickets.',
                 flags: MessageFlags.Ephemeral
             });
         }
-        // v3.9.16: reject kalau produk non-key (requiresKey=false).
-        // Tombol Set Key seharusnya tidak muncul untuk produk non-key, tapi ini defense-in-depth
-        // kalau admin somehow klik via customId lama / message lama yang belum di-update.
-        // (v3.9.27: produk non-key sekarang punya tombol sendiri — 📦 Kirim Pesanan.)
+        // v3.9.16: reject non-key products (requiresKey=false).
+        // The Set Key button should never appear for non-key products, but this is defense-in-depth
+        // in case an admin somehow clicks via an old customId / an old not-yet-updated message.
+        // (v3.9.27: non-key products now have their own button — 📦 Deliver Order.)
         if (!setType.requiresKey) {
             return interaction.reply({
                 content:
-                    '❌ Produk ini tidak memerlukan key. Pakai tombol **📦 Kirim Pesanan** untuk mengirim detail pesanan ke pembeli.',
+                    '❌ This product does not require a key. Use the **📦 Deliver Order** button to send the order details to the buyer.',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // v3.9.26 FIX: lookup by value DULU, label sebagai fallback. Sebelumnya
-        // cuma by label — admin rename produk via /update-product membuat tombol
-        // Set Key di semua tiket lama error "Produk tidak ditemukan" (meta tiket
-        // menyimpan label beku saat tiket dibuat). value = ID stabil.
-        // v3.9.38 FIX (FIX 3b): pakai resolveProduct() — satu helper yang sama di
-        // semua site lookup (tiket v3.9.38+ resolve by productValue di meta,
-        // tiket legacy tetap fallback by label).
+        // v3.9.26 FIX: look up by value FIRST, label as fallback. Previously
+        // it was label-only — renaming a product via /update-product made the Set Key
+        // button fail with "Product not found" on all old tickets (ticket meta
+        // stores the frozen label from when the ticket was created). value = stable ID.
+        // v3.9.38 FIX (FIX 3b): use resolveProduct() — the same single helper at
+        // every lookup site (v3.9.38+ tickets resolve by productValue in the meta,
+        // legacy tickets still fall back by label).
         const product = resolveProduct(config, meta);
         if (!product) {
             return interaction.reply({
-                content: `❌ Produk "${productName}" tidak ditemukan di config (mungkin sudah di-rename/dihapus). Cek /list-products.`,
+                content: `❌ Product "${productName}" not found in the config (it may have been renamed/deleted). Check /list-products.`,
                 flags: MessageFlags.Ephemeral
             });
         }
         if (!product.roleId) {
             return interaction.reply({
-                content: `❌ Produk **${product.label}** belum punya auto-role. Pakai \`/set-product-role\` dulu.`,
+                content: `❌ Product **${product.label}** has no auto-role yet. Run \`/set-product-role\` first.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Buka modal input key
-        // v3.9.27 FIX: slice title ke 45 char — limit Discord ModalBuilder.
-        // label produk bisa 80 char (limit /add-product) → "Set Key — <label>"
-        // bisa > 45 → showModal throw → tombol Set Key mati diam-diam.
+        // Open the key input modal
+        // v3.9.27 FIX: slice the title to 45 chars — the Discord ModalBuilder limit.
+        // A product label can be 80 chars (the /add-product limit) → "Set Key — <label>"
+        // can exceed 45 → showModal throws → the Set Key button dies silently.
         const modal = new ModalBuilder()
             .setCustomId(`modal_set_key:${product.value}`)
             .setTitle(`Set Key — ${product.label}`.slice(0, 45));
 
         const keyInput = new TextInputBuilder()
             .setCustomId('key_value')
-            .setLabel('Key yang akan dikirim ke pembeli')
+            .setLabel('Key to send to the buyer')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            .setPlaceholder('Contoh: ABCDE-12345-FGHIJ-67890')
+            .setPlaceholder('Example: ABCDE-12345-FGHIJ-67890')
             .setMinLength(1)
             .setMaxLength(500);
 
@@ -742,57 +743,58 @@ module.exports = async function (interaction) {
     // === MODAL SET KEY SUBMIT — FULL FLOW ===
     // ====================================================
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_set_key:')) {
-        // v3.9.24 FIX: re-check admin di modal submit (defense-in-depth — sama
-        // seperti backup.js). Sebelumnya cek admin cuma ada di tombol ticket_set_key;
-        // modal bisa di-submit oleh user lain kalau somehow modalnya kebuka
-        // (customId forged / client state aneh).
+        // v3.9.24 FIX: re-check admin on modal submit (defense-in-depth — same
+        // as backup.js). Previously the admin check only existed on the ticket_set_key
+        // button; the modal could be submitted by another user if it somehow got
+        // opened (forged customId / weird client state).
         if (!checkIsAdmin(interaction.member)) {
             return interaction
                 .reply({
-                    content: '❌ Hanya Admin/Staff yang bisa set key!',
+                    content: '❌ Only Admin/Staff can set a key!',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
         }
         // v3.9.38 FIX (FIX 2c): per-channel completion lock (defense-in-depth
-        // layer 3). Gate isCompleted di tombol (layer 1) + re-check meta di
-        // modal (layer 2) tidak menutup race 2 admin submit bersamaan — kedua
-        // submit lewat cek SEBELUM side-effect pertama selesai. Lock
-        // check-and-acquire atomik di event loop; release di finally.
+        // layer 3). The isCompleted gate on the button (layer 1) + the meta
+        // re-check in the modal (layer 2) don't close the 2-admins-submitting-
+        // simultaneously race — both submits pass the check BEFORE the first
+        // side effect finishes. The lock is check-and-acquired atomically on
+        // the event loop; released in finally.
         const lockChId = interaction.channel?.id || null;
         if (lockChId && completionLocks.has(lockChId)) {
             return interaction
-                .reply({ content: '⏳ Tiket sedang diproses admin lain, tunggu sebentar.', flags: MessageFlags.Ephemeral })
+                .reply({ content: '⏳ The ticket is being processed by another admin, please wait a moment.', flags: MessageFlags.Ephemeral })
                 .catch(() => {});
         }
         if (lockChId) completionLocks.add(lockChId);
         try {
-            // v3.9.7: log deferReply failure (sama seperti embed builder modal)
+            // v3.9.7: log deferReply failures (same as the embed builder modal)
             await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(err => {
-                console.warn(`[Set Key Modal] deferReply gagal untuk ${interaction.customId}: ${err.message}`);
+                console.warn(`[Set Key Modal] deferReply failed for ${interaction.customId}: ${err.message}`);
             });
 
             const productValue = interaction.customId.split(':')[1];
             const keyValue = interaction.components[0]?.components?.[0]?.value?.trim() || '';
-            // v3.9.38 FIX (FIX 5a): key kosong/whitespace ditolak SEBELUM side
-            // effect apa pun. Modal required=true + minLength=1 biasanya mencegah,
-            // tapi input berisi spasi saja lolos validasi Discord (trim → kosong)
-            // dan dulu tetap tersimpan sebagai key blank oleh addKey.
+            // v3.9.38 FIX (FIX 5a): empty/whitespace keys are rejected BEFORE any
+            // side effect. Modal required=true + minLength=1 usually prevents it,
+            // but whitespace-only input passes Discord's validation (trim → empty)
+            // and used to still be saved as a blank key by addKey.
             if (!keyValue) {
-                return safeEditReply(interaction, { content: '❌ Key tidak boleh kosong.' });
+                return safeEditReply(interaction, { content: '❌ The key cannot be empty.' });
             }
 
-            // P1-8 FIX: validasi interaction.channel masih ada (belum dihapus admin lain).
-            // Sebelumnya: kalau channel sudah dihapus saat admin submit modal,
-            // `interaction.channel.topic` throw TypeError → error generik.
+            // P1-8 FIX: validate that interaction.channel still exists (not deleted by another admin).
+            // Previously: if the channel was already deleted when the admin submitted the modal,
+            // `interaction.channel.topic` threw a TypeError → generic error.
             if (!interaction.channel) {
                 return safeEditReply(interaction, {
-                    content: '❌ Channel tiket sudah tidak ada (mungkin sudah ditutup admin lain).'
+                    content: '❌ The ticket channel no longer exists (another admin may have already closed it).'
                 }).catch(() => {});
             }
 
-            // v3.9.1: baca metadata tiket dari tickets.json (sumber kebenaran).
-            // Fallback ke topic parsing untuk tiket lama yang dibuat sebelum v3.9.1.
+            // v3.9.1: read the ticket metadata from tickets.json (source of truth).
+            // Fallback to topic parsing for old tickets created before v3.9.1.
             const topic = interaction.channel.topic || '';
             const meta = getTicketMeta(interaction.channel.id, topic);
             const userId = meta?.userId || null;
@@ -800,49 +802,49 @@ module.exports = async function (interaction) {
 
             if (!userId) {
                 return safeEditReply(interaction, {
-                    content: '❌ Gagal ambil metadata tiket (channel ini mungkin bukan tiket valid).'
+                    content: '❌ Failed to get the ticket metadata (this channel may not be a valid ticket).'
                 });
             }
 
-            // v3.9.38 FIX (FIX 2b, layer 2): re-check isCompleted di bawah lock —
-            // admin lain bisa menyelesaikan tiket ini (Set Key / Kirim Pesanan /
-            // ✅ Pesanan Sukses) di antara modal dibuka dan di-submit. Tanpa
-            // re-check, invoice + stats + key terkirim DOBEL.
+            // v3.9.38 FIX (FIX 2b, layer 2): re-check isCompleted under the lock —
+            // another admin may have completed this ticket (Set Key / Deliver Order /
+            // ✅ Order Successful) between the modal opening and being submitted.
+            // Without the re-check, the invoice + stats + key get sent TWICE.
             if (resolveTicketType(meta).isCompleted) {
                 return safeEditReply(interaction, {
-                    content: 'ℹ️ Tiket ini sudah selesai diproses admin lain.'
+                    content: 'ℹ️ This ticket has already been processed by another admin.'
                 });
             }
 
-            // v3.9.38 FIX (FIX 3b): resolve produk dari META (productValue stabil
-            // dulu, label fallback) — rename-proof. Fallback terakhir ke value di
-            // customId (perilaku legacy v3.9.26: tombol resolve produk lalu embed
-            // value-nya ke customId modal).
+            // v3.9.38 FIX (FIX 3b): resolve the product from the META (stable
+            // productValue first, label fallback) — rename-proof. Last fallback is
+            // the value in the customId (legacy v3.9.26 behavior: the button resolved
+            // the product then embedded its value into the modal customId).
             const product = resolveProduct(config, meta) || config.products.find(p => p.value === productValue);
             if (!product) {
-                return safeEditReply(interaction, { content: `❌ Produk value \`${productValue}\` tidak ditemukan.` });
+                return safeEditReply(interaction, { content: `❌ Product value \`${productValue}\` not found.` });
             }
             if (!product.roleId) {
-                return safeEditReply(interaction, { content: `❌ Produk **${product.label}** belum punya auto-role.` });
+                return safeEditReply(interaction, { content: `❌ Product **${product.label}** has no auto-role yet.` });
             }
 
             const guild = interaction.guild;
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) {
-                return safeEditReply(interaction, { content: `❌ Member <@${userId}> sudah tidak ada di server.` });
+                return safeEditReply(interaction, { content: `❌ Member <@${userId}> is no longer on the server.` });
             }
             const role = guild.roles.cache.get(product.roleId);
             if (!role) {
                 return safeEditReply(interaction, {
-                    content: `❌ Role ID \`${product.roleId}\` tidak ditemukan di guild.`
+                    content: `❌ Role ID \`${product.roleId}\` not found in the guild.`
                 });
             }
 
-            // === 1. Simpan key baru (independent expireAt) ===
-            // v3.9.17 FIX: wrap addKey di try/catch. Sebelumnya, kalau key duplikat,
-            // addKey throw "Key sudah ada" → propagate ke global handler → admin
-            // lihat error generik "Terjadi error, coba lagi" tanpa tahu penyebabnya.
-            // Sekarang: catch spesifik, balas dengan pesan jelas.
+            // === 1. Save the new key (independent expireAt) ===
+            // v3.9.17 FIX: wrap addKey in a try/catch. Previously, a duplicate key
+            // made addKey throw "Key already exists" → propagated to the global handler
+            // → the admin saw the generic "An error occurred, try again" without
+            // knowing the cause. Now: a specific catch with a clear reply.
             let keyEntry;
             try {
                 keyEntry = addKey({
@@ -852,24 +854,24 @@ module.exports = async function (interaction) {
                     roleId: role.id,
                     productName: product.label,
                     days: product.days || 0,
-                    guildId: interaction.guild.id // v3.9.3: simpan guildId supaya cross-guild wipe akurat
+                    guildId: interaction.guild.id // v3.9.3: save the guildId so cross-guild wipes are accurate
                 });
             } catch (keyErr) {
-                // v3.9.38 FIX (FIX 6): log hanya panjang key — error duplikat dari
-                // keyManager sudah tidak menyertakan nilai key (bocor ke console log).
-                console.warn(`⚠️ Gagal simpan key (kemungkinan duplikat) — key (len=${keyValue.length}):`, keyErr.message);
+                // v3.9.38 FIX (FIX 6): log only the key length — the duplicate error
+                // from keyManager no longer includes the key value (console log leak).
+                console.warn(`⚠️ Failed to save the key (possibly a duplicate) — key (len=${keyValue.length}):`, keyErr.message);
                 return safeEditReply(interaction, {
-                    content: `❌ Gagal simpan key: ${keyErr.message}\n\n💡 Coba pakai key lain, atau hapus key lama via \`/list-keys\` dulu.`
+                    content: `❌ Failed to save the key: ${keyErr.message}\n\n💡 Try a different key, or delete the old one via \`/list-keys\` first.`
                 });
             }
 
-            // === 2. Schedule role removal (MAX EXTEND) — v3.9.17: pindah SEBELUM addRole ===
-            // v3.9.17 FIX: reorder. Sebelumnya: addKey → addRole → scheduleRoleRemoval.
-            // Kalau bot crash setelah addRole tapi sebelum schedule, role menempel tanpa
-            // auto-expire. Sekarang: addKey → scheduleRoleRemoval → addRole.
-            // Kalau crash setelah schedule tapi sebelum addRole: schedule entry orphan
-            // (roleId ter-schedule tapi user belum dapat role) — scheduler tick akan
-            // detect "member tidak punya role" dan skip, lebih aman dari role permanen.
+            // === 2. Schedule role removal (MAX EXTEND) — v3.9.17: moved BEFORE addRole ===
+            // v3.9.17 FIX: reorder. Previously: addKey → addRole → scheduleRoleRemoval.
+            // If the bot crashed after addRole but before scheduling, the role stuck without
+            // auto-expire. Now: addKey → scheduleRoleRemoval → addRole.
+            // If it crashes after scheduling but before addRole: an orphan schedule entry
+            // (roleId scheduled but the user doesn't have the role) — the scheduler tick
+            // will detect "member doesn't have the role" and skip; safer than a permanent role.
             let scheduleResult;
             try {
                 scheduleResult = scheduleRoleRemoval({
@@ -882,55 +884,55 @@ module.exports = async function (interaction) {
                 });
             } catch (schedErr) {
                 console.error(
-                    `⚠️ Gagal scheduleRoleRemoval saat set-key (key tetap tersimpan, role TIDAK diberikan): ${schedErr.message}`
+                    `⚠️ Failed to scheduleRoleRemoval during set-key (the key is saved, the role was NOT granted): ${schedErr.message}`
                 );
-                // Catatan: key yang barusan di-add tersimpan tanpa auto-expire schedule.
-                // Tidak ada API targeted removal untuk single key di keyManager (hanya
-                // removeAllKeysByUser yang terlalu broad). Admin bisa manual remove via
-                // /list-keys kalau perlu. Log warning supaya kelihatan.
+                // Note: the just-added key is saved without an auto-expire schedule.
+                // There is no targeted removal API for a single key in keyManager (only
+                // removeAllKeysByUser, which is too broad). An admin can remove it manually
+                // via /list-keys if needed. Log a warning so it's visible.
                 console.warn(
-                    // v3.9.38 FIX (FIX 6): jangan bocorkan nilai key mentah ke console
-                    // log — cukup panjangnya (pola /set-key audit log v3.9.1).
-                    `⚠️ Schedule gagal — key (len=${keyValue.length}) tersimpan tanpa auto-expire. Admin perlu manual remove via /list-keys jika perlu.`
+                    // v3.9.38 FIX (FIX 6): don't leak the raw key value to the console
+                    // log — the length is enough (the /set-key audit log pattern from v3.9.1).
+                    `⚠️ Schedule failed — key (len=${keyValue.length}) saved without auto-expire. An admin needs to remove it manually via /list-keys if needed.`
                 );
                 return safeEditReply(interaction, {
-                    content: `❌ Gagal schedule auto-expire role: ${schedErr.message}\n\nKey sudah tersimpan tapi role BELUM diberikan. Coba Set Key lagi, atau hubungi dev.`
+                    content: `❌ Failed to schedule the role auto-expire: ${schedErr.message}\n\nThe key has been saved but the role has NOT been granted yet. Try Set Key again, or contact the dev.`
                 });
             }
 
-            // === 3. Berikan role ke member ===
+            // === 3. Grant the role to the member ===
             try {
                 if (!member.roles.cache.has(role.id)) {
                     await member.roles.add(role);
                 }
             } catch (err) {
-                console.error('Gagal add role saat set key:', err.message);
+                console.error('Failed to add the role during set key:', err.message);
                 return safeEditReply(interaction, {
-                    content: `❌ Gagal memberikan role ${role}. Pastikan role bot ada di ATAS role tersebut.\n\nKey + schedule sudah tersimpan. Hubungi admin untuk add role manual.`
+                    content: `❌ Failed to grant the role ${role}. Make sure the bot's role is ABOVE that role.\n\nKey + schedule are already saved. Contact an admin to add the role manually.`
                 });
             }
 
-            // === 4. DM member ===
-            // v3.9.22: DM format sesuai template user — pakai emoji supaya lebih
-            // ramai & gak sepi. Role pakai nama role (role.name) bukan mention
-            // (`${role}`), karena di DM mention role gak ke-resolve (muncul
-            // "unknown role" atau @role mentah).
+            // === 4. DM the member ===
+            // v3.9.22: DM format per the user template — with emojis so it feels
+            // livelier & less empty. The role uses the role name (role.name), not
+            // a mention (`${role}`), because role mentions don't resolve in DMs
+            // (they render as "unknown role" or a raw @role).
             let dmSent = false;
             try {
                 let expireInfo;
                 if (keyEntry.expireAt === null) {
-                    expireInfo = 'permanen (gak akan hilang)';
+                    expireInfo = 'permanent (never expires)';
                 } else {
                     const days = Math.ceil((keyEntry.expireAt - Date.now()) / 86400000);
-                    expireInfo = `${days} hari lagi`;
+                    expireInfo = `in ${days} days`;
                 }
 
-                // Cek semua key aktif buat info tambahan
-                // v3.9.31: pass guildId (opsional) supaya guild-scoped konsisten pola lain.
+                // Check all active keys for extra info
+                // v3.9.31: pass guildId (optional) so it's guild-scoped, consistent with the other patterns.
                 const activeKeys = getActiveKeysByUserAndRole(member.id, role.id, Date.now(), guild.id);
-                // v3.9.26 FIX: bound daftar key di DM. Key bisa 200 char; 4+ key panjang
-                // bikin DM > 2000 char → member.send throw → dmSent=false padahal
-                // key/role/schedule sudah sukses. Sekarang maks 5 key teratas + ringkasan.
+                // v3.9.26 FIX: bound the key list in the DM. Keys can be 200 chars; 4+ long keys
+                // make the DM exceed 2000 chars → member.send throws → dmSent=false even though
+                // the key/role/schedule already succeeded. Now at most the top 5 keys + a summary.
                 const MAX_KEYS_IN_DM = 5;
                 const shownKeys = activeKeys.slice(0, MAX_KEYS_IN_DM);
                 const hiddenKeys = activeKeys.length - shownKeys.length;
@@ -938,129 +940,130 @@ module.exports = async function (interaction) {
                     shownKeys
                         .map((k, i) => {
                             const rem = formatRemaining(k);
-                            return `${i + 1}. \`${k.key}\` (sisa ${rem})`;
+                            return `${i + 1}. \`${k.key}\` (${rem} left)`;
                         })
-                        .join('\n') + (hiddenKeys > 0 ? `\n... +${hiddenKeys} key lainnya (tanya admin)` : '');
-                const keyListStr = activeKeys.length > 0 ? keyList : '_(belum ada)_';
+                        .join('\n') + (hiddenKeys > 0 ? `\n... +${hiddenKeys} more keys (ask an admin)` : '');
+                const keyListStr = activeKeys.length > 0 ? keyList : '_(none yet)_';
 
-                // v3.9.17 FIX: sanitize backtick di keyValue. Kalau key mengandung
-                // backtick, inline code bisa break. Ganti dengan single quote.
+                // v3.9.17 FIX: sanitize backticks in keyValue. If the key contains
+                // backticks, the inline code can break. Replace them with single quotes.
                 const safeKey = keyValue.replace(/`/g, "'");
 
                 await member.send({
                     content:
-                        `Halo ${member.user.username}! Transaksi kamu udah selesai 🎉\n\n` +
-                        `📦 Produk: ${product.label}\n` +
+                        `Hi ${member.user.username}! Your transaction is complete 🎉\n\n` +
+                        `📦 Product: ${product.label}\n` +
                         `🌐 Server: ${guild.name}\n\n` +
                         `🔑 KEY:\n` +
                         `\`${safeKey}\`\n\n` +
                         `🎭 Role: ${role.name}\n` +
-                        `⏰ Expire: ${expireInfo}\n\n` +
-                        `📋 Key aktif kamu untuk role ini:\n${keyListStr}\n\n` +
-                        `💡 Simpan keynya. Kalau role tiba-tiba hilang padahal key masih aktif, hubungi admin.`
+                        `⏰ Expires: ${expireInfo}\n\n` +
+                        `📋 Your active keys for this role:\n${keyListStr}\n\n` +
+                        `💡 Keep your key safe. If the role suddenly disappears while your key is still active, contact an admin.`
                 });
                 dmSent = true;
             } catch (_dmErr) {
-                console.log(`ℹ️ Tidak bisa kirim DM ke ${member.user.tag} (mungkin DM ditutup).`);
+                console.log(`ℹ️ Could not send a DM to ${member.user.tag} (DMs may be closed).`);
             }
 
-            // === 5. Kirim invoice ke channel invoice ===
-            // v3.9.8 FIX: wrap sendInvoice di try/catch. Sebelumnya, kalau sendInvoice
-            // throw (channel invoice hilang / bot gak punya SendMessages), outer catch
-            // menyamarkan error. Padahal key + role + schedule + DM sudah terlanjur jalan.
-            // Admin lihat error → klik "Set Key" lagi → addKey jalan 2x (duplicate key).
-            // v3.9.27: catat isInvoiceSent — invoice saat Set Key tidak dikirim LAGI saat
-            // close "Selesai" (dulu kekirim dobel: 1x di sini + 1x di closeTicket).
+            // === 5. Send the invoice to the invoice channel ===
+            // v3.9.8 FIX: wrap sendInvoice in a try/catch. Previously, when sendInvoice
+            // threw (invoice channel deleted / bot missing SendMessages), the outer catch
+            // masked the error. Yet the key + role + schedule + DM had already run.
+            // The admin saw the error → clicked "Set Key" again → addKey ran 2x (duplicate key).
+            // v3.9.27: record isInvoiceSent — the invoice sent at Set Key is NOT sent AGAIN
+            // when closing with "Done" (previously sent twice: 1x here + 1x in closeTicket).
             let invoiceOk = false;
             try {
                 invoiceOk = await sendInvoice(interaction.channel, userId, product.label, price, interaction.user);
             } catch (invoiceErr) {
-                console.warn(`⚠️ Gagal kirim invoice saat set-key (key tetap tersimpan): ${invoiceErr.message}`);
+                console.warn(`⚠️ Failed to send the invoice during set-key (the key is still saved): ${invoiceErr.message}`);
             }
 
-            // === 5.5. Track purchase untuk stats/leaderboard ===
+            // === 5.5. Track the purchase for stats/leaderboard ===
             try {
                 // v3.9.4: scoped per guild
                 recordPurchase(interaction.guild.id, userId, parsePrice(price));
             } catch (_) {}
 
-            // === 5.6. P1-10 FIX: audit log untuk SET_KEY via ticket modal ===
+            // === 5.6. P1-10 FIX: audit log for SET_KEY via the ticket modal ===
             try {
                 await logAudit(interaction.client, {
                     action: 'SET_KEY',
                     actorId: interaction.user.id,
                     actorTag: interaction.user.tag,
-                    details: `Set key (ticket) untuk <@${member.id}> — produk: **${product.label}**, role: ${role.name}`,
+                    details: `Set key (ticket) for <@${member.id}> — product: **${product.label}**, role: ${role.name}`,
                     guildId: interaction.guild.id
                 });
             } catch (_) {}
 
-            // v3.9.8 FIX: balas ephemeral SEBELUM hapus channel. Sebelumnya, comment
-            // bilang "channel sudah dihapus, jadi tidak perlu editReply" — ini SALAH.
-            // Ephemeral reply terikat ke interaction token (bukan channel), jadi tetap
-            // valid setelah channel dihapus. Tanpa editReply, admin lihat "Thinking..."
-            // 15 menit sampai token expired.
+            // v3.9.8 FIX: reply ephemeral BEFORE deleting the channel. Previously, the
+            // comment said "the channel is already deleted, so no editReply needed" — that was
+            // WRONG. An ephemeral reply is tied to the interaction token (not the channel),
+            // so it stays valid after the channel is deleted. Without editReply, the admin
+            // stared at "Thinking..." for 15 minutes until the token expired.
             try {
                 await safeEditReply(interaction, {
-                    content: `✅ Set Key sukses!\n\n👤 Member: <@${userId}>\n📦 Produk: ${product.label}\n🎭 Role: ${role.name}\n${dmSent ? '📬 DM terkirim.' : '⚠️ DM gagal.'}`
+                    content: `✅ Set Key successful!\n\n👤 Member: <@${userId}>\n📦 Product: ${product.label}\n🎭 Role: ${role.name}\n${dmSent ? '📬 DM sent.' : '⚠️ DM failed.'}`
                 });
             } catch (_) {}
 
-            // === v3.9.21: Jangan munculin embed/panel baru di channel. ===
-            // Cukup kirim pesan teks simpel yang bilang "key sudah dikirim via DM".
-            // Tombol Tutup Tiket dari pesan awal createTicket masih ada — admin bisa
-            // klik itu kalau udah selesai Q&A sama member.
+            // === v3.9.21: Don't show a new embed/panel in the channel. ===
+            // Just send a simple text message saying "the key was sent via DM".
+            // The Close Ticket button from the initial createTicket message is still
+            // there — the admin can click it once the Q&A with the member is done.
             try {
                 patchTicketMeta(interaction.channel.id, {
                     isCompleted: true,
                     keySetAt: Date.now(),
                     keySetBy: interaction.user.id,
-                    // v3.9.27: anti dobel-invoice saat close (kalau invoice sukses terkirim).
+                    // v3.9.27: anti double-invoice on close (if the invoice was sent successfully).
                     ...(invoiceOk ? { isInvoiceSent: true } : {})
                 });
             } catch (patchErr) {
-                console.warn('⚠️ Gagal patch meta (isCompleted):', patchErr.message);
+                console.warn('⚠️ Failed to patch meta (isCompleted):', patchErr.message);
             }
 
             try {
-                // v3.9.22: Notif di channel TIDAK untuk admin — untuk user.
-                // Cukup kasih tau kalau key udah dikirim via DM. Singkat & jelas.
-                // Kalau DM gagal, fallback kasih tau admin supaya kirim manual.
+                // v3.9.22: The channel notice is NOT for the admin — it's for the user.
+                // Just let them know the key was sent via DM. Short & clear.
+                // If the DM failed, fall back to telling the admin to send it manually.
                 const noticeMsg = dmSent
-                    ? `Halo <@${userId}>! 🔑 Key kamu udah dikirim via DM, cek ya 📬`
-                    : `⚠️ <@${userId}> — gagal kirim DM (kemungkinan DM ditutup). Admin akan kirim key manual ya.`;
+                    ? `Hi <@${userId}>! 🔑 Your key has been sent via DM, check it 📬`
+                    : `⚠️ <@${userId}> — failed to send a DM (DMs may be closed). An admin will send you the key manually.`;
 
                 await interaction.channel.send({
                     content: noticeMsg
                 });
             } catch (sendErr) {
-                console.warn('⚠️ Gagal kirim notice "key sudah dikirim" ke channel:', sendErr.message);
+                console.warn('⚠️ Failed to send the "key sent" notice to the channel:', sendErr.message);
             }
 
-            // === 7. Log sukses (channel TIDAK dihapus — admin yang close manual) ===
+            // === 7. Success log (channel NOT deleted — an admin closes it manually) ===
             console.log(
-                `✅ Set Key sukses: ${member.user.tag} | produk=${product.label} | role=${role.name} | extend=${scheduleResult.extended} | permanen=${scheduleResult.permanent} | dm=${dmSent} | invoice=${invoiceOk} | channel TIDAK dihapus (menunggu admin close manual)`
+                `✅ Set Key successful: ${member.user.tag} | product=${product.label} | role=${role.name} | extend=${scheduleResult.extended} | permanent=${scheduleResult.permanent} | dm=${dmSent} | invoice=${invoiceOk} | channel NOT deleted (waiting for an admin to close manually)`
             );
             return;
         } finally {
-            // v3.9.38 FIX (FIX 2c): pastikan lock dilepas walau handler throw.
+            // v3.9.38 FIX (FIX 2c): make sure the lock is released even if the handler throws.
             if (lockChId) completionLocks.delete(lockChId);
         }
     }
 
     // ====================================================
-    // === v3.9.27: TOMBOL KIRIM PESANAN (ADMIN) → MODAL ===
-    // === customId: ticket_deliver (button)              ===
+    // === v3.9.27: DELIVER ORDER BUTTON (ADMIN) → MODAL ===
+    // === customId: ticket_deliver (button)             ===
     // ====================================================
-    // Mirror dari Set Key, khusus produk transaksi NON-KEY (jual akun ML,
-    // jasa, dll). Sebelumnya produk non-key hanya punya tombol Tutup Tiket —
-    // detail pesanan (akun/password) hanya ada di chat tiket yang TERHAPUS
-    // saat close. Sekarang: admin klik tombol → isi detail di modal → bot DM
-    // detail ke pembeli + auto-role (kalau di-set) + stats + invoice.
+    // Mirror of Set Key, specifically for NON-KEY transaction products (selling
+    // ML accounts, services, etc). Previously non-key products only had the Close
+    // Ticket button — the order details (account/password) only existed in the
+    // ticket chat, which gets DELETED on close. Now: the admin clicks the button
+    // → fills in the details in the modal → the bot DMs the details to the buyer
+    // + auto-role (if set) + stats + invoice.
     if (interaction.isButton() && interaction.customId === 'ticket_deliver') {
         if (!checkIsAdmin(interaction.member)) {
             return interaction.reply({
-                content: '❌ Hanya Admin/Staff yang bisa kirim pesanan!',
+                content: '❌ Only Admin/Staff can deliver orders!',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -1068,57 +1071,57 @@ module.exports = async function (interaction) {
         const meta = getTicketMeta(interaction.channel?.id, interaction.channel?.topic || '');
         if (!meta) {
             return interaction.reply({
-                content: '❌ Channel ini bukan tiket yang terdaftar (mungkin sudah ditutup admin lain).',
+                content: '❌ This channel is not a registered ticket (another admin may have already closed it).',
                 flags: MessageFlags.Ephemeral
             });
         }
         const deliverType = resolveTicketType(meta);
         if (!deliverType.isTransaction) {
             return interaction.reply({
-                content: '❌ Tombol Kirim Pesanan hanya untuk tiket transaksi.',
+                content: '❌ The Deliver Order button is only for transaction tickets.',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (deliverType.requiresKey) {
-            // Produk pakai key → pakai Set Key (bukan ini).
+            // Product uses a key → use Set Key (not this).
             return interaction.reply({
-                content: '❌ Produk ini pakai key — pakai tombol **🔑 Set Key**.',
+                content: '❌ This product uses a key — use the **🔑 Set Key** button.',
                 flags: MessageFlags.Ephemeral
             });
         }
         if (deliverType.isCompleted) {
             return interaction.reply({
-                content: 'ℹ️ Pesanan tiket ini sudah dikirim/diselesaikan. Langsung tutup tiketnya saja (✅ Selesai).',
+                content: 'ℹ️ This ticket\'s order has already been delivered/completed. Just close the ticket (✅ Done).',
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Lookup produk: by value dulu, label fallback (pola v3.9.26).
-        // v3.9.38 FIX (FIX 3b): pakai resolveProduct() — lookup by productValue
-        // di meta (stabil, rename-proof), label fallback untuk tiket legacy.
+        // Product lookup: by value first, label fallback (the v3.9.26 pattern).
+        // v3.9.38 FIX (FIX 3b): use resolveProduct() — lookup by productValue
+        // in the meta (stable, rename-proof), label fallback for legacy tickets.
         const productName = meta?.productName || null;
         const product = resolveProduct(config, meta);
         if (!product) {
             return interaction.reply({
-                content: `❌ Produk "${productName}" tidak ditemukan di config (mungkin sudah di-rename/dihapus). Cek /list-products.`,
+                content: `❌ Product "${productName}" not found in the config (it may have been renamed/deleted). Check /list-products.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Buka modal input detail pesanan.
-        // v3.9.27 FIX: title di-slice 45 char (limit ModalBuilder — lihat Set Key).
+        // Open the order details input modal.
+        // v3.9.27 FIX: title sliced to 45 chars (ModalBuilder limit — see Set Key).
         const modal = new ModalBuilder()
             .setCustomId(`modal_deliver_order:${product.value}`)
-            .setTitle(`Kirim Pesanan — ${product.label}`.slice(0, 45));
+            .setTitle(`Deliver Order — ${product.label}`.slice(0, 45));
 
         const detailsInput = new TextInputBuilder()
             .setCustomId('delivery_details')
-            .setLabel('Detail pesanan untuk pembeli')
+            .setLabel('Order details for the buyer')
             .setStyle(TextInputStyle.Paragraph)
             .setRequired(true)
-            // Di modal, Enter menghasilkan newline ASLI — cocok untuk detail
-            // multi-baris (username/password/note). Tidak perlu \n conversion.
-            .setPlaceholder('Contoh: Username: akunml123 | Password: rahasia | Note: ...')
+            // In a modal, Enter produces a REAL newline — fits multi-line
+            // details (username/password/note). No \n conversion needed.
+            .setPlaceholder('Example: Username: account123 | Password: secret | Note: ...')
             .setMinLength(1)
             .setMaxLength(1500);
 
@@ -1127,49 +1130,50 @@ module.exports = async function (interaction) {
     }
 
     // ====================================================
-    // === v3.9.27: MODAL KIRIM PESANAN SUBMIT — FULL FLOW ===
-    // === customId: modal_deliver_order:<value> (modal)  ===
+    // === v3.9.27: DELIVER ORDER MODAL SUBMIT — FULL FLOW ===
+    // === customId: modal_deliver_order:<value> (modal)   ===
     // ====================================================
-    // Urutan (mirror Set Key): role-schedule → role → DM detail → invoice →
-    // stats → audit → reply admin → patch meta → notice di channel.
+    // Order (mirrors Set Key): role-schedule → role → DM details → invoice →
+    // stats → audit → admin reply → meta patch → channel notice.
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_deliver_order:')) {
-        // v3.9.24-style: re-check admin di modal submit (defense-in-depth).
+        // v3.9.24-style: re-check admin on modal submit (defense-in-depth).
         if (!checkIsAdmin(interaction.member)) {
             return interaction
                 .reply({
-                    content: '❌ Hanya Admin/Staff yang bisa kirim pesanan!',
+                    content: '❌ Only Admin/Staff can deliver orders!',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
         }
         // v3.9.38 FIX (FIX 2c): per-channel completion lock (defense-in-depth
-        // layer 3). Gate isCompleted di tombol (layer 1) + re-check meta di
-        // modal (layer 2) tidak menutup race 2 admin submit bersamaan — kedua
-        // submit lewat cek SEBELUM side-effect pertama selesai. Lock
-        // check-and-acquire atomik di event loop; release di finally.
+        // layer 3). The isCompleted gate on the button (layer 1) + the meta
+        // re-check in the modal (layer 2) don't close the 2-admins-submitting-
+        // simultaneously race — both submits pass the check BEFORE the first
+        // side effect finishes. The lock is check-and-acquired atomically on
+        // the event loop; released in finally.
         const lockChId = interaction.channel?.id || null;
         if (lockChId && completionLocks.has(lockChId)) {
             return interaction
-                .reply({ content: '⏳ Tiket sedang diproses admin lain, tunggu sebentar.', flags: MessageFlags.Ephemeral })
+                .reply({ content: '⏳ The ticket is being processed by another admin, please wait a moment.', flags: MessageFlags.Ephemeral })
                 .catch(() => {});
         }
         if (lockChId) completionLocks.add(lockChId);
         try {
             await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(err => {
-                console.warn(`[Kirim Pesanan Modal] deferReply gagal untuk ${interaction.customId}: ${err.message}`);
+                console.warn(`[Deliver Order Modal] deferReply failed for ${interaction.customId}: ${err.message}`);
             });
 
-            // P1-8-style FIX: validasi channel masih ada (belum dihapus admin lain).
+            // P1-8-style FIX: validate the channel still exists (not deleted by another admin).
             if (!interaction.channel) {
                 return safeEditReply(interaction, {
-                    content: '❌ Channel tiket sudah tidak ada (mungkin sudah ditutup admin lain).'
+                    content: '❌ The ticket channel no longer exists (another admin may have already closed it).'
                 }).catch(() => {});
             }
 
             const productValue = interaction.customId.split(':')[1];
             const details = interaction.components[0]?.components?.[0]?.value?.trim() || '';
             if (!details) {
-                return safeEditReply(interaction, { content: '❌ Detail pesanan kosong.' });
+                return safeEditReply(interaction, { content: '❌ The order details are empty.' });
             }
 
             const meta = getTicketMeta(interaction.channel.id, interaction.channel.topic || '');
@@ -1177,43 +1181,44 @@ module.exports = async function (interaction) {
             const price = meta?.price || 'Unknown';
             if (!userId) {
                 return safeEditReply(interaction, {
-                    content: '❌ Gagal ambil metadata tiket (channel ini mungkin bukan tiket valid).'
+                    content: '❌ Failed to get the ticket metadata (this channel may not be a valid ticket).'
                 });
             }
 
-            // v3.9.38 FIX (FIX 2b, layer 2): re-check isCompleted di bawah lock —
-            // admin lain bisa menyelesaikan tiket ini di antara modal dibuka dan
-            // di-submit. Tanpa re-check, invoice + stats + role terkirim DOBEL.
+            // v3.9.38 FIX (FIX 2b, layer 2): re-check isCompleted under the lock —
+            // another admin may have completed this ticket between the modal
+            // opening and being submitted. Without the re-check, the invoice +
+            // stats + role get sent TWICE.
             if (resolveTicketType(meta).isCompleted) {
                 return safeEditReply(interaction, {
-                    content: 'ℹ️ Tiket ini sudah selesai diproses admin lain.'
+                    content: 'ℹ️ This ticket has already been processed by another admin.'
                 });
             }
 
-            // v3.9.38 FIX (FIX 3b): resolve produk dari META (productValue stabil
-            // dulu, label fallback) — rename-proof. Fallback terakhir ke value di
-            // customId (perilaku legacy v3.9.27).
+            // v3.9.38 FIX (FIX 3b): resolve the product from the META (stable
+            // productValue first, label fallback) — rename-proof. Last fallback is
+            // the value in the customId (legacy v3.9.27 behavior).
             const product = resolveProduct(config, meta) || config.products.find(p => p.value === productValue);
             if (!product) {
                 return safeEditReply(interaction, {
-                    content: `❌ Produk value \`${productValue}\` tidak ditemukan (mungkin sudah dihapus). Cek /list-products.`
+                    content: `❌ Product value \`${productValue}\` not found (it may have been deleted). Check /list-products.`
                 });
             }
 
             const guild = interaction.guild;
             const member = await guild.members.fetch(userId).catch(() => null);
             if (!member) {
-                return safeEditReply(interaction, { content: `❌ Member <@${userId}> sudah tidak ada di server.` });
+                return safeEditReply(interaction, { content: `❌ Member <@${userId}> is no longer on the server.` });
             }
 
-            // === 1. Auto-role (kalau di-set) — schedule SEBELUM add (pola v3.9.17) ===
+            // === 1. Auto-role (if set) — schedule BEFORE add (the v3.9.17 pattern) ===
             let roleInfo = null;
             let expireInfo = null;
             if (product.roleId) {
                 const role = guild.roles.cache.get(product.roleId);
                 if (!role) {
                     return safeEditReply(interaction, {
-                        content: `❌ Role ID \`${product.roleId}\` tidak ditemukan di guild. Cek /set-product-role.`
+                        content: `❌ Role ID \`${product.roleId}\` not found in the guild. Check /set-product-role.`
                     });
                 }
                 if ((product.days || 0) > 0) {
@@ -1227,10 +1232,10 @@ module.exports = async function (interaction) {
                         });
                     } catch (schedErr) {
                         console.error(
-                            `⚠️ Gagal scheduleRoleRemoval saat kirim pesanan (role TIDAK diberikan): ${schedErr.message}`
+                            `⚠️ Failed to scheduleRoleRemoval during deliver order (the role was NOT granted): ${schedErr.message}`
                         );
                         return safeEditReply(interaction, {
-                            content: `❌ Gagal schedule auto-expire role: ${schedErr.message}\n\nRole belum diberikan. Coba lagi atau hubungi dev.`
+                            content: `❌ Failed to schedule the role auto-expire: ${schedErr.message}\n\nThe role has not been granted. Try again or contact the dev.`
                         });
                     }
                 }
@@ -1239,45 +1244,45 @@ module.exports = async function (interaction) {
                         await member.roles.add(role);
                     }
                     roleInfo = role.name;
-                    expireInfo = (product.days || 0) > 0 ? `${product.days} hari lagi` : 'permanen';
+                    expireInfo = (product.days || 0) > 0 ? `in ${product.days} days` : 'permanent';
                 } catch (roleErr) {
-                    console.error('Gagal add role saat kirim pesanan:', roleErr.message);
+                    console.error('Failed to add the role during deliver order:', roleErr.message);
                     return safeEditReply(interaction, {
-                        content: `❌ Gagal memberikan role ${role}. Pastikan role bot ada di ATAS role tersebut.\n\nCoba Kirim Pesanan lagi, atau add role manual.`
+                        content: `❌ Failed to grant the role ${role}. Make sure the bot's role is ABOVE that role.\n\nTry Deliver Order again, or add the role manually.`
                     });
                 }
             }
 
-            // === 2. DM detail pesanan ke pembeli ===
-            // Detail dikirim APA ADANYA (tanpa sanitize) — ini bisa berupa password,
-            // mengubah isi = merusak kredensial pembeli.
+            // === 2. DM the order details to the buyer ===
+            // The details are sent AS-IS (no sanitization) — they can be a password;
+            // altering the content would break the buyer's credentials.
             let dmSent = false;
             try {
                 await member.send({
                     content:
-                        `Halo ${member.user.username}! Pesanan kamu udah dikirim 🎉\n\n` +
-                        `📦 Produk: ${product.label}\n` +
+                        `Hi ${member.user.username}! Your order has been delivered 🎉\n\n` +
+                        `📦 Product: ${product.label}\n` +
                         `🌐 Server: ${guild.name}\n\n` +
-                        `📋 DETAIL PESANAN:\n${details}\n\n` +
-                        (roleInfo ? `🎭 Role: ${roleInfo}\n⏰ Expire: ${expireInfo}\n\n` : '') +
-                        `💡 Simpan detail ini. Kalau ada masalah dengan pesanan, hubungi admin.`
+                        `📋 ORDER DETAILS:\n${details}\n\n` +
+                        (roleInfo ? `🎭 Role: ${roleInfo}\n⏰ Expires: ${expireInfo}\n\n` : '') +
+                        `💡 Keep these details safe. If there's a problem with the order, contact an admin.`
                 });
                 dmSent = true;
             } catch (_dmErr) {
-                console.log(`ℹ️ Tidak bisa kirim DM ke ${member.user.tag} (mungkin DM ditutup).`);
+                console.log(`ℹ️ Could not send a DM to ${member.user.tag} (DMs may be closed).`);
             }
 
-            // === 3. Invoice ke channel invoice ===
+            // === 3. Invoice to the invoice channel ===
             let invoiceOk = false;
             try {
                 invoiceOk = await sendInvoice(interaction.channel, userId, product.label, price, interaction.user);
             } catch (invoiceErr) {
-                console.warn(`⚠️ Gagal kirim invoice saat kirim pesanan (pesanan tetap tercatat): ${invoiceErr.message}`);
+                console.warn(`⚠️ Failed to send the invoice during deliver order (the order is still recorded): ${invoiceErr.message}`);
             }
 
-            // === 4. Track purchase untuk stats/leaderboard ===
-            // Sebelum v3.9.27: cuma tercatat via Set Key — penjualan produk non-key
-            // (akun ML, jasa) TIDAK PERNAH masuk stats/leaderboard.
+            // === 4. Track the purchase for stats/leaderboard ===
+            // Before v3.9.27: only recorded via Set Key — sales of non-key products
+            // (ML accounts, services) NEVER made it into stats/leaderboard.
             try {
                 recordPurchase(guild.id, userId, parsePrice(price));
             } catch (_) {}
@@ -1288,23 +1293,23 @@ module.exports = async function (interaction) {
                     action: 'ORDER_DELIVERED',
                     actorId: interaction.user.id,
                     actorTag: interaction.user.tag,
-                    details: `Kirim pesanan (ticket) untuk <@${member.id}> — produk: **${product.label}**${roleInfo ? `, role: ${roleInfo}` : ''}`,
+                    details: `Deliver order (ticket) for <@${member.id}> — product: **${product.label}**${roleInfo ? `, role: ${roleInfo}` : ''}`,
                     guildId: interaction.guild.id
                 });
             } catch (_) {}
 
-            // === 6. Reply admin ===
+            // === 6. Reply to the admin ===
             try {
                 await safeEditReply(interaction, {
                     content:
-                        `✅ Pesanan terkirim!\n\n👤 Member: <@${userId}>\n📦 Produk: ${product.label}\n` +
+                        `✅ Order delivered!\n\n👤 Member: <@${userId}>\n📦 Product: ${product.label}\n` +
                         (roleInfo ? `🎭 Role: ${roleInfo}\n` : '') +
-                        `${invoiceOk ? '🧾 Invoice terkirim.\n' : ''}` +
-                        (dmSent ? '📬 DM terkirim.' : '⚠️ DM gagal — kirim detail manual ke member (cek chat tiket).')
+                        `${invoiceOk ? '🧾 Invoice sent.\n' : ''}` +
+                        (dmSent ? '📬 DM sent.' : '⚠️ DM failed — send the details to the member manually (check the ticket chat).')
                 });
             } catch (_) {}
 
-            // === 7. Patch meta: isCompleted + anti dobel-invoice ===
+            // === 7. Patch meta: isCompleted + anti double-invoice ===
             try {
                 patchTicketMeta(interaction.channel.id, {
                     isCompleted: true,
@@ -1313,49 +1318,50 @@ module.exports = async function (interaction) {
                     ...(invoiceOk ? { isInvoiceSent: true } : {})
                 });
             } catch (patchErr) {
-                console.warn('⚠️ Gagal patch meta (isCompleted):', patchErr.message);
+                console.warn('⚠️ Failed to patch meta (isCompleted):', patchErr.message);
             }
 
-            // === 8. Notice di channel untuk pembeli ===
+            // === 8. Channel notice for the buyer ===
             try {
                 const noticeMsg = dmSent
-                    ? `Halo <@${userId}>! 📦 Detail pesanan kamu udah dikirim via DM, cek ya 📬`
-                    : `⚠️ <@${userId}> — gagal kirim DM (kemungkinan DM ditutup). Admin akan kirim detail pesanan manual ya.`;
+                    ? `Hi <@${userId}>! 📦 Your order details have been sent via DM, check it 📬`
+                    : `⚠️ <@${userId}> — failed to send a DM (DMs may be closed). An admin will send you the order details manually.`;
                 await interaction.channel.send({ content: noticeMsg });
             } catch (sendErr) {
-                console.warn('⚠️ Gagal kirim notice "pesanan sudah dikirim" ke channel:', sendErr.message);
+                console.warn('⚠️ Failed to send the "order delivered" notice to the channel:', sendErr.message);
             }
 
             console.log(
-                `✅ Kirim Pesanan sukses: ${member.user.tag} | produk=${product.label} | role=${roleInfo || '-'} | dm=${dmSent} | invoice=${invoiceOk} | channel TIDAK dihapus (menunggu admin close manual)`
+                `✅ Deliver Order successful: ${member.user.tag} | product=${product.label} | role=${roleInfo || '-'} | dm=${dmSent} | invoice=${invoiceOk} | channel NOT deleted (waiting for an admin to close manually)`
             );
             return;
         } finally {
-            // v3.9.38 FIX (FIX 2c): pastikan lock dilepas walau handler throw.
+            // v3.9.38 FIX (FIX 2c): make sure the lock is released even if the handler throws.
             if (lockChId) completionLocks.delete(lockChId);
         }
     }
 };
 
 /**
- * v3.9.27: Side-effect "✅ Pesanan Sukses" untuk transaksi non-key yang di-close
- * TANPA lewat 📦 Kirim Pesanan: auto-role + stats + tandai isCompleted.
- * Dipanggil dari ticket_close_success SEBELUM closeTicket (invoice ditangani
- * closeTicket). Non-blocking per langkah — kendala dikumpulkan jadi warnings,
- * tiket tetap ditutup (intent admin sudah jelas; role bisa di-add manual).
+ * v3.9.27: "✅ Order Successful" side effects for non-key transactions closed
+ * WITHOUT going through 📦 Deliver Order: auto-role + stats + mark isCompleted.
+ * Called from ticket_close_success BEFORE closeTicket (the invoice is handled
+ * by closeTicket). Non-blocking per step — issues are collected as warnings,
+ * the ticket is still closed (the admin's intent is clear; the role can be
+ * added manually).
  *
- * @param {Interaction} interaction - interaction tombol ticket_close_success
- * @param {Object} meta - metadata tiket (dari tickets.json)
- * @returns {Promise<string[]>} daftar kendala (kosong = semua mulus)
+ * @param {Interaction} interaction - the ticket_close_success button interaction
+ * @param {Object} meta - ticket metadata (from tickets.json)
+ * @returns {Promise<string[]>} list of issues (empty = everything went smoothly)
  */
 async function completeNonKeyOrder(interaction, meta) {
     const warnings = [];
     const config = getConfig();
     const userId = meta?.userId;
 
-    // 1. Auto-role (kalau produknya punya roleId — janji /set-product-role).
-    // v3.9.38 FIX (FIX 3b): pakai resolveProduct() — lookup by productValue di
-    // meta (stabil, rename-proof), label fallback untuk tiket legacy.
+    // 1. Auto-role (if the product has a roleId — the /set-product-role promise).
+    // v3.9.38 FIX (FIX 3b): use resolveProduct() — lookup by productValue in
+    // the meta (stable, rename-proof), label fallback for legacy tickets.
     const product = resolveProduct(config, meta);
     if (product && product.roleId) {
         try {
@@ -1363,9 +1369,9 @@ async function completeNonKeyOrder(interaction, meta) {
             const member = userId ? await guild.members.fetch(userId).catch(() => null) : null;
             const role = guild.roles.cache.get(product.roleId);
             if (!member) {
-                warnings.push(`member <@${userId}> sudah keluar — role **${product.label}** tidak diberikan`);
+                warnings.push(`member <@${userId}> has left — role **${product.label}** not granted`);
             } else if (!role) {
-                warnings.push(`role ID \`${product.roleId}\` (produk **${product.label}**) tidak ditemukan di guild`);
+                warnings.push(`role ID \`${product.roleId}\` (product **${product.label}**) not found in the guild`);
             } else {
                 if ((product.days || 0) > 0) {
                     try {
@@ -1377,7 +1383,7 @@ async function completeNonKeyOrder(interaction, meta) {
                             productName: product.label
                         });
                     } catch (schedErr) {
-                        warnings.push(`gagal schedule auto-expire role ${role.name}: ${schedErr.message}`);
+                        warnings.push(`failed to schedule the auto-expire of role ${role.name}: ${schedErr.message}`);
                     }
                 }
                 try {
@@ -1385,25 +1391,25 @@ async function completeNonKeyOrder(interaction, meta) {
                         await member.roles.add(role);
                     }
                 } catch (roleErr) {
-                    warnings.push(`gagal memberikan role ${role.name}: ${roleErr.message} (add manual)`);
+                    warnings.push(`failed to grant the role ${role.name}: ${roleErr.message} (add it manually)`);
                 }
             }
         } catch (err) {
-            warnings.push(`gagal proses auto-role: ${err.message}`);
+            warnings.push(`failed to process the auto-role: ${err.message}`);
         }
     } else if (product && !product.roleId) {
-        // Produk tanpa auto-role — bukan kendala, memang tidak di-set.
+        // Product without an auto-role — not an issue, it simply isn't set.
     } else {
-        warnings.push(`produk "${meta?.productName}" tidak ditemukan di config — auto-role tidak diproses`);
+        warnings.push(`product "${meta?.productName}" not found in the config — auto-role not processed`);
     }
 
-    // 2. Catat pembelian ke stats/leaderboard (dulu cuma via Set Key).
+    // 2. Record the purchase to stats/leaderboard (previously only via Set Key).
     try {
         recordPurchase(interaction.guild.id, userId, parsePrice(meta?.price));
     } catch (_) {}
 
-    // 3. Tandai isCompleted — mencegah side-effect dobel + transcript catat sukses.
-    // (Invoice TIDAK ditandai di sini — closeTicket yang mengirimnya.)
+    // 3. Mark isCompleted — prevents duplicate side effects + the transcript records success.
+    // (The invoice is NOT flagged here — closeTicket sends it.)
     try {
         patchTicketMeta(interaction.channel.id, {
             isCompleted: true,
@@ -1411,7 +1417,7 @@ async function completeNonKeyOrder(interaction, meta) {
             completedBy: interaction.user.id
         });
     } catch (patchErr) {
-        console.warn('⚠️ Gagal patch meta (isCompleted) saat Pesanan Sukses:', patchErr.message);
+        console.warn('⚠️ Failed to patch meta (isCompleted) during Order Successful:', patchErr.message);
     }
 
     return warnings;

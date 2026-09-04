@@ -1,16 +1,16 @@
 /**
- * Unit tests untuk scheduledAnnouncements.parseTime
+ * Unit tests for scheduledAnnouncements.parseTime
  *
- * v3.9.38: absolute time kini diparse dengan offset eksplisit zona bot
- * (default WITA +8, env TZ_OFFSET_HOURS) — BUKAN timezone host lagi.
- * Assertion absolute dihitung: Date.UTC(...) - offset jam.
+ * v3.9.38: absolute times are now parsed with an explicit bot-timezone offset
+ * (default WITA +8, env TZ_OFFSET_HOURS) — NOT the host timezone anymore.
+ * Absolute assertions are computed as: Date.UTC(...) - offset hours.
  */
 
 const test = require('node:test');
 const assert = require('node:assert');
 const { parseTime, getTzOffsetHours } = require('../../src/data/scheduledAnnouncements');
 
-// v3.9.38: pastikan default (+8) yang aktif — env luar tidak boleh mengacaukan test.
+// v3.9.38: make sure the default (+8) is active — an external env must not mess up the test.
 delete process.env.TZ_OFFSET_HOURS;
 
 test('parseTime: null/empty/invalid returns null', () => {
@@ -52,17 +52,17 @@ test('parseTime: relative 0 or negative', () => {
     assert.strictEqual(parseTime('-5m'), null);
 });
 
-test('parseTime: ISO absolute future date (v3.9.38 — offset zona bot, bukan timezone host)', () => {
+test('parseTime: ISO absolute future date (v3.9.38 — bot timezone offset, not host timezone)', () => {
     const nextYear = new Date().getFullYear() + 1;
     const result = parseTime(`${nextYear}-06-15 20:00`);
     assert.ok(result !== null);
-    // v3.9.38: wall-clock 20:00 zona bot (default +8) → UTC 12:00.
-    // Dulu: new Date(y,5,15,20,0) → tergantung timezone host (VPS UTC → telat 8 jam).
+    // v3.9.38: wall-clock 20:00 in the bot timezone (default +8) → UTC 12:00.
+    // Before: new Date(y,5,15,20,0) → depended on the host timezone (a UTC VPS ran 8 hours late).
     const expected = Date.UTC(nextYear, 5, 15, 20, 0) - getTzOffsetHours() * 3600 * 1000;
     assert.strictEqual(result, expected);
 });
 
-test('parseTime: v3.9.38 — env TZ_OFFSET_HOURS=0 → absolute diparse sebagai UTC', () => {
+test('parseTime: v3.9.38 — env TZ_OFFSET_HOURS=0 → absolute times parsed as UTC', () => {
     process.env.TZ_OFFSET_HOURS = '0';
     try {
         const nextYear = new Date().getFullYear() + 1;
@@ -75,8 +75,8 @@ test('parseTime: v3.9.38 — env TZ_OFFSET_HOURS=0 → absolute diparse sebagai 
 });
 
 test('parseTime: v3.9.8 FIX — invalid date components rejected', () => {
-    // Sebelum v3.9.8: "2026-13-40 99:99" di-rollover oleh Date constructor
-    // jadi valid date di tahun 2027. Sekarang harus return null.
+    // Before v3.9.8: "2026-13-40 99:99" was rolled over by the Date constructor
+    // into a valid date in 2027. Now it must return null.
     assert.strictEqual(parseTime('2026-13-40 99:99'), null);
     assert.strictEqual(parseTime('2026-00-15 20:00'), null); // month 0 invalid
     assert.strictEqual(parseTime('2026-01-32 20:00'), null); // day 32 invalid

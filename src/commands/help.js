@@ -2,34 +2,34 @@
  * Domain: help
  * Slash commands: /help
  *
- * v3.9.12: Update komprehensif — refleksikan semua command baru dari Phase 1+2+3
- * + modal editor untuk message config + ticket body template variables.
- * v3.9.37: Auto-Split di-update ke 3 kategori (tambah 🤝 REKBER), tambah section
- * Midman/Rekber, dan versi embed kini dinamis dari package.json (anti stale).
- * v3.9.38: embed /help diukur total karakternya (limit Discord 6000) — kalau
- * lewat 5800 (buffer 200), fields dipecah ke 2 embed (reply + followUp) supaya
- * penambahan command berikutnya tidak bikin /help throw/meragukan API.
+ * v3.9.12: Comprehensive update — reflect all new commands from Phase 1+2+3
+ * + modal editor for message config + ticket body template variables.
+ * v3.9.37: Auto-Split updated to 3 categories (added 🤝 REKBER), added a
+ * Midman/Rekber section, and the embed version is now dynamic from package.json (anti-stale).
+ * v3.9.38: the /help embed total characters are measured (Discord limit 6000) — if
+ * over 5800 (200 buffer), fields are split into 2 embeds (reply + followUp) so that
+ * adding the next command doesn't make /help throw/choke the API.
  */
 
 const { EmbedBuilder, MessageFlags } = require('./_shared');
 
-// v3.9.37: versi diambil dinamis dari package.json (single source of truth)
-// supaya /help gak pernah stale lagi (sebelumnya hardcode "v3.9.26" padahal
-// bot sudah jauh lebih baru).
+// v3.9.37: version is taken dynamically from package.json (single source of truth)
+// so /help never goes stale again (previously hardcoded "v3.9.26" even though
+// the bot was already much newer).
 const { version: BOT_VERSION } = require('../../package.json');
 
 module.exports = async function (interaction) {
-    // v3.9.38 FIX: /help embed saat ini ±5419/6000 char (audit) — makin banyak
-    // command, makin besar. Kalau total > 5800, EmbedBuilder + Discord API
-    // bakal menolak (embed > 6000) → /help mati diam-diam. Solusi: ukur total
-    // (title + description + fields + footer), kalau lewat budget, pecah
-    // field terakhir ke embed kedua yang dikirim sebagai followUp (visibility
-    // ephemeral sama dengan reply pertama).
+    // v3.9.38 FIX: the /help embed is currently ~5419/6000 chars (audited) — more
+    // commands, more chars. If total > 5800, EmbedBuilder + the Discord API
+    // will reject it (embed > 6000) → /help dies silently. Solution: measure the total
+    // (title + description + fields + footer); if over budget, split the
+    // trailing fields into a second embed sent as a followUp (ephemeral
+    // visibility same as the first reply).
     const HELP_TOTAL_SPLIT_THRESHOLD = 5800;
 
     /**
-     * Hitung total karakter embed seperti cara Discord menghitung limit 6000:
-     * title + description + field (name+value) + footer.text + author.name.
+     * Count the embed's total characters the way Discord counts the 6000 limit:
+     * title + description + fields (name+value) + footer.text + author.name.
      * @param {EmbedBuilder} embed
      * @returns {number}
      */
@@ -47,10 +47,10 @@ module.exports = async function (interaction) {
     }
 
     /**
-     * Bangun embed /help dari potongan fields. `part` diisi kalau ini embed
-     * lanjutan (2/2) supaya user tampilannya nyambung.
-     * @param {Array} fields - array field object untuk addFields
-     * @param {string|null} part - null untuk embed utama, '2/2' untuk lanjutan
+     * Build the /help embed from field chunks. `part` is filled in if this is a
+     * continuation embed (2/2) so the display flows for the user.
+     * @param {Array} fields - array of field objects for addFields
+     * @param {string|null} part - null for the main embed, '2/2' for the continuation
      * @returns {EmbedBuilder}
      */
     function buildHelpEmbed(fields, part = null) {
@@ -58,9 +58,9 @@ module.exports = async function (interaction) {
             .setTitle(part ? `🤖 COMMUNITY BOT — HELP (${part})` : '🤖 COMMUNITY BOT — HELP')
             .setDescription(
                 part
-                    ? `_Lanjutan daftar command (v${BOT_VERSION})._`
-                    : `Halo ${interaction.user}! Anda terverifikasi sebagai **Admin/Staff**.\n` +
-                          `Berikut daftar lengkap command yang tersedia (v${BOT_VERSION}).`
+                    ? `_Continuation of the command list (v${BOT_VERSION})._`
+                    : `Hello ${interaction.user}! You are verified as **Admin/Staff**.\n` +
+                          `Here is the full list of available commands (v${BOT_VERSION}).`
             )
             .setColor(0x5865f2);
         if (fields.length > 0) embed.addFields(fields);
@@ -75,39 +75,39 @@ module.exports = async function (interaction) {
 
     const helpFields = [
             {
-                name: '📋 Informasi',
+                name: '📋 Information',
                 value: [
-                    '• `/help` — tampilkan pesan bantuan ini',
-                    '• `/list-products` — lihat semua produk',
-                    '• `/list-categories` — lihat semua kategori tiket',
-                    '• `/list-messages` — lihat semua teks pesan embed',
-                    '• `/config-show` — lihat semua konfigurasi bot'
+                    '• `/help` — show this help message',
+                    '• `/list-products` — view all products',
+                    '• `/list-categories` — view all ticket categories',
+                    '• `/list-messages` — view all embed message texts',
+                    '• `/config-show` — view all bot configuration'
                 ].join('\n'),
                 inline: false
             },
 
             {
-                name: '🏗️ Panel Tiket (Multi-Panel)',
+                name: '🏗️ Ticket Panels (Multi-Panel)',
                 value: [
-                    '• `/setup-verify` — pasang panel verifikasi',
-                    '• `/setup-ticket` — pasang panel tiket (legacy)',
-                    '• `/setup-ticket-panel` — panel multi-panel penuh:',
-                    '   opsi: `title` `body` `color:#ff5733` `image` `thumbnail` `footer` `categories` `channel` `use_dropdown`',
+                    '• `/setup-verify` — install the verification panel',
+                    '• `/setup-ticket` — install the ticket panel (legacy)',
+                    '• `/setup-ticket-panel` — full multi-panel setup:',
+                    '   options: `title` `body` `color:#ff5733` `image` `thumbnail` `footer` `categories` `channel` `use_dropdown`',
                     '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel`',
-                    '• `/set-verify-button` — kustomisasi tombol verifikasi',
-                    '💡 Multi-panel = tiap panel custom sendiri. Disimpan ke panels.json.'
+                    '• `/set-verify-button` — customize the verification button',
+                    '💡 Multi-panel = each panel has its own customization. Saved to panels.json.'
                 ].join('\n'),
                 inline: false
             },
 
             {
-                name: '🎫 Kategori Tiket (CRUD)',
+                name: '🎫 Ticket Categories (CRUD)',
                 value: [
                     '• `/add-category id:jasa label:"Jasa" emoji:🎮 style:Success requires_key:false`',
-                    '• `/update-category id:jasa label:"Jasa Premium" emoji:"🛠️"` — edit tanpa hapus',
-                    '• `/list-categories` — lihat semua kategori',
-                    '• `/remove-category id:jasa` — hapus kategori (default dilindungi)',
-                    '💡 v3.9.19: behavior fleksibel — kategori dengan produk → dropdown, kategori tanpa produk → langsung bikin tiket.'
+                    '• `/update-category id:jasa label:"Jasa Premium" emoji:"🛠️"` — edit without deleting',
+                    '• `/list-categories` — view all categories',
+                    '• `/remove-category id:jasa` — delete a category (defaults are protected)',
+                    '💡 v3.9.19: flexible behavior — category with products → dropdown, category without products → opens a ticket directly.'
                 ].join('\n'),
                 inline: false
             },
@@ -116,7 +116,7 @@ module.exports = async function (interaction) {
                 name: '💬 Auto-Responder',
                 value: [
                     '• `/add-responder` `/list-responder` `/remove-responder`',
-                    '💡 Member kirim trigger → bot auto-reply. Cocok untuk FAQ.'
+                    '💡 Member sends a trigger → bot auto-replies. Great for FAQs.'
                 ].join('\n'),
                 inline: false
             },
@@ -125,18 +125,18 @@ module.exports = async function (interaction) {
                 name: '🛡️ Anti-Spam & Auto-Mod',
                 value: [
                     '• `/set-automod` `/automod-show` `/automod-toggle`',
-                    '• `/add-word words:kata1,kata2 action:Mute_10_menit` — tambah kata (append)',
-                    '• `/remove-word word:kata` `/list-words` — hapus/lihat kata',
-                    '• `/add-word tipe:Exempt_(kata_diizinkan)` — whitelist kata anti false-positive',
+                    '• `/add-word words:word1,word2 action:mute_10m` — add words (append)',
+                    '• `/remove-word word:word` `/list-words` — delete/view words',
+                    '• `/add-word words:Exempt_(allowed_word)` — whitelist a word against false positives',
                     '• `/add-link-whitelist` `/remove-link-whitelist`',
-                    '💡 v3.9.23: action per kata + matching whole-word ("asu" tidak match "asus")'
+                    '💡 v3.9.23: per-word actions + whole-word matching ("asu" won\'t match "asus")'
                 ].join('\n'),
                 inline: false
             },
 
             {
                 name: '💤 AFK System',
-                value: ['• `/afk` `/afk-clear` `/afk-list`', '💡 Bot auto-reply saat user AFK di-mention.'].join('\n'),
+                value: ['• `/afk` `/afk-clear` `/afk-list`', '💡 The bot auto-replies when an AFK user is mentioned.'].join('\n'),
                 inline: false
             },
 
@@ -145,41 +145,41 @@ module.exports = async function (interaction) {
                 value: [
                     '• `/setup-leveling` `/add-level-role` `/list-level-roles` `/remove-level-role`',
                     '• `/rank` `/leaderboard-level` (public)',
-                    '💡 XP per message, level up → auto-assign role.'
+                    '💡 XP per message, level up → role auto-assigned.'
                 ].join('\n'),
                 inline: false
             },
 
             {
-                name: '🎭 Atur Role',
+                name: '🎭 Role Settings',
                 value: [
-                    '• `/set-role verified @role` — set role (verified/unverified/admin/**midman**)',
-                    '• `/remove-role verified` — hapus role dari config'
+                    '• `/set-role verified @role` — set a role (verified/unverified/admin/**midman**)',
+                    '• `/remove-role verified` — remove the role from config'
                 ].join('\n'),
                 inline: false
             },
 
             {
-                name: '📢 Atur Channel & Auto-Split Tiket',
+                name: '📢 Channel Settings & Ticket Auto-Split',
                 value: [
-                    '• `/set-channel welcome #ch` — set (welcome/goodbye/invoice/audit-log/**transcript**)',
-                    '• `/remove-channel welcome` — hapus channel dari config',
-                    '• `/set-channel transcript #ch` — auto-save transcript tiket sebelum close',
+                    '• `/set-channel welcome #ch` — set a channel (welcome/goodbye/invoice/audit-log/**transcript**)',
+                    '• `/remove-channel welcome` — remove the channel from config',
+                    '• `/set-channel transcript #ch` — auto-save ticket transcripts before close',
                     '',
-                    '**🎫 Auto-Split:** Bot pisah tiket jadi 3 kategori otomatis:',
-                    '• **`🎫 TRANSAKSI`** — semua tiket produk: pakai key (🔑 Set Key) ATAU non-key (📦 Kirim Pesanan)',
-                    '• **`🎫 BANTUAN`** — tiket kategori tanpa produk (help/report/claim_giveaway)',
-                    '• **`🤝 REKBER`** — channel deal escrow middleman (dibuat saat deal rekber dibuka)',
-                    'Custom nama? Edit `data/config.json`: `ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`'
+                    '**🎫 Auto-Split:** the bot splits tickets into 3 categories automatically:',
+                    '• **`🎫 TRANSACTIONS`** — all product tickets: with key (🔑 Set Key) OR non-key (📦 Deliver Order)',
+                    '• **`🎫 SUPPORT`** — tickets in categories without products (help/report/claim_giveaway)',
+                    '• **`🤝 ESCROW`** — middleman escrow deal channel (created when an escrow deal is opened)',
+                    'Want custom names? Edit `data/config.json`: `ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`'
                 ].join('\n'),
                 inline: false
             },
 
             {
-                name: '✏️ Atur Pesan Embed',
+                name: '✏️ Embed Message Settings',
                 value: [
-                    '• `/set-message ticketBody teks...` (cepat, 1-line)',
-                    '• `/edit-message tipe:"Ticket Body"` → buka modal editor multi-line',
+                    '• `/set-message ticketBody text...` (quick, 1-line)',
+                    '• `/edit-message type:"Ticket Body"` → opens a multi-line modal editor',
                     '• `/reset-message ticketBody` / `/reset-message ALL`',
                     '',
                     '**Template vars:** `{server}` `{price_header}` `{price_list}` `{price_list:cat}` `{categories_list}`'
@@ -188,13 +188,13 @@ module.exports = async function (interaction) {
             },
 
             {
-                name: '📦 Produk & Auto-Role',
+                name: '📦 Products & Auto-Role',
                 value: [
                     '• `/add-product` `/remove-product` `/list-products`',
-                    '• `/update-product value:vip30 label:"VIP 30 Hari" price:"Rp 30.000"` — edit tanpa hapus',
+                    '• `/update-product value:vip30 label:"VIP 30 Hari" price:"Rp 30.000"` — edit without deleting',
                     '• `/set-product-role` `/remove-product-role` `/list-product-roles`',
-                    '💡 VIP role + auto-expire (days). Bisa campur produk key & non-key (jasa).',
-                    '💡 Produk non-key (akun, jasa)? `/add-product ... requires_key:false` → tiket dapat tombol **📦 Kirim Pesanan** (detail dikirim via DM ke pembeli + auto-role + invoice + stats).'
+                    '💡 VIP role + auto-expire (days). You can mix key & non-key products (services).',
+                    '💡 Non-key products (accounts, services)? `/add-product ... requires_key:false` → the ticket gets a **📦 Deliver Order** button (details sent via DM to the buyer + auto-role + invoice + stats).'
                 ].join('\n'),
                 inline: false
             },
@@ -210,12 +210,12 @@ module.exports = async function (interaction) {
             },
 
             {
-                name: '🤝 Midman / Rekber (Escrow)',
+                name: '🤝 Midman / Escrow',
                 value: [
-                    '• `/set-role midman @role` — WAJIB di-set dulu sebelum deal bisa dibuka',
-                    '• `/set-midman-fee mode:Persen value:5` — fee otomatis per deal (persen / flat, 0 = gratis)',
-                    '• `/midman-deals` — lihat semua deal rekber aktif di server',
-                    '💡 Deal 3-pihak (pembeli ⇄ penjual + midman pegang dana). Siapa pun bisa buka lewat tombol **🤝 Rekber** di panel — 3 langkah: item & harga → pilih pembeli → pilih penjual, lalu kedua pihak klik **Setuju Deal**.'
+                    '• `/set-role midman @role` — must be set before any deal can be opened',
+                    '• `/set-midman-fee mode:percent value:5` — automatic fee per deal (percent / flat, 0 = free)',
+                    '• `/midman-deals` — view all active escrow deals on the server',
+                    '💡 3-party escrow deal (buyer ⇄ seller + a middleman holds the funds). Anyone can open one via the **🤝 Escrow** button on the panel — 3 steps: item & price → pick the buyer → pick the seller, then both parties click **Agree to Deal**.'
                 ].join('\n'),
                 inline: false
             },
@@ -234,7 +234,7 @@ module.exports = async function (interaction) {
                 name: '🎤 Temp Voice',
                 value: [
                     '• `/setup-tempvoice` / `/tempvoice-remove`',
-                    '💡 Member join trigger channel → otomatis bikin voice pribadi'
+                    '💡 Member joins the trigger channel → a private voice channel is created automatically'
                 ].join('\n'),
                 inline: false
             },
@@ -270,28 +270,28 @@ module.exports = async function (interaction) {
             },
 
             {
-                name: '📊 Stats & Lainnya',
+                name: '📊 Stats & More',
                 value: [
                     '• `/stats` `/leaderboard metric:messages|vipPurchases|totalSpent` `/my-stats`',
-                    '• `/set-channel audit-log #ch` — catat admin action',
-                    '• `/reset-config` — ⚠️ HAPUS SEMUA setting (konfirmasi 2-step)'
+                    '• `/set-channel audit-log #ch` — log admin actions',
+                    '• `/reset-config` — ⚠️ DELETES ALL settings (2-step confirmation)'
                 ].join('\n'),
                 inline: false
             }
     ];
 
-    // v3.9.38 FIX: ukur dulu — hanya pecah kalau lewat budget (embed saat ini
-    // 5419 → masih 1 embed, tidak ada perubahan perilaku untuk user).
+    // v3.9.38 FIX: measure first — only split if over budget (the current embed is
+    // 5419 → still 1 embed, no behavior change for the user).
     let firstFields = helpFields;
     const secondFields = [];
     while (firstFields.length > 1 && embedTotalChars(buildHelpEmbed(firstFields)) > HELP_TOTAL_SPLIT_THRESHOLD) {
-        // Pindahkan field TERAKHIR ke embed kedua (berulang sampai muat).
+        // Move the LAST field to the second embed (repeat until it fits).
         secondFields.unshift(firstFields[firstFields.length - 1]);
         firstFields = firstFields.slice(0, -1);
     }
 
     if (secondFields.length > 0) {
-        // Over budget → kirim 2 embed berurutan dengan visibility sama.
+        // Over budget → send 2 embeds in a row with the same visibility.
         await interaction.reply({ embeds: [buildHelpEmbed(firstFields)], flags: MessageFlags.Ephemeral });
         return interaction.followUp({ embeds: [buildHelpEmbed(secondFields, '2/2')], flags: MessageFlags.Ephemeral });
     }

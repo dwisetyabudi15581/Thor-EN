@@ -1,8 +1,8 @@
 const { EmbedBuilder } = require('discord.js');
 
 /**
- * Embed builder reusable biar semua embed kelihatan konsisten & profesional.
- * Otomatis dapat: footer, timestamp, warna dari config.
+ * Reusable embed builder so all embeds look consistent & professional.
+ * Automatically gets: footer, timestamp, color from config.
  */
 class Embeds {
     constructor(client) {

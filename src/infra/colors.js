@@ -3,14 +3,15 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Sebelum v3.9.17, ada 2 function `parseColor` dengan nama sama tapi behavior beda:
- *   - src/ui/embedBuilderSessions.js:106 — return `null` kalau invalid
- *   - src/commands/panels.js:47 — THROW kalau invalid
+ * Before v3.9.17, there were 2 `parseColor` functions with the same name but different behavior:
+ *   - src/ui/embedBuilderSessions.js:106 — returns `null` for invalid input
+ *   - src/commands/panels.js:47 — THROWS for invalid input
  *
- * Konsumen masing-masing sudah handle dengan benar (cek null vs try/catch), tapi
- * kalau ada dev baru yang pakai parseColor dari import yang salah, bisa bug.
- * Sekarang: satu function di sini, return `null` untuk invalid (functional style,
- * gak throw). Caller yang butuh pesan error jelas bisa pakai `parseColorOrError`.
+ * Each caller already handled this correctly (null check vs try/catch), but if
+ * a new dev imported parseColor from the wrong place, it could cause bugs.
+ * Now: a single function here that returns `null` for invalid input (functional
+ * style, no throwing). Callers that need a clear error message can use
+ * `parseColorOrError`.
  *
  * Contract:
  *   - parseColor(input) → number | null
@@ -18,9 +19,9 @@
  */
 
 /**
- * Parse hex color string ke number.
- * Accept: "#FF0000", "FF0000", "0xFF0000", "#f00" (3-digit expanded), decimal number
- * Returns: number atau null kalau invalid.
+ * Parse a hex color string into a number.
+ * Accepts: "#FF0000", "FF0000", "0xFF0000", "#f00" (3-digit expanded), decimal number
+ * Returns: the number, or null if invalid.
  *
  * @param {string|number|null|undefined} input
  * @returns {number|null}
@@ -44,8 +45,8 @@ function parseColor(input) {
 }
 
 /**
- * Parse color, return result object dengan error message jelas.
- * Dipakai caller yang butuh pesan error user-friendly.
+ * Parse a color and return a result object with a clear error message.
+ * Used by callers that need a user-friendly error message.
  *
  * @param {string|number|null|undefined} input
  * @returns {{ok: true, color: number} | {ok: false, error: string}}
@@ -56,13 +57,13 @@ function parseColorOrError(input) {
     }
     if (typeof input === 'number') {
         if (Number.isFinite(input)) return { ok: true, color: input };
-        return { ok: false, error: `Format color tidak valid: ${typeof input}` };
+        return { ok: false, error: `Invalid color format: ${typeof input}` };
     }
     if (typeof input !== 'string') {
-        return { ok: false, error: `Format color tidak dikenali: ${typeof input}` };
+        return { ok: false, error: `Unrecognized color format: ${typeof input}` };
     }
     const trimmed = input.trim().replace(/^#/, '').replace(/^0x/i, '');
-    // Hex 3-digit (#fff) atau 6-digit (#ffffff)
+    // 3-digit (#fff) or 6-digit (#ffffff) hex
     if (/^[0-9a-fA-F]{3}$/.test(trimmed)) {
         const r = trimmed[0] + trimmed[0];
         const g = trimmed[1] + trimmed[1];
@@ -72,7 +73,7 @@ function parseColorOrError(input) {
     if (/^[0-9a-fA-F]{6}$/.test(trimmed)) {
         return { ok: true, color: parseInt(trimmed, 16) };
     }
-    return { ok: false, error: `Format color tidak valid: "${input}". Pakai hex (#ff5733 atau #fff).` };
+    return { ok: false, error: `Invalid color format: "${input}". Use hex (#ff5733 or #fff).` };
 }
 
 module.exports = { parseColor, parseColorOrError };

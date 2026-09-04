@@ -2,12 +2,12 @@
  * Domain: tempvoice
  * Slash commands: /setup-tempvoice, /tempvoice-remove
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: setup kategori + trigger channel + control panel global temp voice,
- *           hapus setup (beserta kategori + semua channel terkait).
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: set up the global temp voice category + trigger channel + control panel,
+ *           remove the setup (including the category + all related channels).
  *
- * v3.8.2: /setup-tempvoice tanpa parameter — auto-create kategori + 2 channel.
- * v3.9.8: rollback channel yang sudah dibuat kalau salah satu step gagal (mencegah orphan).
+ * v3.8.2: /setup-tempvoice with no parameters — auto-creates the category + 2 channels.
+ * v3.9.8: roll back already-created channels if any step fails (prevents orphans).
  */
 
 const {
@@ -23,31 +23,31 @@ module.exports = async function (interaction) {
     // ====================================================
     // === /setup-tempvoice ===
     // ====================================================
-    // v3.8.2: /setup-tempvoice tanpa parameter.
-    // Bot auto-create 1 kategori berisi:
-    //   - 1 text channel "📋 control-panel" (tempat panel global dipasang)
-    //   - 1 voice channel "🔊 Buat Voice" (trigger — member join untuk bikin voice baru)
+    // v3.8.2: /setup-tempvoice with no parameters.
+    // The bot auto-creates 1 category containing:
+    //   - 1 text channel "📋 control-panel" (where the global panel is installed)
+    //   - 1 voice channel "🔊 Create Voice" (trigger — members join it to create a new voice channel)
     if (interaction.commandName === 'setup-tempvoice') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const guild = interaction.guild;
 
-        // Cek apakah sudah ada setup sebelumnya
+        // Check whether a setup already exists
         const existingConfig = tempVoiceManager.getGuildConfig(guild.id);
 
-        // Kalau sudah ada setup, re-kirim panel ke control channel yang ada.
+        // If a setup already exists, re-send the panel to the existing control channel.
         if (existingConfig?.controlChannelId && existingConfig?.creatorChannelId) {
             const existingControlChannel = guild.channels.cache.get(existingConfig.controlChannelId);
-            // Kalau control channel lama udah dihapus, jangan lanjut ke setup baru (bikin orphan).
-            // Suruh admin cleanup dulu via /tempvoice-remove.
+            // If the old control channel was already deleted, don't continue into a new setup (creates orphans).
+            // Tell the admin to clean up first via /tempvoice-remove.
             if (!existingControlChannel) {
                 return safeEditReply(interaction, {
                     content:
-                        `❌ Control channel lama (ID: \`${existingConfig.controlChannelId}\`) sudah terhapus dari server.\n\n` +
-                        `Jalankan \`/tempvoice-remove\` dulu untuk cleanup config lama, lalu \`/setup-tempvoice\` lagi.`
+                        `❌ The old control channel (ID: \`${existingConfig.controlChannelId}\`) has been deleted from the server.\n\n` +
+                        `Run \`/tempvoice-remove\` first to clean up the old config, then \`/setup-tempvoice\` again.`
                 });
             }
-            // Hapus panel lama kalau ada
+            // Delete the old panel if it exists
             if (existingConfig.controlMessageId) {
                 try {
                     const oldMsg = await existingControlChannel.messages
@@ -56,36 +56,36 @@ module.exports = async function (interaction) {
                     if (oldMsg) await oldMsg.delete().catch(() => {});
                 } catch (_) {}
             }
-            // Kirim panel baru
+            // Send the new panel
             const { embed, components } = buildGlobalControlPanel({
                 activeOwners: [],
                 guildName: guild.name
             });
             const panelMsg = await existingControlChannel.send({ embeds: [embed], components }).catch(err => {
-                console.warn('Gagal refresh panel temp voice:', err?.message || err);
+                console.warn('Failed to refresh temp voice panel:', err?.message || err);
                 return null;
             });
-            // Kalau send gagal, balas error — jangan lanjut ke setup baru (anti orphan)
+            // If the send fails, reply with an error — don't continue into a new setup (anti-orphan)
             if (!panelMsg) {
                 return safeEditReply(interaction, {
                     content:
-                        `❌ Gagal refresh panel ke ${existingControlChannel}. Cek permission bot (**Send Messages** + **Embed Links**).\n\n` +
-                        `Setup yang ada tidak diubah.`
+                        `❌ Failed to refresh the panel to ${existingControlChannel}. Check bot permissions (**Send Messages** + **Embed Links**).\n\n` +
+                        `The existing setup was not changed.`
                 });
             }
             tempVoiceManager.setControlMessageId(guild.id, panelMsg.id);
             return safeEditReply(interaction, {
-                content: `✅ **Panel temp voice di-refresh!**\n\n🎛️ ${panelMsg.url}\n\n💡 Setup yang sudah ada tetap dipakai (kategori + trigger + control channel).`
+                content: `✅ **Temp voice panel refreshed!**\n\n🎛️ ${panelMsg.url}\n\n💡 The existing setup is reused (category + trigger + control channel).`
             });
         }
 
-        // === Setup baru: bikin kategori + 2 channel ===
-        // v3.9.8 FIX: tambah rollback kalau salah satu step gagal. Sebelumnya,
-        // kalau creatorChannel create gagal setelah controlChannel dibuat,
-        // controlChannel orphan (tidak ter-register, tidak ter-cleanup).
+        // === New setup: create the category + 2 channels ===
+        // v3.9.8 FIX: add rollback if any step fails. Previously,
+        // if creatorChannel creation failed after controlChannel was created,
+        // controlChannel was orphaned (not registered, never cleaned up).
         let category, controlChannel, creatorChannel;
         try {
-            // Bikin kategori "🎤 TEMP VOICE"
+            // Create the "🎤 TEMP VOICE" category
             category = guild.channels.cache.find(
                 c => c.name === '🎤 TEMP VOICE' && c.type === ChannelType.GuildCategory
             );
@@ -96,45 +96,45 @@ module.exports = async function (interaction) {
                 });
             }
 
-            // Bikin text channel "📋 control-panel" untuk naruh panel global
+            // Create the "📋 control-panel" text channel to hold the global panel
             controlChannel = await guild.channels.create({
                 name: '📋 control-panel',
                 type: ChannelType.GuildText,
                 parent: category.id,
-                topic: 'Panel kontrol global untuk temp voice. Jangan dihapus — bot pakai pesan di sini untuk kontrol voice channel.'
+                topic: 'Global control panel for temp voice. Do not delete — the bot uses the message here to control voice channels.'
             });
 
-            // Bikin voice channel "🔊 Buat Voice" sebagai trigger
+            // Create the "🔊 Create Voice" voice channel as the trigger
             creatorChannel = await guild.channels.create({
-                name: '🔊 Buat Voice',
+                name: '🔊 Create Voice',
                 type: ChannelType.GuildVoice,
                 parent: category.id,
                 bitrate: 64000
             });
 
-            // Simpan config
+            // Save the config
             tempVoiceManager.setupGuild(guild.id, creatorChannel.id, category.id, controlChannel.id);
         } catch (err) {
-            console.error('Error setup temp voice:', err);
-            // v3.9.8: rollback — hapus channel yang sudah dibuat tapi belum ter-register
-            // supaya tidak jadi orphan. Hapus yang pasti dibuat di try block ini saja.
+            console.error('Error setting up temp voice:', err);
+            // v3.9.8: rollback — delete channels that were created but not yet registered
+            // so they don't become orphans. Only delete ones definitely created in this try block.
             if (controlChannel) {
                 try {
-                    await controlChannel.delete('Rollback: setup-tempvoice gagal');
+                    await controlChannel.delete('Rollback: setup-tempvoice failed');
                 } catch (_) {}
             }
             if (creatorChannel) {
                 try {
-                    await creatorChannel.delete('Rollback: setup-tempvoice gagal');
+                    await creatorChannel.delete('Rollback: setup-tempvoice failed');
                 } catch (_) {}
             }
-            // Category tidak dihapus karena mungkin sudah ada sebelumnya / dipakai oleh channel lain.
+            // The category is not deleted because it may have existed before / be used by other channels.
             return safeEditReply(interaction, {
-                content: `❌ Gagal setup temp voice: ${err.message}\n\nPastikan bot punya permission **Manage Channels** dan **Manage Roles**.`
+                content: `❌ Failed to set up temp voice: ${err.message}\n\nMake sure the bot has **Manage Channels** and **Manage Roles** permissions.`
             });
         }
 
-        // Kirim panel kontrol GLOBAL ke control channel
+        // Send the GLOBAL control panel to the control channel
         const { embed, components } = buildGlobalControlPanel({
             activeOwners: [],
             guildName: guild.name
@@ -144,30 +144,30 @@ module.exports = async function (interaction) {
         try {
             panelMsg = await controlChannel.send({ embeds: [embed], components });
         } catch (err) {
-            console.error('Gagal kirim panel global:', err.message);
+            console.error('Failed to send the global panel:', err.message);
             return safeEditReply(interaction, {
-                content: `❌ Gagal kirim panel ke ${controlChannel}. Cek permission bot (Send Messages + Embed Links).`
+                content: `❌ Failed to send the panel to ${controlChannel}. Check bot permissions (Send Messages + Embed Links).`
             });
         }
 
-        // Simpan controlMessageId
+        // Save the controlMessageId
         tempVoiceManager.setControlMessageId(guild.id, panelMsg.id);
 
         await logAudit(interaction.client, {
             action: 'SETUP_TEMPVOICE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Setup Temp Voice — kategori: ${category.name}, trigger: ${creatorChannel} (\`${creatorChannel.id}\`), control panel: ${controlChannel} (\`${controlChannel.id}\`)`,
+            details: `Setup Temp Voice — category: ${category.name}, trigger: ${creatorChannel} (\`${creatorChannel.id}\`), control panel: ${controlChannel} (\`${controlChannel.id}\`)`,
             guildId: guild.id
         });
 
         return safeEditReply(interaction, {
             content:
-                `✅ **Temp Voice siap!**\n\n` +
-                `📂 **Kategori:** ${category.name}\n` +
-                `🎤 **Trigger channel:** ${creatorChannel} (member join sini untuk bikin voice baru)\n` +
+                `✅ **Temp Voice is ready!**\n\n` +
+                `📂 **Category:** ${category.name}\n` +
+                `🎤 **Trigger channel:** ${creatorChannel} (members join here to create a new voice channel)\n` +
                 `🎛️ **Control panel:** ${panelMsg.url}\n\n` +
-                `💡 Member tinggal klik tombol **🎤 Buat Voice** di control panel, atau join langsung ke trigger channel. Setelah jadi owner, panel akan otomatis update untuk menampilkan kontrol channel mereka.`
+                `💡 Members just click the **🎤 Create Voice** button on the control panel, or join the trigger channel directly. Once they become an owner, the panel updates automatically to show their channel controls.`
         });
     }
 
@@ -179,10 +179,10 @@ module.exports = async function (interaction) {
 
         const config = tempVoiceManager.getGuildConfig(interaction.guild.id);
         if (!config) {
-            return safeEditReply(interaction, { content: 'ℹ️ Temp voice belum di-setup di guild ini.' });
+            return safeEditReply(interaction, { content: 'ℹ️ Temp voice isn\'t set up in this guild yet.' });
         }
 
-        // Hapus control panel message global
+        // Delete the global control panel message
         try {
             if (config.controlMessageId && config.controlChannelId) {
                 const ctrlChannel = interaction.guild.channels.cache.get(config.controlChannelId);
@@ -193,7 +193,7 @@ module.exports = async function (interaction) {
             }
         } catch (_) {}
 
-        // v3.8.2: hapus SEMUA channel di kategori (control, trigger, temp voice aktif, kategori sendiri)
+        // v3.8.2: delete ALL channels in the category (control, trigger, active temp voices, the category itself)
         try {
             const channelsToDelete = [];
             if (config.controlChannelId) channelsToDelete.push(config.controlChannelId);
@@ -205,12 +205,12 @@ module.exports = async function (interaction) {
             }
             for (const channelId of channelsToDelete) {
                 const ch = interaction.guild.channels.cache.get(channelId);
-                if (ch) await ch.delete('Temp voice setup dihapus').catch(() => {});
+                if (ch) await ch.delete('Temp voice setup removed').catch(() => {});
             }
-            // Hapus kategori (sekarang harusnya kosong)
+            // Delete the category (should be empty now)
             if (config.categoryId) {
                 const cat = interaction.guild.channels.cache.get(config.categoryId);
-                if (cat) await cat.delete('Temp voice kategori dihapus').catch(() => {});
+                if (cat) await cat.delete('Temp voice category deleted').catch(() => {});
             }
         } catch (_) {}
 
@@ -219,13 +219,13 @@ module.exports = async function (interaction) {
             action: 'TEMPVOICE_REMOVE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus setup Temp Voice dari guild (kategori + semua channel terkait dihapus)`,
+            details: `Remove Temp Voice setup from the guild (category + all related channels deleted)`,
             guildId: interaction.guild.id
         });
 
         return safeEditReply(interaction, {
             content:
-                '✅ Setup Temp Voice berhasil dihapus. Kategori + control panel + trigger channel + semua channel temp voice aktif juga dihapus.'
+                '✅ Temp Voice setup successfully removed. The category + control panel + trigger channel + all active temp voice channels were also deleted.'
         });
     }
 };

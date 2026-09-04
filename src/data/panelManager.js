@@ -3,17 +3,18 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Sebelum v3.9.14, /setup-ticket-panel cuma kirim embed + button ke channel,
- * tapi TIDAK nyimpen metadata panel ke file. Konsekuensinya:
- *   1. Bot restart / mau update panel → tidak bisa re-render panel lama.
- *      Kalau ada produk baru, panel lama tidak auto-update. Harus delete manual
- *      dan setup ulang.
- *   2. Tidak ada cara list / delete panel via command. Admin harus cari manual
- *      di channel mana panel dipasang.
- *   3. Tidak ada cara edit panel (title/body/color) tanpa delete + setup ulang.
+ * Before v3.9.14, /setup-ticket-panel only sent an embed + button to a channel,
+ * but did NOT save the panel metadata to file. The consequences:
+ *   1. Bot restart / panel update → old panels couldn't be re-rendered.
+ *      With a new product, old panels didn't auto-update. You had to manually
+ *      delete and set up again.
+ *   2. There was no way to list / delete panels via command. Admins had to
+ *      manually find which channel a panel was posted in.
+ *   3. There was no way to edit a panel (title/body/color) without deleting +
+ *      setting it up again.
  *
- * Sekarang: tiap panel yang dibuat lewat /setup-ticket-panel disimpan ke
- * panels.json (keyed by panelId). Panel bisa di-list, edit, delete, refresh.
+ * Now: every panel created via /setup-ticket-panel is saved to panels.json
+ * (keyed by panelId). Panels can be listed, edited, deleted, refreshed.
  *
  * File layout (panels.json):
  * {
@@ -22,13 +23,13 @@
  *     "guildId": "123",
  *     "channelId": "456",
  *     "messageId": "789",
- *     "title": "Beli Key",
- *     "body": null,             // null = pakai config.messages.ticketBody
- *     "color": null,            // null = pakai default 0xe67e22
+ *     "title": "Buy Key",
+ *     "body": null,             // null = use config.messages.ticketBody
+ *     "color": null,            // null = use default 0xe67e22
  *     "imageUrl": null,         // null = no image
  *     "thumbnailUrl": null,     // null = no thumbnail
- *     "footerText": null,       // null = pakai bot username
- *     "categoryIds": ["transaction"],   // kategori yang ditampilkan
+ *     "footerText": null,       // null = use bot username
+ *     "categoryIds": ["transaction"],   // categories to display
  *     "useDropdown": false,     // false = buttons, true = select menu
  *     "createdAt": 1700000000000,
  *     "createdBy": "999",
@@ -38,9 +39,9 @@
  * }
  *
  * Backward compat:
- *   - Panel lama (sebelum v3.9.14) tidak ada di panels.json. Tetap jalan,
- *     tapi gak bisa di-list/delete/update via command. Admin bisa setup ulang
- *     untuk migrasi ke sistem baru.
+ *   - Old panels (before v3.9.14) aren't in panels.json. They still work,
+ *     but can't be listed/deleted/updated via command. Admins can set them up
+ *     again to migrate to the new system.
  */
 
 const fs = require('fs');
@@ -50,17 +51,17 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 const panelsPath = path.join(__dirname, '..', '..', 'data', 'panels.json');
 
 // In-memory cache — read file on first access, keep in sync after write.
-// Why cache? /list-panels bisa dipanggil sering, dan read-file-per-call bikin
-// disk I/O berat kalau panels.json gede. Cache simple, invalidates on save.
+// Why cache? /list-panels can be called often, and read-file-per-call makes
+// for heavy disk I/O when panels.json is big. Simple cache, invalidates on save.
 let _cache = null;
 let _cacheLoadedAt = 0;
 
-const CACHE_TTL_MS = 30 * 1000; // 30 detik — singkat cukup untuk handle
-// external edit (admin edit panels.json manual), tapi tetap mengurangi disk I/O.
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds — short enough to handle
+// external edits (admin edits panels.json manually), but still cuts disk I/O.
 
 /**
- * Load panels.json. Kalau file belum ada / rusak, return {}.
- * Pakai cache 30 detik supaya tidak baca file terus-menerus.
+ * Load panels.json. If the file doesn't exist / is corrupt, return {}.
+ * Uses a 30 second cache so the file isn't read over and over.
  */
 function loadPanels() {
     const now = Date.now();
@@ -76,17 +77,17 @@ function loadPanels() {
         const raw = fs.readFileSync(panelsPath, 'utf8');
         _cache = JSON.parse(raw);
         if (!_cache || typeof _cache !== 'object' || Array.isArray(_cache)) {
-            console.warn('⚠️ panels.json format invalid (bukan object), reset ke {}.');
-            // v3.9.26: karantina sebelum reset — isinya valid JSON tapi struktur
-            // salah; simpan bekasnya supaya admin bisa pulihkan manual.
+            console.warn('⚠️ panels.json format invalid (not an object), resetting to {}.');
+            // v3.9.26: quarantine before reset — the content is valid JSON but
+            // the structure is wrong; keep a copy so an admin can recover manually.
             quarantineCorruptFile(panelsPath);
             _cache = {};
         }
         _cacheLoadedAt = now;
         return _cache;
     } catch (err) {
-        console.warn('⚠️ panels.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ panels.json is corrupt:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(panelsPath);
         _cache = {};
         _cacheLoadedAt = now;
@@ -104,8 +105,8 @@ function savePanels(data) {
 }
 
 /**
- * Generate panel ID. Format: tp_<timestamp_base36>_<random>.
- * Unik enough untuk 1 guild punya ratusan panel tanpa collision.
+ * Generate a panel ID. Format: tp_<timestamp_base36>_<random>.
+ * Unique enough for 1 guild to have hundreds of panels without collisions.
  */
 function generatePanelId() {
     const ts = Date.now().toString(36);
@@ -114,9 +115,9 @@ function generatePanelId() {
 }
 
 /**
- * Simpan metadata panel baru (atau update yang sudah ada kalau id sama).
- * @param {Object} panel - lihat schema di file header.
- * @returns {Object} panel yang sudah disimpan (dengan id di-generate kalau belum ada).
+ * Save new panel metadata (or update an existing one if the id matches).
+ * @param {Object} panel - see the schema in the file header.
+ * @returns {Object} the saved panel (with an id generated if it didn't have one).
  */
 function upsertPanel(panel) {
     if (!panel || typeof panel !== 'object') {
@@ -150,8 +151,8 @@ function upsertPanel(panel) {
 }
 
 /**
- * Update sebagian field panel (partial update).
- * Hanya field yang di-define akan di-update.
+ * Update some panel fields (partial update).
+ * Only defined fields are updated.
  */
 function patchPanel(id, patch) {
     const all = loadPanels();
@@ -159,7 +160,7 @@ function patchPanel(id, patch) {
     const updated = {
         ...all[id],
         ...patch,
-        id, // jangan override id
+        id, // never override the id
         updatedAt: Date.now()
     };
     all[id] = updated;
@@ -168,21 +169,21 @@ function patchPanel(id, patch) {
 }
 
 /**
- * Set messageId untuk panel (dipanggil setelah bot kirim message ke channel).
+ * Set the messageId for a panel (called after the bot sends the message to a channel).
  */
 function setPanelMessageId(id, messageId) {
     return patchPanel(id, { messageId });
 }
 
 /**
- * Ambil 1 panel by id.
+ * Get a single panel by id.
  */
 function getPanel(id) {
     return loadPanels()[id] || null;
 }
 
 /**
- * List semua panel di guild tertentu.
+ * List all panels in a given guild.
  */
 function getPanelsByGuild(guildId) {
     const all = loadPanels();
@@ -190,8 +191,8 @@ function getPanelsByGuild(guildId) {
 }
 
 /**
- * Hapus panel by id.
- * @returns {boolean} true kalau berhasil dihapus, false kalau tidak ketemu.
+ * Delete a panel by id.
+ * @returns {boolean} true if deleted, false if not found.
  */
 function deletePanel(id) {
     const all = loadPanels();
@@ -202,7 +203,7 @@ function deletePanel(id) {
 }
 
 /**
- * Hapus semua panel di guild tertentu (dipakai saat guild leave / reset).
+ * Delete all panels in a given guild (used on guild leave / reset).
  */
 function deletePanelsByGuild(guildId) {
     const all = loadPanels();
@@ -218,8 +219,8 @@ function deletePanelsByGuild(guildId) {
 }
 
 /**
- * Invalidate cache (force re-read dari disk pada next load).
- * Dipakai kalau ada operasi yang modify file di luar manager ini.
+ * Invalidate the cache (force a re-read from disk on the next load).
+ * Used when an operation modifies the file outside this manager.
  */
 function invalidateCache() {
     _cache = null;

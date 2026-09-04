@@ -3,21 +3,21 @@
  * Slash commands: /afk, /afk-clear, /afk-list
  *
  * v3.9.13: AFK system.
- * User set AFK → bot reply otomatis saat ada yang mention dia.
- * Auto-clear AFK saat user kirim pesan lagi.
+ * User sets AFK → the bot auto-replies when someone mentions them.
+ * AFK auto-clears when the user sends a message again.
  */
 
 const { EmbedBuilder, MessageFlags, safeEditReply } = require('./_shared');
 
-// v3.9.25: konversi \n literal → newline asli (fitur multi-line PC)
+// v3.9.25: convert literal \n → real newlines (PC multi-line feature)
 const { normalizeNewlines } = require('../infra/text');
 
 const afkManager = require('../data/afkManager');
 
 module.exports = async function (interaction) {
-    // === AFK (set status AFK) ===
+    // === AFK (set AFK status) ===
     if (interaction.commandName === 'afk') {
-        // v3.9.25: \n literal → newline asli biar reason AFK bisa multi-baris
+        // v3.9.25: literal \n → real newlines so the AFK reason can be multi-line
         const reason = normalizeNewlines(interaction.options.getString('reason') || 'AFK');
 
         afkManager.setAFK(interaction.guild.id, interaction.user.id, reason);
@@ -26,11 +26,11 @@ module.exports = async function (interaction) {
             .setTitle('💤 AFK Status Set')
             .setColor(0xf1c40f)
             .setDescription(
-                `Halo ${interaction.user}, kamu sekarang **AFK**.\n\n` +
+                `Hello ${interaction.user}, you are now **AFK**.\n\n` +
                     `📝 Reason: ${reason}\n` +
-                    `🕒 Sejak: <t:${Math.floor(Date.now() / 1000)}:R>\n\n` +
-                    `💡 Saat ada yang mention kamu, bot akan auto-reply dengan reason kamu.\n` +
-                    `💡 AFK akan otomatis ter-clear saat kamu kirim pesan lagi.`
+                    `🕒 Since: <t:${Math.floor(Date.now() / 1000)}:R>\n\n` +
+                    `💡 When someone mentions you, the bot will auto-reply with your reason.\n` +
+                    `💡 AFK clears automatically when you send a message again.`
             )
             .setFooter({
                 text: interaction.client.user.username,
@@ -46,27 +46,27 @@ module.exports = async function (interaction) {
         const cleared = afkManager.clearAFK(interaction.guild.id, interaction.user.id);
         if (!cleared) {
             return interaction.reply({
-                content: 'ℹ️ Kamu memang tidak sedang AFK.',
+                content: 'ℹ️ You aren\'t AFK right now anyway.',
                 flags: MessageFlags.Ephemeral
             });
         }
         return interaction.reply({
-            content: '✅ Status AFK kamu sudah di-clear. Selamat datang kembali! 👋',
+            content: '✅ Your AFK status has been cleared. Welcome back! 👋',
             flags: MessageFlags.Ephemeral
         });
     }
 
-    // === AFK LIST (admin: lihat siapa aja yang AFK di guild) ===
+    // === AFK LIST (admin: see who is AFK in the guild) ===
     if (interaction.commandName === 'afk-list') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        // v3.9.17 FIX: pakai afkManager.listGuildAFK (encapsulation).
-        // Sebelumnya, command baca afk.json langsung via fs.readFileSync —
-        // bypass manager, rentan break kalau schema afk.json berubah.
+        // v3.9.17 FIX: use afkManager.listGuildAFK (encapsulation).
+        // Previously, the command read afk.json directly via fs.readFileSync —
+        // bypassing the manager, easily broken if the afk.json schema changes.
         const afkUsers = afkManager.listGuildAFK(interaction.guild.id);
 
         if (afkUsers.length === 0) {
-            return safeEditReply(interaction, { content: '✅ Tidak ada member yang AFK saat ini.' });
+            return safeEditReply(interaction, { content: '✅ No members are AFK right now.' });
         }
 
         const lines = afkUsers

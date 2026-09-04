@@ -1,43 +1,44 @@
 /**
- * Midman (Rekber) domain handler — semua customId terkait deal rekber 3-pihak.
+ * Midman (Escrow) domain handler — all customIds related to 3-party escrow deals.
  * v3.9.34.
  *
- * CustomId yang ditangani:
- *   - ticket_cat:midman  (button)       → buka modal buat deal (dari panel tiket)
- *   - modal_mm_create    (modal)        → validasi item+harga → simpan sementara
- *                                        → tampilkan dropdown pilih PEMBELI
- *   - mm_pick_buyer      (user select)  → pilih pembeli (v3.9.34 — deal bisa
- *                                        dibuka siapa saja, jadi peran
- *                                        eksplisit dipilih di formulir)
- *   - mm_pick_seller     (user select)  → pilih penjual → buat channel deal
- *                                        + Deal Board (keduanya searchable —
- *                                        TIDAK perlu copy ID / mention)
- *   - mm_add_member      (button)       → midman/admin: tambah member tambahan
- *                                        (observer) ke channel deal
- *   - mm_pick_member     (user select)  → pilih user yang mau di-add
- *   - mm_remove_member   (button)       → midman/admin: keluarkan member
- *                                        tambahan dari channel deal
- *   - mm_remove_pick     (string select)→ pilih observer yang mau dikeluarkan
- *   - mm_join            (button)  → pembeli & penjual setuju deal — terms
- *                                   terkunci HANYA setelah DUA-DUANYA setuju
- *   - mm_cancel          (button)  → batalkan deal (hanya sebelum dana masuk)
- *   - mm_fundin          (button)  → midman konfirmasi dana masuk
- *   - mm_received        (button)  → pembeli konfirmasi barang diterima
- *   - mm_release         (button)  → midman cairkan dana → invoice + close
- *   - mm_dispute         (button)  → bekukan deal (peserta deal / admin)
- *   - mm_resolve_release (button)  → admin: selesaikan dispute → cairkan
- *   - mm_resolve_refund  (button)  → admin: selesaikan dispute → refund
+ * CustomIds handled:
+ *   - ticket_cat:midman  (button)       → open the create-deal modal (from the ticket panel)
+ *   - modal_mm_create    (modal)        → validate item+price → store temporarily
+ *                                        → show the BUYER selection dropdown
+ *   - mm_pick_buyer      (user select)  → pick the buyer (v3.9.34 — a deal can
+ *                                        be opened by anyone, so the roles are
+ *                                        chosen explicitly in the form)
+ *   - mm_pick_seller     (user select)  → pick the seller → create the deal
+ *                                        channel + Deal Board (both searchable —
+ *                                        NO need to copy IDs / mention)
+ *   - mm_add_member      (button)       → midman/admin: add an extra member
+ *                                        (observer) to the deal channel
+ *   - mm_pick_member     (user select)  → pick the user to add
+ *   - mm_remove_member   (button)       → midman/admin: remove an extra
+ *                                        member from the deal channel
+ *   - mm_remove_pick     (string select)→ pick the observer to remove
+ *   - mm_join            (button)  → buyer & seller agree to the deal — terms
+ *                                   are locked ONLY after BOTH of them agree
+ *   - mm_cancel          (button)  → cancel the deal (only before funds are received)
+ *   - mm_fundin          (button)  → middleman confirms funds received
+ *   - mm_received        (button)  → buyer confirms goods delivered
+ *   - mm_release         (button)  → middleman releases the funds → invoice + close
+ *   - mm_dispute         (button)  → freeze the deal (deal participants / admin)
+ *   - mm_resolve_release (button)  → admin: resolve the dispute → release funds
+ *   - mm_resolve_refund  (button)  → admin: resolve the dispute → refund
  *
- * Router (src/interactions/index.js) sudah apply:
- *   - dedup (checkAndMark), guard replied/deferred, filter tipe interaction.
+ * Router (src/interactions/index.js) already applies:
+ *   - dedup (checkAndMark), replied/deferred guards, interaction type filter.
  *
- * Deal Board = embed bot yang jadi SATU-SATUNYA sumber kebenaran deal
- * (item, harga, fee, status, siapa harus aksi). Channel chat hanya tempat
- * bukti (screenshot transfer, bukti kirim barang). Setiap transisi state:
- *   1. dicek URUTANNYA valid (midmanManager.canTransition)
- *   2. dicek AKTORNYA berhak (midmanManager.actorAllowed)
- *   3. dicatat ke history deal + audit log
- *   4. Deal Board di-update (embed diedit — tidak bisa dimanipulasi user)
+ * Deal Board = the bot embed that is the ONE AND ONLY source of truth for
+ * the deal (item, price, fee, status, who must act). The channel chat is
+ * only a place for evidence (transfer screenshots, proof of delivery).
+ * Every state transition:
+ *   1. is checked for valid ORDER (midmanManager.canTransition)
+ *   2. is checked that the ACTOR is authorized (midmanManager.actorAllowed)
+ *   3. is recorded in the deal history + audit log
+ *   4. updates the Deal Board (the embed is edited — users can't tamper with it)
  */
 
 const {
@@ -51,11 +52,11 @@ const {
     EmbedBuilder,
     ChannelType,
     PermissionFlagsBits,
-    // v3.9.33: dropdown pilih penjual (native member picker Discord —
-    // searchable, ada avatar; solusi untuk "nama susah / gak bisa copy ID").
+    // v3.9.33: seller selection dropdown (Discord's native member picker —
+    // searchable, with avatars; solves "hard-to-type names / can't copy IDs").
     UserSelectMenuBuilder,
-    // v3.9.34: dropdown pilih member tambahan yang mau dikeluarkan
-    // (string select — opsinya observer saat ini).
+    // v3.9.34: dropdown for picking the extra member to remove
+    // (string select — the options are the current observers).
     StringSelectMenuBuilder
 } = require('discord.js');
 const { getConfig, safeEditReply, logAudit, checkIsAdmin } = require('../commands/_shared');
@@ -63,13 +64,13 @@ const mm = require('../data/midmanManager');
 const { sendInvoice, saveTranscript, findActiveTicketFor } = require('../data/ticketManager');
 const { recordPurchase } = require('../data/statsManager');
 
-// Jeda sebelum channel deal dihapus setelah selesai (detik) — kasih waktu
-// peserta membaca ringkasan riwayat sebelum channel hilang.
+// Delay before the deal channel is deleted after completion (ms) — gives
+// participants time to read the history summary before the channel disappears.
 const DELETE_DELAY_MS = 5000;
 
 /**
- * v3.9.17 pattern (copy dari ticket.js, policy sama): kalau verified role
- * di-set, user harus verified dulu sebelum buat deal.
+ * v3.9.17 pattern (copied from ticket.js, same policy): if a verified role
+ * is set, users must be verified before creating a deal.
  */
 function passesVerifiedCheck(interaction, config) {
     if (!interaction.member?.roles?.cache) return false;
@@ -82,64 +83,64 @@ function passesVerifiedCheck(interaction, config) {
 // ====================================================
 
 const STATE_DESCRIPTIONS = {
-    // v3.9.34: persetujuan DUA pihak — deskripsi dinamis menunjukkan siapa
-    // yang sudah/belum setuju, jadi Deal Board selalu jelas giliran siapa.
+    // v3.9.34: two-party consent — the dynamic description shows who has /
+    // hasn't agreed yet, so the Deal Board always makes it clear whose turn it is.
     WAITING_AGREE: deal =>
-        `🛒 Pembeli — ${deal.buyerAgreed ? '✅ sudah setuju' : '⏳ **klik 🤝 Setuju Deal**'}\n` +
-        `🏷️ Penjual — ${deal.sellerAgreed ? '✅ sudah setuju' : '⏳ **klik 🤝 Setuju Deal**'}\n` +
-        'Dua-duanya harus setuju — setelah itu item & harga **TERKUNCI** (mau ubah = batal & buat deal baru).\n' +
-        'Membatalkan sekarang aman (dana belum berpindah).',
+        `🛒 Buyer — ${deal.buyerAgreed ? '✅ agreed' : '⏳ **click 🤝 Agree to Deal**'}\n` +
+        `🏷️ Seller — ${deal.sellerAgreed ? '✅ agreed' : '⏳ **click 🤝 Agree to Deal**'}\n` +
+        'Both must agree — after that the item & price are **LOCKED** (to change them = cancel & create a new deal).\n' +
+        'Cancelling now is safe (funds have not moved yet).',
     WAITING_PAYMENT: deal =>
-        '**🛒 Pembeli** — transfer **Total Pembayaran** ke midman, lalu kirim bukti transfer di channel ini.\n' +
-        `💳 Total: **${mm.formatRupiah(deal.priceNum + deal.fee)}** (harga ${mm.formatRupiah(deal.priceNum)} + fee ${mm.formatRupiah(deal.fee)}).\n` +
-        '**🛡️ Midman** — verifikasi dana benar-benar masuk, baru klik **✅ Dana Masuk**.\n' +
-        'Setelah ini penjual baru boleh kirim barang.',
+        '**🛒 Buyer** — transfer the **Total Payment** to the middleman, then post the transfer proof in this channel.\n' +
+        `💳 Total: **${mm.formatRupiah(deal.priceNum + deal.fee)}** (price ${mm.formatRupiah(deal.priceNum)} + fee ${mm.formatRupiah(deal.fee)}).\n` +
+        '**🛡️ Middleman** — verify the funds have actually arrived, then click **✅ Funds Received**.\n' +
+        'Only after this may the seller send the goods.',
     WAITING_DELIVERY:
-        '**🏷️ Penjual** — kirim barang sekarang (chat di channel ini sebagai bukti).\n' +
-        '**🛒 Pembeli** — cek barang, kalau sudah sesuai klik **✅ Barang Diterima**.',
+        '**🏷️ Seller** — send the goods now (chat in this channel as proof).\n' +
+        '**🛒 Buyer** — check the goods; once they match, click **✅ Goods Delivered**.',
     WAITING_RELEASE: deal =>
-        '**🛡️ Midman** — transfer **PENUH** ke penjual (JANGAN dipotong), lalu klik **💸 Cairkan ke Penjual**.\n' +
-        `🏷️ Penjual menerima: **${mm.formatRupiah(deal.priceNum)}** • 🧾 Fee midman (sisa di tanganmu): **${mm.formatRupiah(deal.fee)}**.\n` +
-        'Invoice & transcript otomatis tersimpan saat deal ditutup.',
+        '**🛡️ Middleman** — transfer the **FULL** amount to the seller (do NOT deduct anything), then click **💸 Release to Seller**.\n' +
+        `🏷️ Seller receives: **${mm.formatRupiah(deal.priceNum)}** • 🧾 Middleman fee (left in your hands): **${mm.formatRupiah(deal.fee)}**.\n` +
+        'The invoice & transcript are saved automatically when the deal closes.',
     DISPUTE:
-        '**🚨 Deal DIBEKUKAN** — tidak ada dana/barang yang boleh berpindah.\n' +
-        'Hanya **Admin server** yang bisa resolve: cairkan ke penjual atau refund ke pembeli.\n' +
-        'Semua riwayat klik terekam dan tersimpan di transcript.',
-    COMPLETED: '✅ Deal selesai — dana sudah cair ke penjual. Channel akan ditutup otomatis.',
-    REFUNDED: '↩️ Deal selesai — dana dikembalikan ke pembeli. Channel akan ditutup otomatis.',
-    CANCELLED: '❌ Deal dibatalkan (dana belum masuk). Channel akan ditutup otomatis.'
+        '**🚨 Deal FROZEN** — no funds or goods may change hands.\n' +
+        'Only **server admins** can resolve it: release to the seller or refund the buyer.\n' +
+        'Every click is recorded and saved in the transcript.',
+    COMPLETED: '✅ Deal complete — funds have been released to the seller. The channel will be closed automatically.',
+    REFUNDED: '↩️ Deal complete — funds have been returned to the buyer. The channel will be closed automatically.',
+    CANCELLED: '❌ Deal cancelled (funds not yet received). The channel will be closed automatically.'
 };
 
 function boardEmbed(deal, config) {
-    // v3.9.33: deskripsi state bisa berupa string ATAU fungsi (untuk nominal
-    // dinamis — total transfer & pencairan tampil persis di description).
+    // v3.9.33: the state description can be a string OR a function (for
+    // dynamic amounts — transfer & payout totals shown right in the description).
     const rawDesc = STATE_DESCRIPTIONS[deal.state];
     const desc = typeof rawDesc === 'function' ? rawDesc(deal) : rawDesc || '';
-    // v3.9.33: fee ADDITIVE — pembeli bayar harga + fee, penjual menerima
-    // harga PENUH (tidak dipotong fee). calcTotals = sumber tunggal hitungan.
+    // v3.9.33: the fee is ADDITIVE — the buyer pays price + fee, the seller
+    // receives the FULL price (not reduced by the fee). calcTotals = single source of the math.
     const totals = mm.calcTotals(deal.priceNum, deal.fee);
     const feeLabel =
         deal.feeMode === 'percent'
             ? `${mm.formatRupiah(deal.fee)} (${deal.feeValue}%)`
             : mm.formatRupiah(deal.fee);
     return new EmbedBuilder()
-        .setTitle('🤝 DEAL BOARD — REKBER')
+        .setTitle('🤝 DEAL BOARD — ESCROW')
         .setDescription(desc)
         .setColor(mm.STATES[deal.state]?.color || 0x2ecc71)
         .addFields(
             { name: '📦 Item', value: String(deal.item).slice(0, 1000), inline: false },
-            { name: '💰 Harga Deal', value: mm.formatRupiah(deal.priceNum), inline: true },
-            { name: '🧾 Fee Midman', value: feeLabel, inline: true },
-            { name: '💳 Total Dibayar Pembeli', value: `**${mm.formatRupiah(totals.buyerPays)}** (harga + fee)`, inline: true },
-            { name: '🏷️ Diterima Penjual', value: `${mm.formatRupiah(totals.sellerGets)} — penuh, tanpa potongan`, inline: true },
-            { name: '🛒 Pembeli', value: `<@${deal.buyerId}>`, inline: true },
-            { name: '🏷️ Penjual', value: `<@${deal.sellerId}>`, inline: true },
-            { name: '🛡️ Midman', value: config.roles.midman ? `<@&${config.roles.midman}>` : '_belum di-set_', inline: true },
-            // v3.9.34: member tambahan (observer) — siapa pun di channel
-            // langsung tahu siapa tamu, dan admin tahu siapa yang bisa
-            // dikeluarkan lewat tombol ➖.
+            { name: '💰 Deal Price', value: mm.formatRupiah(deal.priceNum), inline: true },
+            { name: '🧾 Middleman Fee', value: feeLabel, inline: true },
+            { name: '💳 Total Paid by Buyer', value: `**${mm.formatRupiah(totals.buyerPays)}** (price + fee)`, inline: true },
+            { name: '🏷️ Received by Seller', value: `${mm.formatRupiah(totals.sellerGets)} — full amount, no deductions`, inline: true },
+            { name: '🛒 Buyer', value: `<@${deal.buyerId}>`, inline: true },
+            { name: '🏷️ Seller', value: `<@${deal.sellerId}>`, inline: true },
+            { name: '🛡️ Middleman', value: config.roles.midman ? `<@&${config.roles.midman}>` : '_not set_', inline: true },
+            // v3.9.34: extra members (observers) — everyone in the channel
+            // immediately knows who the guests are, and admins know who can
+            // be removed via the ➖ button.
             {
-                name: '👀 Member Tambahan',
+                name: '👀 Extra Members',
                 value:
                     deal.observers && deal.observers.length > 0
                         ? deal.observers.map(id => `<@${id}>`).join(', ').slice(0, 1000)
@@ -148,7 +149,7 @@ function boardEmbed(deal, config) {
             },
             { name: '📍 Status', value: `${mm.STATES[deal.state]?.label || deal.state}`, inline: false }
         )
-        .setFooter({ text: `Deal ID: ${deal.channelId} • Terms terkunci • Chat = bukti, Board = kesepakatan` })
+        .setFooter({ text: `Deal ID: ${deal.channelId} • Terms locked • Chat = evidence, Board = agreement` })
         .setTimestamp();
 }
 
@@ -157,59 +158,59 @@ function mkButton(customId, label, emoji, style) {
 }
 
 /**
- * Tombol per state — HANYA aksi yang valid dari state itu yang dirender.
- * Discord tetap mengirim klik lama (user bisa klik tombol stale di client
- * yang belum ter-update) → itu ditangkap guard canTransition di handleEvent.
+ * Buttons per state — ONLY the actions valid from that state are rendered.
+ * Discord still delivers stale clicks (a user can click an old button on a
+ * client that hasn't refreshed) → caught by the canTransition guard in handleEvent.
  */
 function boardComponents(deal) {
     let buttons = [];
     switch (deal.state) {
         case 'WAITING_AGREE':
             buttons = [
-                mkButton('mm_join', 'Setuju Deal', '🤝', ButtonStyle.Success),
-                mkButton('mm_cancel', 'Batalkan', '❌', ButtonStyle.Danger)
+                mkButton('mm_join', 'Agree to Deal', '🤝', ButtonStyle.Success),
+                mkButton('mm_cancel', 'Cancel', '❌', ButtonStyle.Danger)
             ];
             break;
         case 'WAITING_PAYMENT':
             buttons = [
-                mkButton('mm_fundin', 'Dana Masuk', '✅', ButtonStyle.Success),
-                mkButton('mm_cancel', 'Batalkan', '❌', ButtonStyle.Danger)
+                mkButton('mm_fundin', 'Funds Received', '✅', ButtonStyle.Success),
+                mkButton('mm_cancel', 'Cancel', '❌', ButtonStyle.Danger)
             ];
             break;
         case 'WAITING_DELIVERY':
             buttons = [
-                mkButton('mm_received', 'Barang Diterima', '✅', ButtonStyle.Success),
-                mkButton('mm_dispute', 'Ada Masalah', '⚠️', ButtonStyle.Danger)
+                mkButton('mm_received', 'Goods Delivered', '✅', ButtonStyle.Success),
+                mkButton('mm_dispute', 'Report a Problem', '⚠️', ButtonStyle.Danger)
             ];
             break;
         case 'WAITING_RELEASE':
             buttons = [
-                mkButton('mm_release', 'Cairkan ke Penjual', '💸', ButtonStyle.Success),
-                mkButton('mm_dispute', 'Ada Masalah', '⚠️', ButtonStyle.Danger)
+                mkButton('mm_release', 'Release to Seller', '💸', ButtonStyle.Success),
+                mkButton('mm_dispute', 'Report a Problem', '⚠️', ButtonStyle.Danger)
             ];
             break;
         case 'DISPUTE':
             buttons = [
-                mkButton('mm_resolve_release', 'Resolve: Cairkan', '⚖️', ButtonStyle.Success),
+                mkButton('mm_resolve_release', 'Resolve: Release', '⚖️', ButtonStyle.Success),
                 mkButton('mm_resolve_refund', 'Resolve: Refund', '↩️', ButtonStyle.Secondary)
             ];
             break;
         default:
-            break; // terminal state → tanpa tombol
+            break; // terminal state → no buttons
     }
     if (mm.TERMINAL_STATES.has(deal.state)) return [];
 
-    // v3.9.34: baris ke-2 — kelola member tambahan (add/remove observer).
-    // Tombol terlihat semua orang, tapi guard aktor (midman/admin) dijalankan
-    // saat diklik — pembeli/penjual/observer ditolak dengan pesan jelas.
+    // v3.9.34: row 2 — manage extra members (add/remove observers).
+    // The buttons are visible to everyone, but the actor guard (midman/admin)
+    // runs when clicked — buyers/sellers/observers get rejected with a clear message.
     const rows = [];
     if (buttons.length > 0) {
         rows.push(new ActionRowBuilder().addComponents(...buttons));
     }
     rows.push(
         new ActionRowBuilder().addComponents(
-            mkButton('mm_add_member', 'Tambah Member', '👥', ButtonStyle.Secondary),
-            mkButton('mm_remove_member', 'Keluarkan Member', '➖', ButtonStyle.Secondary)
+            mkButton('mm_add_member', 'Add Member', '👥', ButtonStyle.Secondary),
+            mkButton('mm_remove_member', 'Remove Member', '➖', ButtonStyle.Secondary)
         )
     );
     return rows;
@@ -223,8 +224,8 @@ function boardPing(deal, config) {
 }
 
 /**
- * Update Deal Board di channel. Self-healing: kalau board terhapus admin,
- * kirim board baru & simpan boardMessageId baru.
+ * Update the Deal Board in the channel. Self-healing: if an admin deleted
+ * the board, send a new one & save the new boardMessageId.
  */
 async function refreshBoard(channel, deal, config) {
     if (!deal.boardMessageId || !channel) return;
@@ -232,25 +233,25 @@ async function refreshBoard(channel, deal, config) {
     try {
         await channel.messages.edit(deal.boardMessageId, payload);
     } catch (editErr) {
-        console.warn(`⚠️ Deal Board ${deal.channelId} gagal diedit (${editErr.message}) — coba kirim ulang.`);
+        console.warn(`⚠️ Deal Board ${deal.channelId} failed to edit (${editErr.message}) — trying to resend.`);
         try {
             const sent = await channel.send({ content: boardPing(deal, config), ...payload });
             deal.boardMessageId = sent.id;
             mm.setDeal(deal.channelId, deal);
         } catch (sendErr) {
-            console.warn(`⚠️ Gagal kirim ulang Deal Board: ${sendErr.message}`);
+            console.warn(`⚠️ Failed to resend the Deal Board: ${sendErr.message}`);
         }
     }
 }
 
 // ====================================================
-// === AKTOR & GUARD ===
+// === ACTOR & GUARDS ===
 // ====================================================
 
 /**
- * Peran user yang klik relatif ke deal ini.
- * Anti self-dealing: buyer/seller deal TIDAK dihitung sebagai midman/admin
- * di deal-nya sendiri (midman tidak boleh sekalian pegang deal sebagai peserta).
+ * The clicking user's role relative to this deal.
+ * Anti self-dealing: a deal's buyer/seller is NOT counted as midman/admin
+ * on their own deal (a middleman must not simultaneously hold the deal as a participant).
  */
 function resolveActor(deal, interaction, config) {
     const uid = interaction.user.id;
@@ -264,102 +265,103 @@ function resolveActor(deal, interaction, config) {
 }
 
 const ACTOR_HINT = {
-    join: '❌ Hanya **pembeli** atau **penjual** deal yang bisa menyetujui deal.',
-    cancel: '❌ Deal hanya bisa dibatalkan oleh pembeli, penjual, atau admin — dan hanya sebelum dana masuk.',
-    fundin: '❌ Hanya **midman** yang bisa konfirmasi dana masuk.',
-    received: '❌ Hanya **pembeli** yang bisa konfirmasi barang diterima.',
-    release: '❌ Hanya **midman** yang bisa mencairkan dana.',
-    dispute: '❌ Hanya peserta deal (pembeli / penjual / midman) yang bisa membuka dispute.',
-    resolve_release: '❌ Hanya **admin server** yang bisa resolve dispute.',
-    resolve_refund: '❌ Hanya **admin server** yang bisa resolve dispute.'
+    join: '❌ Only the deal\'s **buyer** or **seller** can agree to the deal.',
+    cancel: '❌ A deal can only be cancelled by the buyer, the seller, or an admin — and only before the funds are received.',
+    fundin: '❌ Only the **middleman** can confirm the funds were received.',
+    received: '❌ Only the **buyer** can confirm the goods were delivered.',
+    release: '❌ Only the **middleman** can release the funds.',
+    dispute: '❌ Only deal participants (buyer / seller / middleman) can open a dispute.',
+    resolve_release: '❌ Only **server admins** can resolve a dispute.',
+    resolve_refund: '❌ Only **server admins** can resolve a dispute.'
 };
 
 const CONFIRM_MSG = {
-    join: '✅ Kedua pihak sudah setuju — terms **terkunci**. Pembeli silakan transfer ke midman.',
-    cancel: '❌ Deal dibatalkan. Channel akan ditutup otomatis.',
-    fundin: '✅ Dana dikonfirmasi masuk. Penjual sekarang boleh kirim barang.',
-    received: '✅ Barang dikonfirmasi diterima. Midman bisa mencairkan dana ke penjual.',
-    release: '💸 Dana dicairkan! Deal selesai — invoice & transcript otomatis tersimpan.',
-    dispute: '🚨 Dispute dibuka. Deal **dibekukan** — hanya admin yang bisa resolve.',
-    resolve_release: '⚖️ Dispute selesai — diputuskan CAIRKAN ke penjual. Channel akan ditutup.',
-    resolve_refund: '⚖️ Dispute selesai — diputuskan REFUND ke pembeli. Channel akan ditutup.'
+    join: '✅ Both parties have agreed — the terms are **locked**. Buyer, please transfer to the middleman.',
+    cancel: '❌ Deal cancelled. The channel will be closed automatically.',
+    fundin: '✅ Funds confirmed received. The seller may now send the goods.',
+    received: '✅ Goods confirmed delivered. The middleman can now release the funds to the seller.',
+    release: '💸 Funds released! Deal complete — invoice & transcript saved automatically.',
+    dispute: '🚨 Dispute opened. The deal is **frozen** — only admins can resolve it.',
+    resolve_release: '⚖️ Dispute resolved — decision: RELEASE to the seller. The channel will be closed.',
+    resolve_refund: '⚖️ Dispute resolved — decision: REFUND to the buyer. The channel will be closed.'
 };
 
 // ====================================================
-// === BUAT DEAL (modal) ===
+// === CREATE DEAL (modal) ===
 // ====================================================
 
 /**
- * Entry dari panel tiket: tombol kategori `midman` (routed ke domain ini oleh
- * router: prefix `ticket_cat:midman`) atau dropdown kategori (redirect dari
- * ticket.js). Tampilkan modal input deal.
+ * Entry point from the ticket panel: the `midman` category button (routed to
+ * this domain by the router via the `ticket_cat:midman` prefix) or the category
+ * dropdown (redirected from ticket.js). Shows the deal input modal.
  */
 async function openCreateModal(interaction) {
     const config = getConfig();
 
     if (!passesVerifiedCheck(interaction, config)) {
-        return interaction.reply({ content: '❌ Verifikasi dulu!', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ Please verify first!', flags: MessageFlags.Ephemeral });
     }
     if (!config.roles.midman) {
         return interaction.reply({
-            content: '❌ Role Midman belum di-set. Admin pakai `/set-role midman @role` dulu.',
+            content: '❌ The Midman role is not set yet. An admin must run `/set-role midman @role` first.',
             flags: MessageFlags.Ephemeral
         });
     }
 
     const modal = new ModalBuilder()
         .setCustomId('modal_mm_create')
-        .setTitle('Buat Deal Rekber — Item & Harga')
+        .setTitle('Create Escrow Deal — Item & Price')
         .addComponents(
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('mm_field_item')
-                    .setLabel('Item yang dijual')
+                    .setLabel('Item being sold')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
                     .setMaxLength(100)
-                    .setPlaceholder('Contoh: Akun ML Mythic full hero')
+                    .setPlaceholder('Example: Mythic ML account with all heroes')
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('mm_field_price')
-                    .setLabel('Harga (contoh: 100000 / 100k)')
+                    .setLabel('Price (e.g. 100000 / 100k)')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true)
                     .setMaxLength(20)
                     .setPlaceholder('100000')
             )
-            // v3.9.33: field "penjual" DIHAPUS dari modal — penjual dipilih
-            // lewat dropdown member (mm_pick_seller) setelah modal di-submit,
-            // biar user gak perlu mention/copy user ID.
+            // v3.9.33: the "seller" field was REMOVED from the modal — the seller
+            // is picked via the member dropdown (mm_pick_seller) after the modal
+            // is submitted, so users never need to mention or copy a user ID.
         );
     return interaction.showModal(modal);
 }
 
 // ====================================================
-// === BUAT DEAL — FORMULIR 3 LANGKAH (v3.9.34) ===
-// ===  Langkah 1 (modal)   : item + harga           ===
-// ===  Langkah 2 (dropdown): pilih PEMBELI          ===
-// ===  Langkah 3 (dropdown): pilih PENJUAL          ===
+// === CREATE DEAL — 3-STEP FORM (v3.9.34) ===
+// ===  Step 1 (modal)   : item + price           ===
+// ===  Step 2 (dropdown): pick the BUYER         ===
+// ===  Step 3 (dropdown): pick the SELLER        ===
 // ====================================================
-// Deal bisa dibuka SIAPA SAJA — pembeli, penjual, atau pihak yang menolong
-// (mis. midman/staff). Yang penting formulir jelas: item, harga, siapa
-// pembeli, siapa penjual — peran tidak lagi ditebak dari siapa yang klik
-// tombol. Karena creator bisa siapa saja, terms terkunci HANYA setelah
-// pembeli & penjual DUA-DUANYA klik Setuju Deal (state WAITING_AGREE).
+// A deal can be opened by ANYONE — the buyer, the seller, or a helping
+// third party (e.g. a middleman/staff member). What matters is a clear
+// form: item, price, who the buyer is, who the seller is — roles are no
+// longer guessed from whoever clicked the button. Since the creator can be
+// anyone, the terms are locked ONLY after BOTH the buyer & seller click
+// Agree to Deal (state WAITING_AGREE).
 //
-// Dropdown (User Select Menu) = daftar member bawaan Discord yang punya kolom
-// pencarian + avatar + nama — user cukup KETIK nama/username, TIDAK perlu
-// tahu cara mention atau copy user ID. Data langkah 1+2 disimpan sementara
-// (in-memory) sampai penjual dipilih.
+// Dropdown (User Select Menu) = Discord's built-in member list with a search
+// field + avatars + names — users just TYPE a name/username, no need to
+// know how to mention or copy a user ID. Step 1+2 data is stored temporarily
+// (in-memory) until the seller is picked.
 
-// TTL 15 menit — sejajar dengan umur pesan ephemeral & token interaction.
+// TTL 15 minutes — aligned with the lifetime of ephemeral messages & interaction tokens.
 const PENDING_TTL_MS = 15 * 60 * 1000;
 // key: `${guildId}:${userId}` → { item, priceNum, buyerId, ts }
 const pendingDeals = new Map();
 
 function setPendingDeal(guildId, userId, data) {
-    // Prune entry kadaluarsa supaya Map tidak tumbuh tanpa batas.
+    // Prune expired entries so the Map can't grow without bound.
     const now = Date.now();
     for (const [key, val] of pendingDeals) {
         if (now - val.ts > PENDING_TTL_MS) pendingDeals.delete(key);
@@ -367,7 +369,7 @@ function setPendingDeal(guildId, userId, data) {
     pendingDeals.set(`${guildId}:${userId}`, {
         item: data.item,
         priceNum: data.priceNum,
-        // v3.9.34: pembeli dipilih di langkah 2 (null sampai dipilih).
+        // v3.9.34: the buyer is picked in step 2 (null until chosen).
         buyerId: data.buyerId || null,
         ts: now
     });
@@ -384,60 +386,60 @@ function getPendingDeal(guildId, userId) {
     return pending;
 }
 
-/** Dropdown langkah 2 — pilih pembeli (re-renderable saat validasi gagal). */
+/** Step 2 dropdown — pick the buyer (re-renderable when validation fails). */
 function buyerSelectRow() {
     return [
         new ActionRowBuilder().addComponents(
             new UserSelectMenuBuilder()
                 .setCustomId('mm_pick_buyer')
-                .setPlaceholder('🔍 Ketik nama PEMBELI di sini…')
+                .setPlaceholder('🔍 Type the BUYER\'s name here…')
                 .setMinValues(1)
                 .setMaxValues(1)
         )
     ];
 }
 
-/** Dropdown langkah 3 — pilih penjual (re-renderable saat validasi gagal). */
+/** Step 3 dropdown — pick the seller (re-renderable when validation fails). */
 function sellerSelectRow() {
     return [
         new ActionRowBuilder().addComponents(
             new UserSelectMenuBuilder()
                 .setCustomId('mm_pick_seller')
-                .setPlaceholder('🔍 Ketik nama PENJUAL di sini…')
+                .setPlaceholder('🔍 Type the SELLER\'s name here…')
                 .setMinValues(1)
                 .setMaxValues(1)
         )
     ];
 }
 
-/** Dropdown tambah member tambahan — pilih user (re-renderable). */
+/** Extra-member add dropdown — pick a user (re-renderable). */
 function memberSelectRow() {
     return [
         new ActionRowBuilder().addComponents(
             new UserSelectMenuBuilder()
                 .setCustomId('mm_pick_member')
-                .setPlaceholder('🔍 Ketik nama member yang mau ditambah…')
+                .setPlaceholder('🔍 Type the name of the member to add…')
                 .setMinValues(1)
                 .setMaxValues(1)
         )
     ];
 }
 
-/** Ringkasan item+harga untuk header pesan ephemeral tiap langkah. */
+/** Item+price summary for the ephemeral message header of each step. */
 function pendingSummary(pending) {
-    const buyerPart = pending.buyerId ? `\n🛒 Pembeli: **<@${pending.buyerId}>**` : '';
-    return `🧾 Item: **${pending.item}** • 💰 Harga: **${mm.formatRupiah(pending.priceNum)}**${buyerPart}`;
+    const buyerPart = pending.buyerId ? `\n🛒 Buyer: **<@${pending.buyerId}>**` : '';
+    return `🧾 Item: **${pending.item}** • 💰 Price: **${mm.formatRupiah(pending.priceNum)}**${buyerPart}`;
 }
 
 /**
- * Langkah 1 — submit modal (item + harga): validasi input & config, simpan
- * sementara, lalu tampilkan dropdown pilih PEMBELI (ephemeral). Channel deal
- * BELUM dibuat di langkah ini.
+ * Step 1 — modal submit (item + price): validate input & config, store
+ * temporarily, then show the BUYER selection dropdown (ephemeral). The deal
+ * channel is NOT created in this step.
  *
- * v3.9.34: creator bisa siapa saja — cek "user punya deal/tiket aktif"
- * TIDAK lagi dijalankan pada creator, tapi pada pembeli & penjual saat
- * mereka dipilih (langkah 2 & 3). Creator pihak ketiga (mis. midman yang
- * menolong) tetap boleh membuat deal untuk orang lain.
+ * v3.9.34: the creator can be anyone — the "user has an active deal/ticket"
+ * check no longer runs on the creator, but on the buyer & seller when they
+ * are picked (steps 2 & 3). A third-party creator (e.g. a middleman helping
+ * out) may still create a deal for someone else.
  */
 async function handleCreateDeal(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -445,24 +447,24 @@ async function handleCreateDeal(interaction) {
     const guild = interaction.guild;
     const creator = interaction.user;
 
-    // Validasi config
+    // Validate config
     if (!config.roles.admin) {
-        return safeEditReply(interaction, { content: '❌ Role Admin belum di-set. Pakai `/set-role admin @role` dulu.' });
+        return safeEditReply(interaction, { content: '❌ The Admin role is not set yet. Run `/set-role admin @role` first.' });
     }
     if (!config.roles.midman) {
-        return safeEditReply(interaction, { content: '❌ Role Midman belum di-set. Pakai `/set-role midman @role` dulu.' });
+        return safeEditReply(interaction, { content: '❌ The Midman role is not set yet. Run `/set-role midman @role` first.' });
     }
 
-    // Validasi input modal
+    // Validate modal input
     const item = (interaction.fields.getTextInputValue('mm_field_item') || '').trim();
     const priceRaw = (interaction.fields.getTextInputValue('mm_field_price') || '').trim();
 
     if (item.length < 3) {
-        return safeEditReply(interaction, { content: '❌ Nama item minimal 3 karakter.' });
+        return safeEditReply(interaction, { content: '❌ The item name must be at least 3 characters.' });
     }
     const priceNum = mm.parsePriceNumber(priceRaw);
     if (priceNum <= 0) {
-        return safeEditReply(interaction, { content: '❌ Harga tidak valid. Contoh: `100000`, `100.000`, atau `100k`.' });
+        return safeEditReply(interaction, { content: '❌ Invalid price. Examples: `100000`, `100.000`, or `100k`.' });
     }
 
     setPendingDeal(guild.id, creator.id, { item, priceNum });
@@ -470,19 +472,19 @@ async function handleCreateDeal(interaction) {
     return safeEditReply(interaction, {
         content:
             `${pendingSummary({ item, priceNum })}\n\n` +
-            '👉 **Langkah 2/3 — pilih 🛒 PEMBELI** lewat daftar member di bawah — cukup **ketik namanya di kolom pencarian** (tidak perlu mention atau copy user ID).\n' +
-            '⏳ Berlaku 15 menit — kalau pesan ini hilang, klik tombol 🤝 Rekber lagi.',
+            '👉 **Step 2/3 — pick the 🛒 BUYER** from the member list below — just **type their name in the search field** (no mention or user ID copy needed).\n' +
+            '⏳ Valid for 15 minutes — if this message disappears, click the 🤝 Escrow button again.',
         components: buyerSelectRow()
     });
 }
 
 /**
- * Langkah 2 — pembeli dipilih dari dropdown member (v3.9.34): validasi
- * pembeli (ada di server, bukan bot, tidak sedang pegang deal/tiket aktif),
- * simpan ke pending, lalu tampilkan dropdown pilih penjual.
+ * Step 2 — the buyer is picked from the member dropdown (v3.9.34): validate
+ * the buyer (exists on the server, not a bot, not holding an active deal/ticket),
+ * save to pending, then show the seller selection dropdown.
  *
- * Validasi gagal → pesan error + dropdown DIRENDER LAGI di pesan yang sama
- * (user tidak perlu isi ulang modal).
+ * Validation failure → error message + the dropdown is RE-RENDERED on the
+ * same message (the user doesn't have to refill the modal).
  */
 async function handlePickBuyer(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -492,64 +494,64 @@ async function handlePickBuyer(interaction) {
     const pending = getPendingDeal(guild.id, creator.id);
     if (!pending) {
         return safeEditReply(interaction, {
-            content: '❌ Sesi pembuatan deal kedaluwarsa / tidak ditemukan. Klik tombol 🤝 Rekber di panel lagi.'
+            content: '❌ Deal creation session expired / not found. Click the 🤝 Escrow button on the panel again.'
         });
     }
 
     const buyerId = interaction.values && interaction.values[0];
     if (!buyerId) {
-        return safeEditReply(interaction, { content: '❌ Pembeli tidak terpilih. Coba pilih lagi.', components: buyerSelectRow() });
+        return safeEditReply(interaction, { content: '❌ No buyer selected. Please try again.', components: buyerSelectRow() });
     }
 
-    // Resolve pembeli harus benar-benar ada di server.
+    // Resolve the buyer — they must actually exist on the server.
     let buyerMember = interaction.members?.get(buyerId) || guild.members.cache.get(buyerId);
     if (!buyerMember) buyerMember = await guild.members.fetch(buyerId).catch(() => null);
     if (!buyerMember) {
         return safeEditReply(interaction, {
-            content: '❌ Pembeli tidak ditemukan di server ini. Pilih lagi:',
+            content: '❌ Buyer not found on this server. Please pick again:',
             components: buyerSelectRow()
         });
     }
     if (buyerMember.user?.bot) {
         return safeEditReply(interaction, {
-            content: '❌ Pembeli tidak boleh bot. Pilih lagi:',
+            content: '❌ The buyer cannot be a bot. Please pick again:',
             components: buyerSelectRow()
         });
     }
 
-    // Pembeli tidak boleh terlibat deal lain yang masih aktif.
+    // The buyer must not be involved in another still-active deal.
     if (mm.hasActiveDealFor(guild.id, buyerId)) {
         return safeEditReply(interaction, {
-            content: `❌ <@${buyerId}> masih punya deal rekber **aktif**. Selesaikan dulu sebelum buat deal baru. Pilih pembeli lain:`,
+            content: `❌ <@${buyerId}> still has an **active** escrow deal. Finish that one before creating a new deal. Please pick another buyer:`,
             components: buyerSelectRow()
         });
     }
-    // Pembeli tidak boleh punya tiket reguler aktif bersamaan (kebijakan
-    // 1 channel aktif per user — konsisten dengan createTicket).
+    // The buyer must not have an active regular ticket at the same time (the
+    // 1 active channel per user policy — consistent with createTicket).
     const activeTicket = await findActiveTicketFor(guild, buyerId);
     if (activeTicket) {
         return safeEditReply(interaction, {
-            content: `❌ <@${buyerId}> masih punya tiket aktif di ${activeTicket}. Tutup dulu sebelum buat deal rekber. Pilih pembeli lain:`,
+            content: `❌ <@${buyerId}> still has an active ticket in ${activeTicket}. Close it before creating an escrow deal. Please pick another buyer:`,
             components: buyerSelectRow()
         });
     }
 
-    // Simpan pembeli ke sesi pending (item & harga tetap dibawa).
+    // Save the buyer to the pending session (item & price are carried over).
     setPendingDeal(guild.id, creator.id, { item: pending.item, priceNum: pending.priceNum, buyerId });
 
     return safeEditReply(interaction, {
         content:
             `${pendingSummary({ item: pending.item, priceNum: pending.priceNum, buyerId })}\n\n` +
-            '👉 **Langkah 3/3 — pilih 🏷️ PENJUAL** — ketik namanya di kolom pencarian.\n' +
-            '⏳ Berlaku 15 menit — kalau pesan ini hilang, klik tombol 🤝 Rekber lagi.',
+            '👉 **Step 3/3 — pick the 🏷️ SELLER** — type their name in the search field.\n' +
+            '⏳ Valid for 15 minutes — if this message disappears, click the 🤝 Escrow button again.',
         components: sellerSelectRow()
     });
 }
 
 /**
- * Langkah 3 — penjual dipilih dari dropdown member: validasi penjual,
- * re-check pembeli & penjual (keadaan bisa berubah sejak langkah 1-2),
- * buat channel 3-pihak → kirim Deal Board → simpan deals.json.
+ * Step 3 — the seller is picked from the member dropdown: validate the seller,
+ * re-check the buyer & seller (things may have changed since steps 1-2),
+ * create the 3-party channel → send the Deal Board → save deals.json.
  */
 async function handlePickSeller(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -560,25 +562,25 @@ async function handlePickSeller(interaction) {
     const pending = getPendingDeal(guild.id, creator.id);
     if (!pending) {
         return safeEditReply(interaction, {
-            content: '❌ Sesi pembuatan deal kedaluwarsa / tidak ditemukan. Klik tombol 🤝 Rekber di panel lagi.'
+            content: '❌ Deal creation session expired / not found. Click the 🤝 Escrow button on the panel again.'
         });
     }
-    // v3.9.34: pembeli wajib sudah dipilih di langkah 2 — kalau belum,
-    // sesi ini dari alur lama / tidak valid, minta ulang dari awal.
+    // v3.9.34: the buyer must already be picked in step 2 — if not, this
+    // session is from an old/invalid flow; ask them to start over.
     if (!pending.buyerId) {
         return safeEditReply(interaction, {
-            content: '❌ Sesi tidak lengkap (pembeli belum dipilih). Klik tombol 🤝 Rekber di panel lagi.'
+            content: '❌ Incomplete session (no buyer picked yet). Click the 🤝 Escrow button on the panel again.'
         });
     }
     const buyerId = pending.buyerId;
 
     const sellerId = interaction.values && interaction.values[0];
     if (!sellerId) {
-        return safeEditReply(interaction, { content: '❌ Penjual tidak terpilih. Coba pilih lagi dari daftar.', components: sellerSelectRow() });
+        return safeEditReply(interaction, { content: '❌ No seller selected. Please pick again from the list.', components: sellerSelectRow() });
     }
     if (sellerId === buyerId) {
         return safeEditReply(interaction, {
-            content: '❌ Penjual tidak boleh orang yang sama dengan pembeli. Pilih penjual lain:',
+            content: '❌ The seller cannot be the same person as the buyer. Please pick another seller:',
             components: sellerSelectRow()
         });
     }
@@ -586,108 +588,109 @@ async function handlePickSeller(interaction) {
     const item = pending.item;
     const priceNum = pending.priceNum;
 
-    // Resolve penjual harus benar-benar ada di server (prioritas data
-    // resolved dari select menu, fallback ke cache → fetch — pola lama).
+    // Resolve the seller — they must actually exist on the server (resolved
+    // select-menu data first, then cache → fetch fallback — the old pattern).
     let sellerMember = interaction.members?.get(sellerId) || guild.members.cache.get(sellerId);
     if (!sellerMember) sellerMember = await guild.members.fetch(sellerId).catch(() => null);
     if (!sellerMember) {
         return safeEditReply(interaction, {
-            content: '❌ Penjual tidak ditemukan di server ini. Pilih lagi:',
+            content: '❌ Seller not found on this server. Please pick again:',
             components: sellerSelectRow()
         });
     }
     if (sellerMember.user?.bot) {
         return safeEditReply(interaction, {
-            content: '❌ Penjual tidak boleh bot. Pilih lagi:',
+            content: '❌ The seller cannot be a bot. Please pick again:',
             components: sellerSelectRow()
         });
     }
 
-    // Anti-jebol (re-check — keadaan bisa berubah sejak langkah 1-2):
-    // pembeli & penjual tidak boleh terlibat deal lain yang masih aktif.
+    // Anti-bypass (re-check — things may have changed since steps 1-2):
+    // the buyer & seller must not be involved in another still-active deal.
     if (mm.hasActiveDealFor(guild.id, buyerId)) {
         return safeEditReply(interaction, {
-            content: `❌ <@${buyerId}> ternyata sudah punya deal rekber **aktif**. Selesaikan dulu deal-nya.`,
+            content: `❌ <@${buyerId}> turns out to already have an **active** escrow deal. Finish that deal first.`
         });
     }
     if (mm.hasActiveDealFor(guild.id, sellerId)) {
         return safeEditReply(interaction, {
-            content: `❌ <@${sellerId}> masih punya deal rekber aktif. Selesaikan dulu deal-nya. Pilih penjual lain:`,
+            content: `❌ <@${sellerId}> still has an active escrow deal. Finish that deal first. Please pick another seller:`,
             components: sellerSelectRow()
         });
     }
-    // Pembeli tidak boleh punya tiket reguler aktif bersamaan (kebijakan 1
-    // channel aktif per user — konsisten dengan createTicket).
+    // The buyer must not have an active regular ticket at the same time (the
+    // 1 active channel per user policy — consistent with createTicket).
     const activeTicket = await findActiveTicketFor(guild, buyerId);
     if (activeTicket) {
         return safeEditReply(interaction, {
-            content: `❌ <@${buyerId}> ternyata sudah punya tiket aktif di ${activeTicket}. Tutup dulu sebelum buat deal rekber.`
+            content: `❌ <@${buyerId}> turns out to already have an active ticket in ${activeTicket}. Close it before creating an escrow deal.`
         });
     }
-    // v3.9.37: penjual juga tidak boleh punya tiket reguler aktif — dulu cuma
-    // pembeli yang dicek, jadi user dengan tiket terbuka bisa jadi penjual
-    // (asimetris dengan kebijakan 1-channel-per-user yang berlaku di 3 arah
-    // lain: buat tiket, jadi pembeli deal, jadi penjual deal).
+    // v3.9.37: the seller must not have an active regular ticket either — previously
+    // only the buyer was checked, so a user with an open ticket could still become
+    // a seller (asymmetric with the 1-channel-per-user policy that applies in the
+    // 3 other directions: creating a ticket, being a deal buyer, being a deal seller).
     const sellerTicket = await findActiveTicketFor(guild, sellerId);
     if (sellerTicket) {
         return safeEditReply(interaction, {
-            content: `❌ <@${sellerId}> masih punya tiket aktif di ${sellerTicket}. Pilih penjual lain:`,
+            content: `❌ <@${sellerId}> still has an active ticket in ${sellerTicket}. Please pick another seller:`,
             components: sellerSelectRow()
         });
     }
 
-    // v3.9.38 FIX (anti double-submit/TOCTOU): sesi pending dihapus SEKARANG —
-    // sebelum await pembuatan channel/board. Submit kedua (user double-click
-    // dropdown penjual saat create masih jalan) tidak akan menemukan sesi →
-    // ditolak sebagai kedaluwarsa, jadi deal duplikat untuk pasangan
-    // buyer/seller yang sama tidak bisa terbentuk. Semua data sesi sudah
-    // tersalin ke variabel lokal (item/priceNum/buyerId/sellerId) di atas.
+    // v3.9.38 FIX (anti double-submit/TOCTOU): the pending session is deleted NOW —
+    // before the channel/board creation awaits. A second submit (the user double-
+    // clicking the seller dropdown while creation is still running) won't find the
+    // session → rejected as expired, so a duplicate deal for the same buyer/seller
+    // pair cannot be formed. All session data has already been copied to the
+    // local variables (item/priceNum/buyerId/sellerId) above.
     pendingDeals.delete(`${guild.id}:${creator.id}`);
 
-    // Kategori channel deal (pola v3.9.16 ticketManager: find → create → error jelas)
-    const categoryName = config.midman?.category || '🤝 REKBER';
+    // Deal channel category (v3.9.16 ticketManager pattern: find → create → clear error)
+    const categoryName = config.midman?.category || '🤝 ESCROW';
     let category = guild.channels.cache.find(
         c => c.name === categoryName && c.type === ChannelType.GuildCategory
     );
     if (!category) {
         try {
             category = await guild.channels.create({ name: categoryName, type: ChannelType.GuildCategory });
-            console.log(`📁 Kategori rekber dibuat: ${categoryName}`);
+            console.log(`📁 Escrow category created: ${categoryName}`);
         } catch (catErr) {
-            console.error(`Gagal buat kategori ${categoryName}:`, catErr.message);
+            console.error(`Failed to create category ${categoryName}:`, catErr.message);
             return safeEditReply(interaction, {
-                content: `❌ Gagal buat kategori "${categoryName}". Cek permission Manage Channels bot.`
+                content: `❌ Failed to create category "${categoryName}". Check the bot's Manage Channels permission.`
             });
         }
     }
 
-    // Fee dihitung dari config — TIDAK dari ketikan manual (anti manipulasi).
-    // v3.9.33: fee DITAMBAH di atas harga (pembeli bayar harga+fee, penjual
-    // menerima harga PENUH). Mode+nilai di-snapshot ke deal supaya Deal Board
-    // & riwayat deal TIDAK berubah walau admin ubah config di tengah jalan.
+    // The fee is computed from config — NOT from manual input (anti-tampering).
+    // v3.9.33: the fee is ADDED on top of the price (the buyer pays price+fee,
+    // the seller receives the FULL price). Mode+value are snapshotted into the
+    // deal so the Deal Board & deal history DON'T change even if an admin
+    // edits the config mid-deal.
     const feeMode = config.midman?.feeMode || 'percent';
     const feeValue = config.midman?.feeValue !== undefined ? config.midman.feeValue : 5;
     const fee = mm.calcFee(priceNum, feeMode, feeValue);
 
     const deal = {
-        channelId: null, // di-set setelah channel dibuat
+        channelId: null, // set once the channel is created
         guildId: guild.id,
-        // v3.9.34: peran eksplisit dari formulir — siapa pun boleh membuat
-        // deal (creator), tapi pembeli/penjual ditentukan pilihan langkah 2-3.
+        // v3.9.34: explicit roles from the form — anyone may create the deal
+        // (creator), but buyer/seller are determined by the step 2-3 picks.
         buyerId,
         sellerId,
-        // v3.9.34: persetujuan ganda — terms terkunci hanya setelah pembeli
-        // & penjual dua-duanya klik Setuju Deal (state WAITING_AGREE).
+        // v3.9.34: dual consent — the terms are locked only after BOTH the
+        // buyer & seller click Agree to Deal (state WAITING_AGREE).
         buyerAgreed: false,
         sellerAgreed: false,
-        // v3.9.34: member tambahan (observer) — dikelola tombol 👥/➖ di board.
+        // v3.9.34: extra members (observers) — managed by the 👥/➖ buttons on the board.
         observers: [],
         item,
         priceNum,
         priceText: mm.formatRupiah(priceNum),
         fee,
-        // v3.9.33: snapshot fee saat deal dibuat (tampilan board & konsistensi
-        // riwayat — config berubah tidak mengubah deal berjalan).
+        // v3.9.33: fee snapshot at deal creation (board display & history
+        // consistency — config changes don't affect a running deal).
         feeMode,
         feeValue,
         state: 'WAITING_AGREE',
@@ -697,12 +700,12 @@ async function handlePickSeller(interaction) {
         history: []
     };
 
-    const channelName = `rekber-${buyerId}`.toLowerCase().slice(0, 50);
+    const channelName = `escrow-${buyerId}`.toLowerCase().slice(0, 50);
 
-    // v3.9.34: overwrites dibangun secara kondisional — creator pihak ketiga
-    // (bukan pembeli/penjual, mis. midman/staff yang menolong) tetap dapat
-    // akses channel yang dia buat. Kalau creator = pembeli/penjual, overwrite
-    // creator dilewati (sudah ada di atas).
+    // v3.9.34: overwrites are built conditionally — a third-party creator
+    // (not the buyer/seller, e.g. a middleman/staff member helping out) still
+    // gets access to the channel they created. If creator = buyer/seller, the
+    // creator overwrite is skipped (already covered above).
     const participantAllow = [
         PermissionFlagsBits.ViewChannel,
         PermissionFlagsBits.SendMessages,
@@ -716,18 +719,19 @@ async function handlePickSeller(interaction) {
     ];
     if (creator.id !== buyerId && creator.id !== sellerId) {
         overwrites.push({ id: creator.id, allow: participantAllow });
-        // v3.9.38 FIX: creator pihak ketiga juga dicatat sebagai observer
-        // pertama deal — dulu dia dapat akses channel tapi TIDAK masuk
-        // deal.observers, jadi tidak bisa dikeluarkan lewat tombol ➖ (admin
-        // harus revoke permission manual). Ditambahkan saat deal dibuat,
-        // jadi cuma memakan 1 dari 10 slot observer (canAddObserver tetap
-        // jalan normal untuk member lain).
+        // v3.9.38 FIX: third-party creators are also recorded as the deal's
+        // first observer — previously they got channel access but were NOT
+        // in deal.observers, so they couldn't be removed via the ➖ button (an
+        // admin had to revoke the permission manually). Added at deal creation,
+        // so it only takes 1 of the 10 observer slots (canAddObserver still
+        // works normally for other members).
         deal.observers.push(creator.id);
     }
     overwrites.push(
         {
-            // Semua anggota role midman bisa lihat & handle deal (pola role
-            // admin di tiket). Siapa yang KLIK tercatat di history deal.
+            // Everyone with the midman role can see & handle the deal (the
+            // same pattern as the admin role in tickets). Whoever CLICKS is
+            // recorded in the deal history.
             id: config.roles.midman,
             allow: [
                 PermissionFlagsBits.ViewChannel,
@@ -764,17 +768,17 @@ async function handlePickSeller(interaction) {
             name: channelName,
             type: ChannelType.GuildText,
             parent: category.id,
-            topic: `Deal Rekber | Buyer: ${buyerId} | Seller: ${sellerId} | Item: ${item}`.slice(0, 1024),
+            topic: `Escrow Deal | Buyer: ${buyerId} | Seller: ${sellerId} | Item: ${item}`.slice(0, 1024),
             permissionOverwrites: overwrites
         });
     } catch (chErr) {
-        console.error('Gagal buat channel deal:', chErr);
-        return safeEditReply(interaction, { content: '❌ Gagal membuat channel deal. Cek izin bot!' });
+        console.error('Failed to create the deal channel:', chErr);
+        return safeEditReply(interaction, { content: '❌ Failed to create the deal channel. Check the bot\'s permissions!' });
     }
 
     deal.channelId = dealChannel.id;
 
-    // Kirim Deal Board (sumber kebenaran) + simpan meta
+    // Send the Deal Board (source of truth) + save meta
     let board;
     try {
         board = await dealChannel.send({
@@ -783,22 +787,22 @@ async function handlePickSeller(interaction) {
             components: boardComponents(deal)
         });
     } catch (sendErr) {
-        console.error('Gagal kirim Deal Board:', sendErr);
+        console.error('Failed to send the Deal Board:', sendErr);
         await dealChannel.delete().catch(() => {});
-        return safeEditReply(interaction, { content: '❌ Gagal mengirim Deal Board. Cek izin bot!' });
+        return safeEditReply(interaction, { content: '❌ Failed to send the Deal Board. Check the bot\'s permissions!' });
     }
 
     deal.boardMessageId = board.id;
 
-    // v3.9.38 FIX (re-check atomik sebelum commit): cek "deal aktif" dijalankan
-    // LAGI tepat sebelum meta disimpan — selama await create channel & kirim
-    // board di atas, deal lain untuk pembeli/penjual yang sama bisa saja
-    // ter-commit (TOCTOU). Kalau terlanjur, channel yang baru dibuat dibersihkan
-    // (best-effort) dan deal ini tidak disimpan.
+    // v3.9.38 FIX (atomic re-check before commit): the "active deal" check runs
+    // AGAIN right before the meta is saved — during the channel create & board
+    // send awaits above, another deal for the same buyer/seller may already
+    // have been committed (TOCTOU). If so, the newly created channel is cleaned
+    // up (best-effort) and this deal is not saved.
     if (mm.hasActiveDealFor(guild.id, buyerId) || mm.hasActiveDealFor(guild.id, sellerId)) {
         await dealChannel.delete().catch(() => {});
         return safeEditReply(interaction, {
-            content: '❌ Maaf, pembeli/penjual deal ini ternyata sudah terlibat deal aktif lain yang baru saja dibuat. Deal ini dibatalkan — silakan ulangi kalau masih diperlukan.'
+            content: '❌ Sorry, this deal\'s buyer/seller turns out to already be involved in another active deal that was just created. This deal is cancelled — please try again if it\'s still needed.'
         });
     }
     mm.setDeal(dealChannel.id, deal);
@@ -808,57 +812,57 @@ async function handlePickSeller(interaction) {
         actorId: creator.id,
         actorTag: creator.tag,
         details:
-            `Deal rekber dibuat oleh <@${creator.id}> — Item: **${item}** • Harga: ${mm.formatRupiah(priceNum)} • Fee: ${mm.formatRupiah(fee)} • Total dibayar pembeli: ${mm.formatRupiah(priceNum + fee)} • Pembeli: <@${buyerId}> • Penjual: <@${sellerId}>`,
+            `Escrow deal created by <@${creator.id}> — Item: **${item}** • Price: ${mm.formatRupiah(priceNum)} • Fee: ${mm.formatRupiah(fee)} • Total paid by buyer: ${mm.formatRupiah(priceNum + fee)} • Buyer: <@${buyerId}> • Seller: <@${sellerId}>`,
         guildId: guild.id
     });
 
-    // Catatan: sesi pending sudah dihapus sebelum await pembuatan channel
-    // (v3.9.38 FIX anti double-submit) — tidak ada lagi cleanup di sini.
+    // Note: the pending session was already deleted before the channel
+    // creation awaits (v3.9.38 FIX anti double-submit) — no further cleanup here.
 
     return safeEditReply(interaction, {
         content:
-            `✅ Deal rekber dibuat: 🛒 <@${buyerId}> ⇄ 🏷️ <@${sellerId}> — ${dealChannel}\n` +
-            '🤝 **Pembeli & penjual** dua-duanya harus klik **Setuju Deal** di Deal Board untuk mengunci terms.'
+            `✅ Escrow deal created: 🛒 <@${buyerId}> ⇄ 🏷️ <@${sellerId}> — ${dealChannel}\n` +
+            '🤝 **Buyer & seller** must BOTH click **Agree to Deal** on the Deal Board to lock the terms.'
     });
 }
 
 // ====================================================
-// === FINALISASI (terminal state) ===
+// === FINALIZATION (terminal state) ===
 // ====================================================
 
 /**
- * Selesaikan deal: ringkasan riwayat (pesan biasa → ikut ke transcript),
- * transcript, invoice + stats (hanya COMPLETED), hapus channel + meta.
+ * Finalize the deal: history summary (regular message → captured in the
+ * transcript), transcript, invoice + stats (COMPLETED only), delete channel + meta.
  *
- * Pola closeTicket v3.9.31: meta deals.json hanya dihapus kalau channel
- * BENAR-BENAR sudah tidak ada — jangan tinggalkan channel orphan tanpa meta
- * (kalau delete gagal, admin bisa resolve lagi nanti).
+ * closeTicket v3.9.31 pattern: deals.json meta is only deleted if the channel
+ * is REALLY gone — never leave an orphan channel without meta (if deletion
+ * fails, an admin can resolve it again later).
  */
 async function finalizeDeal(channel, deal, closer, endState, config) {
-    // 1. Ringkasan riwayat — dikirim sebagai pesan biasa supaya ikut
-    //    ke-capture saveTranscript (bukti audit "siapa klik apa kapan").
+    // 1. History summary — sent as a regular message so it gets captured
+    //    by saveTranscript (audit evidence of "who clicked what when").
     try {
         const histLines = (deal.history || [])
             .map(
                 h =>
-                    `• [${new Date(h.ts).toLocaleString('id-ID')}] **${h.event}** oleh <@${h.actorId}> (${h.actorTag}) → ${mm.STATES[h.toState]?.label || h.toState}`
+                    `• [${new Date(h.ts).toLocaleString('en-US')}] **${h.event}** by <@${h.actorId}> (${h.actorTag}) → ${mm.STATES[h.toState]?.label || h.toState}`
             )
             .join('\n');
         await channel.send({
-            content: `📋 **RIWAYAT DEAL**\n${histLines.slice(0, 1800)}\n\n📍 Status akhir: **${mm.STATES[endState]?.label || endState}**`
+            content: `📋 **DEAL HISTORY**\n${histLines.slice(0, 1800)}\n\n📍 Final status: **${mm.STATES[endState]?.label || endState}**`
         });
     } catch (_) {}
 
-    // 2. Transcript (kalau channel transcript di-set via /set-channel tipe:transcript)
+    // 2. Transcript (if a transcript channel is set via /set-channel type:transcript)
     if (config.channels?.transcript) {
         try {
             await saveTranscript(
                 channel,
                 {
                     userId: deal.buyerId,
-                    productName: `🤝 Rekber: ${deal.item}`,
-                    // v3.9.33: rincian fee additive ikut terekam di transcript.
-                    price: `${mm.formatRupiah(deal.priceNum + deal.fee)} (harga ${mm.formatRupiah(
+                    productName: `🤝 Escrow: ${deal.item}`,
+                    // v3.9.33: the additive fee breakdown is recorded in the transcript too.
+                    price: `${mm.formatRupiah(deal.priceNum + deal.fee)} (price ${mm.formatRupiah(
                         deal.priceNum
                     )} + fee ${mm.formatRupiah(deal.fee)})`,
                     category: 'midman'
@@ -867,32 +871,32 @@ async function finalizeDeal(channel, deal, closer, endState, config) {
                 endState === 'COMPLETED'
             );
         } catch (transcriptErr) {
-            console.warn(`⚠️ Gagal save transcript deal ${deal.channelId}:`, transcriptErr.message);
+            console.warn(`⚠️ Failed to save the deal transcript ${deal.channelId}:`, transcriptErr.message);
         }
     }
 
-    // 3. Invoice + stats — hanya deal COMPLETED (uang cair ke penjual).
-    //    v3.9.33: yang dicatat = pengeluaran NYATA pembeli (harga + fee).
+    // 3. Invoice + stats — COMPLETED deals only (funds released to the seller).
+    //    v3.9.33: what gets recorded = the buyer's REAL spending (price + fee).
     if (endState === 'COMPLETED') {
         try {
             await sendInvoice(
                 channel,
                 deal.buyerId,
-                `🤝 Rekber: ${deal.item}`,
+                `🤝 Escrow: ${deal.item}`,
                 mm.formatRupiah(deal.priceNum + deal.fee),
                 closer
             );
         } catch (invoiceErr) {
-            console.warn(`⚠️ Gagal kirim invoice deal ${deal.channelId}:`, invoiceErr.message);
+            console.warn(`⚠️ Failed to send the deal invoice ${deal.channelId}:`, invoiceErr.message);
         }
         try {
             recordPurchase(deal.guildId, deal.buyerId, deal.priceNum + deal.fee);
         } catch (statsErr) {
-            console.warn('⚠️ Gagal record purchase stats:', statsErr.message);
+            console.warn('⚠️ Failed to record the purchase stats:', statsErr.message);
         }
     }
 
-    // 4. Hapus channel — kasih jeda supaya peserta sempat baca ringkasan.
+    // 4. Delete the channel — add a delay so participants can read the summary.
     await new Promise(resolve => setTimeout(resolve, DELETE_DELAY_MS));
     let channelGone = false;
     try {
@@ -900,9 +904,9 @@ async function finalizeDeal(channel, deal, closer, endState, config) {
         channelGone = true;
     } catch (deleteErr) {
         if (deleteErr.code === 10003) {
-            channelGone = true; // Unknown Channel — sudah dihapus pihak lain
+            channelGone = true; // Unknown Channel — already deleted by someone else
         } else {
-            console.warn(`⚠️ Gagal hapus channel deal ${deal.channelId}:`, deleteErr.message);
+            console.warn(`⚠️ Failed to delete the deal channel ${deal.channelId}:`, deleteErr.message);
         }
     }
     if (channelGone) {
@@ -911,14 +915,14 @@ async function finalizeDeal(channel, deal, closer, endState, config) {
 }
 
 // ====================================================
-// === HANDLE EVENT (transisi state via tombol) ===
+// === HANDLE EVENT (state transitions via buttons) ===
 // ====================================================
 
 /**
- * Inti state machine: satu pintu untuk SEMUA tombol transisi.
- * Guard berlapis: channel valid → deal ada → tidak sedang diproses (lock) →
- * transisi valid (urutan) → aktor berhak (peran). Aksi ilegal ditolak bot
- * dengan pesan jelas — bukan cuma larangan tertulis.
+ * The state machine core: a single gate for ALL transition buttons.
+ * Layered guards: valid channel → deal exists → not being processed (lock) →
+ * valid transition (order) → authorized actor (role). Illegal actions are
+ * rejected by the bot with a clear message — not just a written rule.
  */
 async function handleEvent(interaction, event) {
     const config = getConfig();
@@ -926,67 +930,67 @@ async function handleEvent(interaction, event) {
 
     if (!channel) {
         return interaction
-            .reply({ content: '❌ Channel tidak tersedia (mungkin sudah dihapus).', flags: MessageFlags.Ephemeral })
+            .reply({ content: '❌ Channel unavailable (it may have already been deleted).', flags: MessageFlags.Ephemeral })
             .catch(() => {});
     }
 
-    // v3.9.38 FIX: deferReply DI AWAL — dulu konfirmasi ephemeral di-reply
-    // SETELAH 3-4 await API (pengumuman channel, refresh Deal Board, audit
-    // log) → bisa melewati window ack 3 detik Discord → "interaction failed"
-    // walau transisi sudah tersimpan. Semua reply setelah ini lewat
-    // safeEditReply (meng-edit deferred reply). Defer sengaja ditaruh SEBELUM
-    // getDeal+cek lock supaya rangkaian baca→validasi→kunci tetap sinkron
-    // (atomik di event loop — menyisipkan await di tengahnya akan membuka
-    // race transisi ganda).
+    // v3.9.38 FIX: deferReply AT THE START — previously the ephemeral confirmation
+    // was sent as a reply AFTER 3-4 API awaits (channel announcement, Deal Board
+    // refresh, audit log) → could exceed Discord's 3-second ack window →
+    // "interaction failed" even though the transition had been saved. All
+    // replies after this go through safeEditReply (edits the deferred reply).
+    // The defer is deliberately placed BEFORE getDeal+lock check so the
+    // read→validate→lock sequence stays synchronized (atomic on the event
+    // loop — inserting an await in the middle would open a double-transition race).
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
 
     const deal = mm.getDeal(channel.id);
     if (!deal) {
-        return safeEditReply(interaction, { content: '❌ Channel ini bukan channel deal rekber.' });
+        return safeEditReply(interaction, { content: '❌ This channel is not an escrow deal channel.' });
     }
     if (mm.transitionLocks.has(channel.id)) {
-        return safeEditReply(interaction, { content: '⏳ Deal sedang diproses, tunggu sebentar...' });
+        return safeEditReply(interaction, { content: '⏳ The deal is being processed, please wait a moment...' });
     }
 
-    // Guard 1: urutan langkah — state harus mengizinkan event ini.
-    // (Menangkap klik tombol stale: user klik tombol lama di client yang
-    // belum ter-update setelah state berubah.)
+    // Guard 1: step order — the state must allow this event.
+    // (Catches stale button clicks: a user clicking an old button on a client
+    // that hasn't refreshed after a state change.)
     const next = mm.nextState(deal.state, event);
     if (!next) {
         return safeEditReply(interaction, {
-            content: `❌ Aksi ini tidak bisa dilakukan sekarang.\n📍 Status deal: **${mm.STATES[deal.state]?.label || deal.state}**.`
+            content: `❌ This action cannot be performed right now.\n📍 Deal status: **${mm.STATES[deal.state]?.label || deal.state}**.`
         });
     }
 
-    // Guard 2: peran — hanya pihak yang berhak.
+    // Guard 2: role — only authorized parties.
     const actor = resolveActor(deal, interaction, config);
     if (!mm.actorAllowed(event, actor)) {
-        return safeEditReply(interaction, { content: ACTOR_HINT[event] || '❌ Kamu tidak berhak melakukan aksi ini.' });
+        return safeEditReply(interaction, { content: ACTOR_HINT[event] || '❌ You are not allowed to perform this action.' });
     }
 
     mm.transitionLocks.add(channel.id);
     try {
-        // v3.9.34: join = persetujuan PER PRAK. Transisi ke WAITING_PAYMENT
-        // hanya terjadi kalau pembeli & penjual DUA-DUANYA sudah setuju —
-        // klik pertama tercatat sebagai persetujuan parsial (history +
-        // board update + ping pihak yang belum), tanpa menggerakkan state.
+        // v3.9.34: join = consent PER PARTY. The transition to WAITING_PAYMENT
+        // only happens once BOTH the buyer & seller have agreed — the first
+        // click is recorded as partial consent (history + board update + ping
+        // of the party who hasn't agreed), without moving the state.
         if (event === 'join') {
             const res = mm.applyAgreement(deal, interaction.user.id);
             if (!res.ok) {
-                // Guard 2 sudah memastikan aktor = buyer/seller, jadi satu-satunya
-                // penyebab gagal: pihak itu SUDAH setuju (double-click / tombol
-                // stale di client yang belum ter-update).
+                // Guard 2 already ensures the actor = buyer/seller, so the only
+                // failure cause: that party ALREADY agreed (double-click / stale
+                // button on a client that hasn't refreshed).
                 return safeEditReply(interaction, {
-                    content: '✅ Kamu sudah menyetujui deal ini — menunggu pihak lainnya.'
+                    content: '✅ You have already agreed to this deal — waiting for the other party.'
                 });
             }
             if (!res.both) {
-                // Persetujuan parsial — catat, update board, ping pihak yang
-                // belum setuju. State TIDAK berubah (tetap WAITING_AGREE).
+                // Partial consent — record it, update the board, ping the party
+                // who hasn't agreed. The state does NOT change (stays WAITING_AGREE).
                 deal.history = Array.isArray(deal.history) ? deal.history : [];
                 deal.history.push({
                     ts: Date.now(),
-                    event: `${res.role === 'buyer' ? '🛒 Pembeli' : '🏷️ Penjual'} setuju deal (menunggu pihak lain)`,
+                    event: `${res.role === 'buyer' ? '🛒 Buyer' : '🏷️ Seller'} agreed to the deal (waiting for the other party)`,
                     fromState: deal.state,
                     toState: deal.state,
                     actorId: interaction.user.id,
@@ -995,73 +999,73 @@ async function handleEvent(interaction, event) {
                 mm.setDeal(channel.id, deal);
                 await refreshBoard(channel, deal, config);
                 const waitingId = res.role === 'buyer' ? deal.sellerId : deal.buyerId;
-                const waitingLabel = res.role === 'buyer' ? '🏷️ Penjual' : '🛒 Pembeli';
+                const waitingLabel = res.role === 'buyer' ? '🏷️ Seller' : '🛒 Buyer';
                 await channel
-                    .send(`⏳ ${res.role === 'buyer' ? '🛒 Pembeli' : '🏷️ Penjual'} sudah setuju. ${waitingLabel} <@${waitingId}> — giliranmu klik **🤝 Setuju Deal** supaya terms terkunci.`)
+                    .send(`⏳ ${res.role === 'buyer' ? '🛒 Buyer' : '🏷️ Seller'} has agreed. ${waitingLabel} <@${waitingId}> — it's your turn to click **🤝 Agree to Deal** so the terms get locked.`)
                     .catch(() => {});
                 await logAudit(interaction.client, {
                     action: 'MIDMAN_AGREE',
                     actorId: interaction.user.id,
                     actorTag: interaction.user.tag,
-                    details: `Deal <#${deal.channelId}> — ${res.role === 'buyer' ? 'pembeli' : 'penjual'} setuju (menunggu pihak lain)`,
+                    details: `Deal <#${deal.channelId}> — ${res.role === 'buyer' ? 'buyer' : 'seller'} agreed (waiting for the other party)`,
                     guildId: deal.guildId
                 }).catch(() => {});
                 return safeEditReply(interaction, {
-                    content: '✅ Persetujuanmu tercatat — menunggu pihak lainnya menyetujui deal.'
+                    content: '✅ Your agreement is recorded — waiting for the other party to agree to the deal.'
                 });
             }
-            // Kedua pihak setuju → lanjut ke recordTransition('join') di bawah
-            // (terms terkunci, state → WAITING_PAYMENT).
+            // Both parties agreed → continue to recordTransition('join') below
+            // (terms locked, state → WAITING_PAYMENT).
         }
 
-        // Terapkan transisi + catat history.
+        // Apply the transition + record history.
         if (!mm.recordTransition(deal, event, interaction.user)) {
-            return safeEditReply(interaction, { content: '❌ Transisi gagal (state berubah barusan). Coba lagi.' });
+            return safeEditReply(interaction, { content: '❌ Transition failed (the state just changed). Please try again.' });
         }
         mm.setDeal(channel.id, deal);
 
-        // Efek samping per event — pengumuman di channel (ikut transcript).
+        // Per-event side effects — channel announcements (captured in the transcript).
         try {
             if (event === 'join') {
                 await channel.send(
-                    '🤝 **Pembeli & penjual DUA-DUANYA sudah setuju** — item & harga **TERKUNCI**.\n' +
-                        `🛒 <@${deal.buyerId}> — transfer **${mm.formatRupiah(deal.priceNum + deal.fee)}** ke midman, lalu kirim bukti transfer di channel ini.`
+                    '🤝 **Buyer & seller have BOTH agreed** — item & price are **LOCKED**.\n' +
+                        `🛒 <@${deal.buyerId}> — transfer **${mm.formatRupiah(deal.priceNum + deal.fee)}** to the middleman, then post the transfer proof in this channel.`
                 );
             }
             if (event === 'fundin') {
                 await channel.send(
-                    `💰 Dana **${mm.formatRupiah(deal.priceNum + deal.fee)}** (harga + fee) dikonfirmasi masuk oleh **${interaction.user.tag}**.\n🏷️ <@${deal.sellerId}>, silakan kirim barang. Chat di channel ini menjadi bukti pengiriman.`
+                    `💰 Funds **${mm.formatRupiah(deal.priceNum + deal.fee)}** (price + fee) confirmed received by **${interaction.user.tag}**.\n🏷️ <@${deal.sellerId}>, please send the goods. Chat in this channel serves as proof of delivery.`
                 );
             }
             if (event === 'release') {
                 await channel.send(
-                    `💸 **${interaction.user.tag}** mencairkan **${mm.formatRupiah(deal.priceNum)}** ke <@${deal.sellerId}> (penuh, tanpa potongan).\n🧾 Fee midman **${mm.formatRupiah(deal.fee)}** tetap milik midman.`
+                    `💸 **${interaction.user.tag}** released **${mm.formatRupiah(deal.priceNum)}** to <@${deal.sellerId}> (full amount, no deductions).\n🧾 The middleman fee **${mm.formatRupiah(deal.fee)}** stays with the middleman.`
                 );
             }
             if (event === 'received') {
-                await channel.send(`✅ <@${deal.buyerId}> mengonfirmasi barang **diterima & sesuai**.`);
+                await channel.send(`✅ <@${deal.buyerId}> confirmed the goods were **delivered & as described**.`);
             }
             if (event === 'dispute') {
-                // v3.9.37: guard role admin kosong (mirror guard boardEmbed utk
-                // role midman) — tanpa ini, mention jadi literal "<@&undefined>".
+                // v3.9.37: empty admin role guard (mirrors the boardEmbed guard
+                // for the midman role) — without it, the mention becomes a literal "<@&undefined>".
                 const adminPing = config.roles?.admin ? `<@&${config.roles.admin}>` : '**Admin**';
                 await channel.send(
-                    `🚨 ${adminPing} — **DISPUTE** dibuka oleh **${interaction.user.tag}**.\n` +
-                        'Semua proses deal **dibekukan** sampai admin resolve (cairkan / refund). Jangan kirim barang/dana lagi.'
+                    `🚨 ${adminPing} — **DISPUTE** opened by **${interaction.user.tag}**.\n` +
+                        'All deal processes are **frozen** until an admin resolves it (release / refund). Do not send goods/funds anymore.'
                 );
             }
         } catch (announceErr) {
-            console.warn('⚠️ Gagal kirim pengumuman deal:', announceErr.message);
+            console.warn('⚠️ Failed to send the deal announcement:', announceErr.message);
         }
 
-        // Update Deal Board (embed sumber kebenaran).
+        // Update the Deal Board (the source-of-truth embed).
         await refreshBoard(channel, deal, config);
 
-        // Konfirmasi ke pelaku (ephemeral) — lewat safeEditReply (v3.9.38 FIX:
-        // deferred reply di-edit, bukan reply baru setelah beberapa await).
-        await safeEditReply(interaction, { content: CONFIRM_MSG[event] || '✅ Berhasil.' });
+        // Confirmation to the actor (ephemeral) — via safeEditReply (v3.9.38 FIX:
+        // the deferred reply is edited, not a new reply after several awaits).
+        await safeEditReply(interaction, { content: CONFIRM_MSG[event] || '✅ Success.' });
 
-        // Audit log — semua klik tercatat.
+        // Audit log — every click is recorded.
         await logAudit(interaction.client, {
             action: `MIDMAN_${event.toUpperCase()}`,
             actorId: interaction.user.id,
@@ -1070,40 +1074,41 @@ async function handleEvent(interaction, event) {
             guildId: deal.guildId
         }).catch(() => {});
 
-        // Terminal state → finalisasi (transcript, invoice, close channel).
+        // Terminal state → finalize (transcript, invoice, close channel).
         if (mm.TERMINAL_STATES.has(deal.state)) {
             await finalizeDeal(channel, deal, interaction.user, deal.state, config);
         }
     } catch (err) {
-        console.error(`[midman] Error event ${event}:`, err);
-        await safeEditReply(interaction, { content: '❌ Terjadi error saat memproses aksi. Coba lagi.' }).catch(() => {});
+        console.error(`[midman] Error on event ${event}:`, err);
+        await safeEditReply(interaction, { content: '❌ An error occurred while processing the action. Please try again.' }).catch(() => {});
     } finally {
         mm.transitionLocks.delete(channel.id);
     }
 }
 
 // ====================================================
-// === MEMBER TAMBAHAN (observer) v3.9.34 ===
+// === EXTRA MEMBERS (observer) v3.9.34 ===
 // ====================================================
 
 /**
- * Guard bersama kelola member: deal ada, belum terminal, aktor midman/admin.
- * (resolveActor otomatis menolak buyer/seller deal sebagai "midman/admin" —
- * anti self-dealing; observer tanpa role midman juga ditolak di sini.)
+ * Shared guard for member management: the deal exists, is not terminal, and
+ * the actor is midman/admin. (resolveActor automatically rejects a deal's
+ * buyer/seller as "midman/admin" — anti self-dealing; an observer without
+ * the midman role is also rejected here.)
  */
 function memberGuard(deal, interaction, config) {
-    if (!deal) return '❌ Channel ini bukan channel deal rekber.';
-    if (mm.TERMINAL_STATES.has(deal.state)) return '❌ Deal sudah selesai — member tidak bisa diubah.';
+    if (!deal) return '❌ This channel is not an escrow deal channel.';
+    if (mm.TERMINAL_STATES.has(deal.state)) return '❌ The deal is already complete — members cannot be changed.';
     const actor = resolveActor(deal, interaction, config);
     if (!actor.isMidman && !actor.isAdmin) {
-        return '❌ Hanya **midman/admin** yang bisa mengelola member tambahan.';
+        return '❌ Only **midman/admin** can manage extra members.';
     }
-    return null; // lolos guard
+    return null; // guard passed
 }
 
 /**
- * Tombol 👥 Tambah Member (baris 2 Deal Board) → tampilkan dropdown member
- * (searchable). Hanya midman/admin yang bisa sampai sini.
+ * 👥 Add Member button (Deal Board row 2) → shows the member dropdown
+ * (searchable). Only midman/admin can get here.
  */
 async function showAddMemberSelect(interaction) {
     const config = getConfig();
@@ -1115,8 +1120,8 @@ async function showAddMemberSelect(interaction) {
     return interaction
         .reply({
             content:
-                '👥 **Tambah member ke channel deal ini** — ketik namanya di kolom pencarian.\n' +
-                'Member tambahan hanya bisa **melihat & chat** — TIDAK bisa menggerakkan deal (transisi tetap hak pembeli/penjual/midman/admin).',
+                '👥 **Add a member to this deal channel** — type their name in the search field.\n' +
+                'Extra members can only **view & chat** — they CANNOT move the deal forward (transitions remain the right of the buyer/seller/midman/admin).',
             components: memberSelectRow(),
             flags: MessageFlags.Ephemeral
         })
@@ -1124,9 +1129,9 @@ async function showAddMemberSelect(interaction) {
 }
 
 /**
- * Submit dropdown mm_pick_member: validasi target (ada, bukan bot, bukan
- * peserta, belum ada, tidak penuh) → grant permission channel → catat di
- * history deal + audit log → refresh Deal Board.
+ * mm_pick_member dropdown submit: validate the target (exists, not a bot,
+ * not a participant, not already added, not full) → grant channel
+ * permission → record in the deal history + audit log → refresh the Deal Board.
  */
 async function handlePickMember(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -1140,18 +1145,18 @@ async function handlePickMember(interaction) {
         return safeEditReply(interaction, { content: blocked });
     }
 
-    // v3.9.38 FIX: observer add/remove dulu menulis deals.json TANPA lock
-    // (getDeal → await permissionOverwrites → setDeal). handleEvent yang
-    // sedang memproses transisi di channel yang sama akan tertimpa snapshot
-    // basi (state mundur / history hilang / dispute unfreeze). Sekarang flow
-    // ini pakai transitionLocks yang SAMA dengan handleEvent.
+    // v3.9.38 FIX: observer add/remove used to write deals.json WITHOUT a lock
+    // (getDeal → await permissionOverwrites → setDeal). A handleEvent processing
+    // a transition in the same channel would get overwritten by that stale
+    // snapshot (state rolled back / history lost / dispute unfrozen). This
+    // flow now uses the SAME transitionLocks as handleEvent.
     if (mm.transitionLocks.has(channel.id)) {
-        return safeEditReply(interaction, { content: '⏳ Deal sedang diproses, coba lagi sebentar.' });
+        return safeEditReply(interaction, { content: '⏳ The deal is being processed, please try again shortly.' });
     }
 
     const userId = interaction.values && interaction.values[0];
     if (!userId) {
-        return safeEditReply(interaction, { content: '❌ Member tidak terpilih. Coba pilih lagi.', components: memberSelectRow() });
+        return safeEditReply(interaction, { content: '❌ No member selected. Please try again.', components: memberSelectRow() });
     }
 
     mm.transitionLocks.add(channel.id);
@@ -1160,13 +1165,13 @@ async function handlePickMember(interaction) {
         if (!member) member = await guild.members.fetch(userId).catch(() => null);
         if (!member) {
             return safeEditReply(interaction, {
-                content: '❌ User tidak ditemukan di server ini. Pilih lagi:',
+                content: '❌ User not found on this server. Please pick again:',
                 components: memberSelectRow()
             });
         }
         if (member.user?.bot) {
             return safeEditReply(interaction, {
-                content: '❌ Bot tidak bisa ditambah sebagai member tambahan. Pilih lagi:',
+                content: '❌ Bots cannot be added as extra members. Please pick again:',
                 components: memberSelectRow()
             });
         }
@@ -1175,14 +1180,14 @@ async function handlePickMember(interaction) {
         if (!check.ok) {
             const hint =
                 check.reason === 'principal'
-                    ? '❌ Dia sudah peserta deal (pembeli/penjual) — tidak perlu ditambah.'
+                    ? '❌ They are already a deal participant (buyer/seller) — no need to add them.'
                     : check.reason === 'duplicate'
-                      ? '❌ Dia sudah jadi member tambahan di deal ini.'
-                      : `❌ Maksimal **${mm.MAX_OBSERVERS}** member tambahan per deal.`;
+                      ? '❌ They are already an extra member on this deal.'
+                      : `❌ Maximum **${mm.MAX_OBSERVERS}** extra members per deal.`;
             return safeEditReply(interaction, { content: hint, components: memberSelectRow() });
         }
 
-        // Grant akses channel (lihat + chat + attach + baca history).
+        // Grant channel access (view + chat + attach + read history).
         try {
             await channel.permissionOverwrites.edit(userId, {
                 ViewChannel: true,
@@ -1191,26 +1196,27 @@ async function handlePickMember(interaction) {
                 AttachFiles: true
             });
         } catch (permErr) {
-            console.warn(`⚠️ Gagal grant akses member tambahan ${userId}:`, permErr.message);
-            return safeEditReply(interaction, { content: '❌ Gagal menambah member. Cek izin bot (Manage Channels).' });
+            console.warn(`⚠️ Failed to grant extra member access ${userId}:`, permErr.message);
+            return safeEditReply(interaction, { content: '❌ Failed to add the member. Check the bot\'s permissions (Manage Channels).' });
         }
 
-        // v3.9.38 FIX: BACA ULANG deal fresh dari disk SETELAH await permission
-        // — transisi state (fundin/dispute/dll) bisa tersimpan selama await itu.
-        // Mutasi + setDeal dilakukan pada objek FRESH, bukan snapshot awal,
-        // supaya transisi tervalidasi tidak di-revert oleh stale write.
+        // v3.9.38 FIX: RE-READ the fresh deal from disk AFTER the permission
+        // await — a state transition (fundin/dispute/etc.) may have been saved
+        // during that await. Mutation + setDeal are done on the FRESH object,
+        // not the initial snapshot, so a validated transition isn't reverted
+        // by a stale write.
         const fresh = mm.getDeal(channel.id);
         if (!fresh || mm.TERMINAL_STATES.has(fresh.state)) {
-            return safeEditReply(interaction, { content: '❌ Deal sudah selesai — member tidak bisa diubah.' });
+            return safeEditReply(interaction, { content: '❌ The deal is already complete — members cannot be changed.' });
         }
         const freshCheck = mm.canAddObserver(fresh, userId);
         if (!freshCheck.ok) {
             const hint =
                 freshCheck.reason === 'principal'
-                    ? '❌ Dia sudah peserta deal (pembeli/penjual) — tidak perlu ditambah.'
+                    ? '❌ They are already a deal participant (buyer/seller) — no need to add them.'
                     : freshCheck.reason === 'duplicate'
-                      ? '❌ Dia sudah jadi member tambahan di deal ini.'
-                      : `❌ Maksimal **${mm.MAX_OBSERVERS}** member tambahan per deal.`;
+                      ? '❌ They are already an extra member on this deal.'
+                      : `❌ Maximum **${mm.MAX_OBSERVERS}** extra members per deal.`;
             return safeEditReply(interaction, { content: hint, components: memberSelectRow() });
         }
 
@@ -1218,7 +1224,7 @@ async function handlePickMember(interaction) {
         fresh.history = Array.isArray(fresh.history) ? fresh.history : [];
         fresh.history.push({
             ts: Date.now(),
-            event: `👥 Member ditambahkan: <@${userId}>`,
+            event: `👥 Member added: <@${userId}>`,
             fromState: fresh.state,
             toState: fresh.state,
             actorId: interaction.user.id,
@@ -1228,26 +1234,26 @@ async function handlePickMember(interaction) {
 
         await refreshBoard(channel, fresh, config);
         await channel
-            .send(`👥 <@${userId}> ditambahkan ke channel deal oleh **${interaction.user.tag}** sebagai **member tambahan** — hanya bisa melihat & chat.`)
+            .send(`👥 <@${userId}> was added to the deal channel by **${interaction.user.tag}** as an **extra member** — view & chat only.`)
             .catch(() => {});
         await logAudit(interaction.client, {
             action: 'MIDMAN_MEMBER_ADD',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Deal <#${fresh.channelId}> — member tambahan ditambahkan: <@${userId}>`,
+            details: `Deal <#${fresh.channelId}> — extra member added: <@${userId}>`,
             guildId: fresh.guildId
         }).catch(() => {});
 
-        return safeEditReply(interaction, { content: `✅ <@${userId}> ditambahkan ke channel deal sebagai member tambahan.` });
+        return safeEditReply(interaction, { content: `✅ <@${userId}> was added to the deal channel as an extra member.` });
     } finally {
         mm.transitionLocks.delete(channel.id);
     }
 }
 
 /**
- * Tombol ➖ Keluarkan Member (baris 2 Deal Board) → tampilkan dropdown berisi
- * member tambahan saat ini. Pembeli/penjual TIDAK muncul di daftar (tidak
- * bisa dikeluarkan — urusan mereka lewat batal/dispute).
+ * ➖ Remove Member button (Deal Board row 2) → shows a dropdown listing the
+ * current extra members. The buyer/seller do NOT appear in the list (they
+ * can't be removed — their way out is cancel/dispute).
  */
 async function showRemoveMemberSelect(interaction) {
     const config = getConfig();
@@ -1260,7 +1266,7 @@ async function showRemoveMemberSelect(interaction) {
     const observers = Array.isArray(deal.observers) ? deal.observers : [];
     if (observers.length === 0) {
         return interaction
-            .reply({ content: 'ℹ️ Tidak ada member tambahan di deal ini.', flags: MessageFlags.Ephemeral })
+            .reply({ content: 'ℹ️ There are no extra members on this deal.', flags: MessageFlags.Ephemeral })
             .catch(() => {});
     }
 
@@ -1268,17 +1274,17 @@ async function showRemoveMemberSelect(interaction) {
         const m = interaction.guild?.members?.cache?.get(id);
         const label = m ? (m.displayName || m.user?.username || id) : `Member ${id}`;
         const option = { label: String(label).slice(0, 100), value: id };
-        if (!m) option.description = 'sudah keluar server';
+        if (!m) option.description = 'no longer on this server';
         return option;
     });
     const select = new StringSelectMenuBuilder()
         .setCustomId('mm_remove_pick')
-        .setPlaceholder('Pilih member yang mau dikeluarkan…')
+        .setPlaceholder('Select the member to remove…')
         .addOptions(options);
 
     return interaction
         .reply({
-            content: '➖ Pilih **member tambahan** yang mau dikeluarkan dari channel deal (pembeli/penjual tidak bisa dikeluarkan):',
+            content: '➖ Select the **extra member** to remove from the deal channel (the buyer/seller cannot be removed):',
             components: [new ActionRowBuilder().addComponents(select)],
             flags: MessageFlags.Ephemeral
         })
@@ -1286,9 +1292,9 @@ async function showRemoveMemberSelect(interaction) {
 }
 
 /**
- * Submit dropdown mm_remove_pick: defensive re-check (target bukan peserta,
- * memang observer) → hapus overwrite permission → catat history + audit →
- * refresh Deal Board.
+ * mm_remove_pick dropdown submit: defensive re-check (the target is not a
+ * participant and is actually an observer) → delete the permission overwrite →
+ * record history + audit → refresh the Deal Board.
  */
 async function handleRemovePick(interaction) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -1301,59 +1307,59 @@ async function handleRemovePick(interaction) {
         return safeEditReply(interaction, { content: blocked });
     }
 
-    // v3.9.38 FIX: lock per-deal yang sama dengan handleEvent (mirror
-    // handlePickMember) — tanpa ini, stale write observer bisa menimpa
-    // transisi state yang tersimpan selama await permissionOverwrites.
+    // v3.9.38 FIX: the same per-deal lock as handleEvent (mirrors
+    // handlePickMember) — without it, a stale observer write could overwrite
+    // a state transition saved during the permissionOverwrites await.
     if (mm.transitionLocks.has(channel.id)) {
-        return safeEditReply(interaction, { content: '⏳ Deal sedang diproses, coba lagi sebentar.' });
+        return safeEditReply(interaction, { content: '⏳ The deal is being processed, please try again shortly.' });
     }
 
     const userId = interaction.values && interaction.values[0];
     if (!userId) {
-        return safeEditReply(interaction, { content: '❌ Member tidak terpilih. Coba lagi.' });
+        return safeEditReply(interaction, { content: '❌ No member selected. Please try again.' });
     }
-    // Defensive: value dropdown berasal dari daftar observer, tapi guard tetap
-    // dijalankan ulang (customId bisa forged / data berubah sejak dropdown
-    // dirender).
+    // Defensive: the dropdown value comes from the observer list, but the guard
+    // still re-runs (customIds can be forged / data may have changed since the
+    // dropdown was rendered).
     if (userId === deal.buyerId || userId === deal.sellerId) {
         return safeEditReply(interaction, {
-            content: '❌ Pembeli/penjual tidak bisa dikeluarkan — urusan mereka lewat batal deal / dispute.'
+            content: '❌ The buyer/seller cannot be removed — their way out is cancelling the deal / opening a dispute.'
         });
     }
     if (!(Array.isArray(deal.observers) ? deal.observers : []).includes(userId)) {
-        return safeEditReply(interaction, { content: '❌ User itu bukan member tambahan di deal ini.' });
+        return safeEditReply(interaction, { content: '❌ That user is not an extra member on this deal.' });
     }
 
     mm.transitionLocks.add(channel.id);
     try {
-        // Hapus overwrite aksesnya (kalau overwrite tidak ada → error diabaikan,
-        // meta tetap bersih).
+        // Delete their access overwrite (if the overwrite is missing → the
+        // error is ignored, the meta stays clean).
         try {
             await channel.permissionOverwrites.delete(userId);
         } catch (_) {}
 
-        // v3.9.38 FIX: BACA ULANG deal fresh dari disk SETELAH await permission —
-        // mutasi + setDeal pada objek FRESH supaya transisi state yang tersimpan
-        // selama await tidak di-revert oleh stale write (mirror handlePickMember).
+        // v3.9.38 FIX: RE-READ the fresh deal from disk AFTER the permission await —
+        // mutate + setDeal on the FRESH object so a state transition saved during
+        // the await isn't reverted by a stale write (mirrors handlePickMember).
         const fresh = mm.getDeal(channel.id);
         if (!fresh || mm.TERMINAL_STATES.has(fresh.state)) {
-            return safeEditReply(interaction, { content: '❌ Deal sudah selesai — member tidak bisa diubah.' });
+            return safeEditReply(interaction, { content: '❌ The deal is already complete — members cannot be changed.' });
         }
         if (userId === fresh.buyerId || userId === fresh.sellerId) {
             return safeEditReply(interaction, {
-                content: '❌ Pembeli/penjual tidak bisa dikeluarkan — urusan mereka lewat batal deal / dispute.'
+                content: '❌ The buyer/seller cannot be removed — their way out is cancelling the deal / opening a dispute.'
             });
         }
         if (!mm.removeObserver(fresh, userId)) {
-            return safeEditReply(interaction, { content: '❌ User itu bukan member tambahan di deal ini.' });
+            return safeEditReply(interaction, { content: '❌ That user is not an extra member on this deal.' });
         }
 
-        // v3.9.37: guard history korup (mirror guard event handler & add-member —
-        // deals.json hasil edit manual bisa tanpa array history).
+        // v3.9.37: corrupted history guard (mirrors the event handler & add-member
+        // guard — a manually edited deals.json may lack the history array).
         fresh.history = Array.isArray(fresh.history) ? fresh.history : [];
         fresh.history.push({
             ts: Date.now(),
-            event: `👋 Member dikeluarkan: <@${userId}>`,
+            event: `👋 Member removed: <@${userId}>`,
             fromState: fresh.state,
             toState: fresh.state,
             actorId: interaction.user.id,
@@ -1363,48 +1369,48 @@ async function handleRemovePick(interaction) {
 
         await refreshBoard(channel, fresh, config);
         await channel
-            .send(`👋 <@${userId}> dikeluarkan dari channel deal oleh **${interaction.user.tag}**.`)
+            .send(`👋 <@${userId}> was removed from the deal channel by **${interaction.user.tag}**.`)
             .catch(() => {});
         await logAudit(interaction.client, {
             action: 'MIDMAN_MEMBER_REMOVE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Deal <#${fresh.channelId}> — member tambahan dikeluarkan: <@${userId}>`,
+            details: `Deal <#${fresh.channelId}> — extra member removed: <@${userId}>`,
             guildId: fresh.guildId
         }).catch(() => {});
 
-        return safeEditReply(interaction, { content: `✅ <@${userId}> dikeluarkan dari channel deal.` });
+        return safeEditReply(interaction, { content: `✅ <@${userId}> was removed from the deal channel.` });
     } finally {
         mm.transitionLocks.delete(channel.id);
     }
 }
 
 // ====================================================
-// === DOMAIN HANDLER ENTRY (dipanggil router) ===
+// === DOMAIN HANDLER ENTRY (called by the router) ===
 // ====================================================
 
 module.exports = async function midmanDomain(interaction) {
-    // Panel tiket → tombol kategori midman → buka modal buat deal.
+    // Ticket panel → midman category button → open the create-deal modal.
     if (interaction.isButton() && interaction.customId === 'ticket_cat:midman') {
         return openCreateModal(interaction);
     }
 
-    // Submit modal buat deal (langkah 1: item + harga).
+    // Create-deal modal submit (step 1: item + price).
     if (interaction.isModalSubmit() && interaction.customId === 'modal_mm_create') {
         return handleCreateDeal(interaction);
     }
 
-    // Langkah 2: pilih pembeli (user select menu — searchable).
+    // Step 2: pick the buyer (user select menu — searchable).
     if (interaction.isUserSelectMenu() && interaction.customId === 'mm_pick_buyer') {
         return handlePickBuyer(interaction);
     }
 
-    // Langkah 3: pilih penjual (user select menu — searchable) → buat deal.
+    // Step 3: pick the seller (user select menu — searchable) → create the deal.
     if (interaction.isUserSelectMenu() && interaction.customId === 'mm_pick_seller') {
         return handlePickSeller(interaction);
     }
 
-    // v3.9.34: kelola member tambahan di dalam channel deal.
+    // v3.9.34: manage extra members inside the deal channel.
     if (interaction.isButton() && interaction.customId === 'mm_add_member') {
         return showAddMemberSelect(interaction);
     }
@@ -1418,7 +1424,7 @@ module.exports = async function midmanDomain(interaction) {
         return handleRemovePick(interaction);
     }
 
-    // Semua tombol transisi state.
+    // All state transition buttons.
     if (interaction.isButton()) {
         const eventMap = {
             mm_join: 'join',
@@ -1434,11 +1440,12 @@ module.exports = async function midmanDomain(interaction) {
         if (event) return handleEvent(interaction, event);
     }
 
-    // Fallback: customId mm_* yang belum ter-handle (defensive observability).
-    console.warn(`[midman] customId tidak dikenali: ${interaction.customId}`);
+    // Fallback: unhandled mm_* customIds (defensive observability).
+    console.warn(`[midman] Unrecognized customId: ${interaction.customId}`);
 };
 
-// Dipakai ticket.js saat user pilih kategori "midman" via dropdown panel
-// (ticket_cat_select mengirim value kategori, router tidak bisa intercept).
+// Used by ticket.js when the user picks the "midman" category via the panel
+// dropdown (ticket_cat_select sends the category value; the router can't
+// intercept it).
 module.exports.openCreateModal = openCreateModal;
 

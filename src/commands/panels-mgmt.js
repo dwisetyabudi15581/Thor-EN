@@ -2,14 +2,14 @@
  * Domain: panels-mgmt
  * Slash commands: /list-panels, /delete-panel, /update-panel, /refresh-panel
  *
- * v3.9.14: Panel management commands. Bekerja dengan panels.json
- * (liat src/data/panelManager.js). Memungkinkan admin untuk:
- *   - list semua panel aktif
- *   - delete panel by id (auto delete message di channel + remove metadata)
- *   - update field panel (title/body/color/image/thumbnail/footer/layout) via modal
- *   - refresh panel (re-render dengan kategori/produk terbaru)
+ * v3.9.14: Panel management commands. Works with panels.json
+ * (see src/data/panelManager.js). Lets admins:
+ *   - list all active panels
+ *   - delete a panel by id (auto-deletes the channel message + removes metadata)
+ *   - update a panel field (title/body/color/image/thumbnail/footer/layout) via modal
+ *   - refresh a panel (re-render with the latest categories/products)
  *
- * CustomId yang di-handle (modal):
+ * CustomIds handled (modal):
  *   - modal_panel_edit:<panelId>:<field>
  */
 
@@ -29,13 +29,13 @@ const {
 const { getPanel, getPanelsByGuild, deletePanel, patchPanel } = require('../data/panelManager');
 const { buildTicketPanel, parseColor, validateUrl, findEmptyCategoryWarnings } = require('./panels');
 
-// v3.9.26 FIX: mapping field command → key penyimpanan di panels.json.
-// SEBELUMNYA: /update-panel menulis patch `{ image: value }` (key = nama field
-// command), tapi panel builder + panelManager baca `panel.imageUrl` /
-// `panel.thumbnailUrl` / `panel.footerText`. Akibat: field image/thumbnail/footer
-// di-update "sukses" (metadata tersimpan di key yang salah) tapi TIDAK PERNAH
-// terlihat di panel — 3 dari 6 field iklankan adalah no-op diam-diam, dan
-// pre-fill modal selalu kosong padahal ada nilai.
+// v3.9.26 FIX: maps command field → storage key in panels.json.
+// BEFORE: /update-panel wrote a patch `{ image: value }` (key = the command
+// field name), but the panel builder + panelManager read `panel.imageUrl` /
+// `panel.thumbnailUrl` / `panel.footerText`. Result: the image/thumbnail/footer
+// fields were "successfully" updated (metadata stored under the wrong key) but
+// NEVER showed up in the panel — 3 of the 6 advertised fields were silent no-ops,
+// and the modal pre-fill was always empty even when a value existed.
 const FIELD_TO_STORAGE_KEY = {
     title: 'title',
     body: 'body',
@@ -45,41 +45,41 @@ const FIELD_TO_STORAGE_KEY = {
     footer: 'footerText'
 };
 
-// Fields yang bisa di-edit via /update-panel modal.
+// Fields editable via the /update-panel modal.
 const EDITABLE_FIELDS = {
     title: {
-        label: 'Judul Panel (kosongkan = pakai global)',
+        label: 'Panel Title (empty = use global)',
         style: TextInputStyle.Short,
         max: EMBED_LIMITS.TITLE
     },
     body: {
-        label: 'Body Panel (kosongkan = pakai global; dukung template {server} {price_list} dll)',
+        label: 'Panel Body (empty = global; supports templates)',
         style: TextInputStyle.Paragraph,
         max: EMBED_LIMITS.DESCRIPTION
     },
     color: {
-        label: 'Warna hex (mis. #ff5733, kosongkan = default orange)',
+        label: 'Hex color (e.g. #ff5733, empty = default orange)',
         style: TextInputStyle.Short,
         max: 20
     },
     image: {
-        // v3.9.29 FIX (user report: "gabisa menaruh link gambar"): max 500 → 2048.
-        // Limit Discord untuk URL embed = 2048 char. URL CDN Discord yang
-        // signed (ex=/is=/hm=) bisa 300-450 char, dan URL custom (imgur/GDrive
-        // + query panjang) gampang tembus 500 → client menolak input modal
-        // ("jawaban terlalu panjang") sebelum sempat disubmit.
-        label: 'URL gambar besar (kosongkan = no image)',
+        // v3.9.29 FIX (user report: "can't put an image link"): max 500 → 2048.
+        // Discord's limit for embed URLs = 2048 char. Signed Discord CDN
+        // URLs (ex=/is=/hm=) can be 300-450 char, and custom URLs (imgur/GDrive
+        // + long queries) easily blow past 500 → the client rejects the modal input
+        // ("answer too long") before it can even be submitted.
+        label: 'Large image URL (empty = no image)',
         style: TextInputStyle.Short,
         max: 2048
     },
     thumbnail: {
-        // v3.9.29: lihat komentar di `image` — 500 terlalu kecil untuk URL nyata.
-        label: 'URL thumbnail kecil (kosongkan = no thumb)',
+        // v3.9.29: see the comment on `image` — 500 is too small for real URLs.
+        label: 'Small thumbnail URL (empty = no thumb)',
         style: TextInputStyle.Short,
         max: 2048
     },
     footer: {
-        label: 'Teks footer (kosongkan = pakai nama bot)',
+        label: 'Footer text (empty = use bot name)',
         style: TextInputStyle.Short,
         max: EMBED_LIMITS.FOOTER_TEXT
     }
@@ -94,32 +94,32 @@ module.exports = async function (interaction) {
         if (panels.length === 0) {
             return safeEditReply(interaction, {
                 content:
-                    '📭 Belum ada panel tiket persistent di server ini.\n\n' +
-                    '💡 Buat panel baru pakai `/setup-ticket-panel` — panel akan otomatis terdaftar di sini.'
+                    '📭 No persistent ticket panels on this server yet.\n\n' +
+                    '💡 Create one with `/setup-ticket-panel` — it will be automatically listed here.'
             });
         }
 
         const lines = panels
             .map((p, i) => {
-                const channelMention = p.channelId ? `<#${p.channelId}>` : '_(channel hilang)_';
+                const channelMention = p.channelId ? `<#${p.channelId}>` : '_(channel missing)_';
                 const title = p.title ? `**${p.title}**` : '_(default title)_';
                 const catCount = Array.isArray(p.categoryIds) ? p.categoryIds.length : 0;
                 const layout = p.useDropdown ? 'Dropdown' : 'Buttons';
-                const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString('id-ID') : '?';
+                const date = p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US') : '?';
                 return (
                     `\`${i + 1}.\` 🆔 \`${p.id}\`\n` +
-                    `   ${title} — di ${channelMention}\n` +
-                    `   🎫 ${catCount} kategori • 🎨 ${layout} • 📅 ${date}`
+                    `   ${title} — in ${channelMention}\n` +
+                    `   🎫 ${catCount} categories • 🎨 ${layout} • 📅 ${date}`
                 );
             })
             .join('\n\n');
 
         const embed = new EmbedBuilder()
-            .setTitle('🎫 DAFTAR PANEL TIKET')
+            .setTitle('🎫 TICKET PANEL LIST')
             .setDescription(lines)
             .setColor(0x5865f2)
             .setFooter({
-                text: `${panels.length} panel aktif • Pakai ID untuk /delete-panel, /update-panel, /refresh-panel`
+                text: `${panels.length} active panels • Use the ID for /delete-panel, /update-panel, /refresh-panel`
             })
             .setTimestamp();
 
@@ -135,17 +135,17 @@ module.exports = async function (interaction) {
 
         if (!panel) {
             return safeEditReply(interaction, {
-                content: `❌ Panel \`${panelId}\` tidak ditemukan. Pakai /list-panels untuk lihat daftar.`
+                content: `❌ Panel \`${panelId}\` not found. Use /list-panels to see the list.`
             });
         }
-        // Cross-guild safety: jangan izinkan hapus panel dari guild lain.
+        // Cross-guild safety: don't allow deleting another guild's panel.
         if (panel.guildId !== interaction.guild.id) {
             return safeEditReply(interaction, {
-                content: '❌ Panel ini bukan milik server ini. Tidak bisa dihapus.'
+                content: '❌ This panel belongs to another server. It cannot be deleted.'
             });
         }
 
-        // Coba hapus message di channel (best-effort — channel/message bisa sudah hilang)
+        // Try to delete the channel message (best-effort — channel/message may already be gone)
         let messageDeleted = false;
         let messageNotFound = false;
         if (panel.channelId && panel.messageId) {
@@ -163,16 +163,16 @@ module.exports = async function (interaction) {
                     messageNotFound = true;
                 }
             } catch (delErr) {
-                console.warn(`⚠️ Gagal hapus message panel ${panelId}: ${delErr.message}`);
+                console.warn(`⚠️ Failed to delete panel message ${panelId}: ${delErr.message}`);
                 messageNotFound = true;
             }
         }
 
-        // Hapus metadata panel
+        // Delete the panel metadata
         const removed = deletePanel(panelId);
         if (!removed) {
             return safeEditReply(interaction, {
-                content: `❌ Gagal hapus metadata panel \`${panelId}\`. Mungkin sudah dihapus.`
+                content: `❌ Failed to delete panel metadata \`${panelId}\`. It may already be deleted.`
             });
         }
 
@@ -180,18 +180,18 @@ module.exports = async function (interaction) {
             action: 'DELETE_PANEL',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus panel tiket \`${panelId}\` (message ${messageDeleted ? 'dihapus' : 'sudah tidak ada'})`,
+            details: `Deleted ticket panel \`${panelId}\` (message ${messageDeleted ? 'deleted' : 'already gone'})`,
             guildId: interaction.guild.id
         });
 
         const status = messageDeleted
-            ? '✅ Message panel dihapus dari channel + metadata dibersihkan.'
+            ? '✅ Panel message deleted from the channel + metadata cleaned up.'
             : messageNotFound
-              ? 'ℹ️ Message panel sudah tidak ada di channel (mungkin dihapus manual). Metadata dibersihkan.'
-              : '✅ Metadata panel dibersihkan.';
+              ? 'ℹ️ The panel message is already gone from the channel (possibly deleted manually). Metadata cleaned up.'
+              : '✅ Panel metadata cleaned up.';
 
         return safeEditReply(interaction, {
-            content: `✅ Panel \`${panelId}\` berhasil dihapus.\n\n${status}`
+            content: `✅ Panel \`${panelId}\` deleted.\n\n${status}`
         });
     }
 
@@ -204,17 +204,17 @@ module.exports = async function (interaction) {
 
         if (!panel) {
             return safeEditReply(interaction, {
-                content: `❌ Panel \`${panelId}\` tidak ditemukan. Pakai /list-panels untuk lihat daftar.`
+                content: `❌ Panel \`${panelId}\` not found. Use /list-panels to see the list.`
             });
         }
         if (panel.guildId !== interaction.guild.id) {
             return safeEditReply(interaction, {
-                content: '❌ Panel ini bukan milik server ini.'
+                content: '❌ This panel belongs to another server.'
             });
         }
         if (!panel.channelId || !panel.messageId) {
             return safeEditReply(interaction, {
-                content: '❌ Panel ini tidak punya message reference (mungkin corrupt). Hapus dan setup ulang.'
+                content: '❌ This panel has no message reference (possibly corrupt). Delete it and set it up again.'
             });
         }
 
@@ -228,7 +228,7 @@ module.exports = async function (interaction) {
             });
         } catch (buildErr) {
             return safeEditReply(interaction, {
-                content: `❌ Gagal rebuild panel: ${buildErr.message}`
+                content: `❌ Failed to rebuild the panel: ${buildErr.message}`
             });
         }
 
@@ -236,13 +236,13 @@ module.exports = async function (interaction) {
             const channel = await interaction.guild.channels.fetch(panel.channelId).catch(() => null);
             if (!channel) {
                 return safeEditReply(interaction, {
-                    content: `❌ Channel <#${panel.channelId}> sudah tidak ada. Hapus panel dan setup ulang.`
+                    content: `❌ Channel <#${panel.channelId}> no longer exists. Delete the panel and set it up again.`
                 });
             }
             const msg = await channel.messages.fetch(panel.messageId).catch(() => null);
             if (!msg) {
                 return safeEditReply(interaction, {
-                    content: '❌ Message panel sudah tidak ada di channel. Hapus panel dan setup ulang.'
+                    content: '❌ The panel message is no longer in the channel. Delete the panel and set it up again.'
                 });
             }
 
@@ -252,25 +252,25 @@ module.exports = async function (interaction) {
                 action: 'REFRESH_PANEL',
                 actorId: interaction.user.id,
                 actorTag: interaction.user.tag,
-                details: `Refresh panel \`${panelId}\` — re-render dengan kategori/produk terbaru`,
+                details: `Refreshed panel \`${panelId}\` — re-rendered with the latest categories/products`,
                 guildId: interaction.guild.id
             });
 
-            // v3.9.29: safety-net — kategori di panel ini yang masih kosong
-            // produk. Klik tombol kategori kosong = tiket BANTUAN (bukan
-            // transaksi); admin perlu tau ini SEBELUM pembeli pakai tombolnya.
+            // v3.9.29: safety net — categories on this panel that still have no
+            // products. Clicking an empty category button = SUPPORT ticket (not a
+            // transaction); the admin needs to know BEFORE buyers use the button.
             const emptyWarnings = findEmptyCategoryWarnings(panel, config);
             const emptyWarn =
                 emptyWarnings.length > 0
-                    ? `\n\n🔮 **Kategori tanpa produk** (klik = tiket BANTUAN langsung):\n${emptyWarnings.map(l => `• ${l}`).join('\n')}`
+                    ? `\n\n🔮 **Categories without products** (click = instant SUPPORT ticket):\n${emptyWarnings.map(l => `• ${l}`).join('\n')}`
                     : '';
 
             return safeEditReply(interaction, {
-                content: `✅ Panel \`${panelId}\` di-refresh!\n\n📬 Lokasi: ${channel}\n🎨 Layout: ${panel.useDropdown ? 'Dropdown' : 'Buttons'}\n🎫 Kategori: ${(panel.categoryIds || []).length} aktif${emptyWarn}`
+                content: `✅ Panel \`${panelId}\` refreshed!\n\n📬 Location: ${channel}\n🎨 Layout: ${panel.useDropdown ? 'Dropdown' : 'Buttons'}\n🎫 Categories: ${(panel.categoryIds || []).length} active${emptyWarn}`
             });
         } catch (editErr) {
             return safeEditReply(interaction, {
-                content: `❌ Gagal edit message panel: ${editErr.message}`
+                content: `❌ Failed to edit the panel message: ${editErr.message}`
             });
         }
     }
@@ -283,13 +283,13 @@ module.exports = async function (interaction) {
 
         if (!panel) {
             return interaction.reply({
-                content: `❌ Panel \`${panelId}\` tidak ditemukan. Pakai /list-panels untuk lihat daftar.`,
+                content: `❌ Panel \`${panelId}\` not found. Use /list-panels to see the list.`,
                 flags: MessageFlags.Ephemeral
             });
         }
         if (panel.guildId !== interaction.guild.id) {
             return interaction.reply({
-                content: '❌ Panel ini bukan milik server ini.',
+                content: '❌ This panel belongs to another server.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -297,13 +297,13 @@ module.exports = async function (interaction) {
         const fieldDef = EDITABLE_FIELDS[field];
         if (!fieldDef) {
             return interaction.reply({
-                content: `❌ Field \`${field}\` tidak valid.`,
+                content: `❌ Invalid field \`${field}\`.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // Pre-fill current value (atau kosong kalau masih default)
-        // v3.9.26: baca via key penyimpanan yang BENAR (mapping), bukan nama field command.
+        // Pre-fill the current value (or leave empty if still default)
+        // v3.9.26: read via the CORRECT storage key (mapping), not the command field name.
         const storageKey = FIELD_TO_STORAGE_KEY[field] || field;
         const currentValue = panel[storageKey] != null ? String(panel[storageKey]) : '';
 
@@ -318,28 +318,28 @@ module.exports = async function (interaction) {
             .setValue(currentValue)
             .setMinLength(0)
             .setMaxLength(Math.min(fieldDef.max, 4000))
-            .setRequired(false); // false supaya admin bisa "clear" field = fallback ke global
+            .setRequired(false); // false so admins can "clear" the field = fall back to global
 
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         return interaction.showModal(modal);
     }
 };
 
-// === Export modal handler untuk dipanggil dari interactions/panels.js ===
-// Karena interaction router nggak otomatis kenalin prefix modal_panel_edit,
-// kita register handler-nya di interactions/index.js (liat langkah selanjutnya).
-// v3.9.29: EDITABLE_FIELDS + FIELD_TO_STORAGE_KEY juga di-export supaya unit
-// test bisa verifikasi limit maxLength modal (regression guard untuk bug
-// "URL > 500 char ditolak input modal") dan mapping key penyimpanan.
+// === Export the modal handler to be called from interactions/panels.js ===
+// Since the interaction router does not automatically recognize the modal_panel_edit prefix,
+// we register its handler in interactions/index.js (see the next step).
+// v3.9.29: EDITABLE_FIELDS + FIELD_TO_STORAGE_KEY are also exported so unit
+// tests can verify the modal maxLength limits (regression guard for the
+// "URL > 500 char rejected by modal input" bug) and the storage key mapping.
 module.exports.EDITABLE_FIELDS = EDITABLE_FIELDS;
 module.exports.FIELD_TO_STORAGE_KEY = FIELD_TO_STORAGE_KEY;
 module.exports.handlePanelModal = async function handlePanelModal(interaction) {
     // customId: modal_panel_edit:<panelId>:<field>
-    // Tapi panelId bisa aja contain ':' (gak kayaknya, tp defensive) — split dari kanan.
+    // But panelId might contain ':' (unlikely, but defensive) — split from the right.
     const parts = interaction.customId.split(':');
     if (parts.length < 3) {
         return interaction.reply({
-            content: '❌ Format customId modal tidak valid.',
+            content: '❌ Invalid modal customId format.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -348,46 +348,46 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }).catch(() => {});
 
-    // v3.9.26 (hardening konsisten dengan modal_set_key / restore_backup_confirm):
-    // re-check admin saat modal di-submit — bukan cuma saat modal dibuka. Modal
-    // bisa dibiarkan terbuka berjam-jam; admin yang ke-depromote di jeda itu
-    // tetap bisa apply patch tanpa cek ulang di versi sebelumnya.
+    // v3.9.26 (hardening consistent with modal_set_key / restore_backup_confirm):
+    // re-check admin when the modal is submitted — not just when it opens. A modal
+    // can be left open for hours; an admin demoted during that window could
+    // still apply the patch without a re-check in earlier versions.
     try {
         const { isAdmin } = require('../infra/permissions');
         if (!isAdmin(interaction.member)) {
             return safeEditReply(interaction, {
-                content: '❌ Kamu tidak punya izin admin untuk edit panel.'
+                content: '❌ You do not have admin permission to edit panels.'
             });
         }
     } catch (_) {
-        // Kalau cek admin gagal (mis. cache role error), jangan blokir edit —
-        // modal hanya bisa dibuka oleh admin yang sama kok.
+        // If the admin check fails (e.g. a role cache error), don't block the edit —
+        // the modal can only have been opened by that same admin anyway.
     }
 
     const panel = getPanel(panelId);
     if (!panel) {
         return safeEditReply(interaction, {
-            content: `❌ Panel \`${panelId}\` tidak ditemukan (mungkin sudah dihapus).`
+            content: `❌ Panel \`${panelId}\` not found (it may already be deleted).`
         });
     }
     if (panel.guildId !== interaction.guild.id) {
-        return safeEditReply(interaction, { content: '❌ Panel ini bukan milik server ini.' });
+        return safeEditReply(interaction, { content: '❌ This panel belongs to another server.' });
     }
 
     const newValue = (interaction.fields.getTextInputValue('panel_field_value') || '').trim();
     const fieldDef = EDITABLE_FIELDS[field];
     if (!fieldDef) {
-        return safeEditReply(interaction, { content: `❌ Field \`${field}\` tidak valid.` });
+        return safeEditReply(interaction, { content: `❌ Invalid field \`${field}\`.` });
     }
 
-    // Validate & build patch object
-    // v3.9.26: patch ditulis dengan KEY PENYIMPANAN (mapping) — bukan nama field
-    // command — supaya panel builder (yang baca imageUrl/thumbnailUrl/footerText)
-    // benar-benar melihat perubahannya.
+    // Validate & build the patch object
+    // v3.9.26: the patch is written with the STORAGE KEY (mapping) — not the command
+    // field name — so the panel builder (which reads imageUrl/thumbnailUrl/footerText)
+    // actually sees the change.
     const patch = {};
     const storageKey = FIELD_TO_STORAGE_KEY[field] || field;
     if (newValue === '') {
-        // Empty = clear field (fallback ke global default)
+        // Empty = clear the field (fall back to the global default)
         patch[storageKey] = null;
     } else {
         // Validate per field type
@@ -398,23 +398,23 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
                 return safeEditReply(interaction, { content: `❌ ${colorErr.message}` });
             }
         } else if (field === 'image' || field === 'thumbnail') {
-            // v3.9.29: guard panjang 2048 — limit URL embed Discord. Lewat ini,
-            // Discord API yang tolak saat edit message (error 50035 kurang jelas).
+            // v3.9.29: 2048 length guard — the Discord embed URL limit. Past this,
+            // the Discord API rejects it at message edit time (vague 50035 error).
             if (newValue.length > 2048) {
                 return safeEditReply(interaction, {
-                    content: `❌ URL ${field} terlalu panjang (${newValue.length} char, maks 2048 — limit embed Discord). Pakai link lebih pendek.`
+                    content: `❌ The ${field} URL is too long (${newValue.length} char, max 2048 — Discord embed limit). Use a shorter link.`
                 });
             }
             const validated = validateUrl(newValue);
             if (!validated) {
                 return safeEditReply(interaction, {
-                    content: `❌ URL ${field} tidak valid. Harus http(s)://...`
+                    content: `❌ Invalid ${field} URL. Must be http(s)://...`
                 });
             }
             patch[storageKey] = validated;
         } else if (newValue.length > fieldDef.max) {
             return safeEditReply(interaction, {
-                content: `❌ Teks terlalu panjang (${newValue.length} > ${fieldDef.max} char).`
+                content: `❌ Text is too long (${newValue.length} > ${fieldDef.max} char).`
             });
         } else {
             patch[storageKey] = newValue;
@@ -424,10 +424,10 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
     // Apply patch
     const updated = patchPanel(panelId, patch);
     if (!updated) {
-        return safeEditReply(interaction, { content: '❌ Gagal update panel.' });
+        return safeEditReply(interaction, { content: '❌ Failed to update the panel.' });
     }
 
-    // Re-render panel message biar langsung keliatan
+    // Re-render the panel message so the change shows up right away
     let renderedMessage = '';
     try {
         const config = getConfig();
@@ -441,23 +441,23 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
             const msg = await channel.messages.fetch(updated.messageId).catch(() => null);
             if (msg) {
                 await msg.edit({ embeds: [build.embed], components: build.components });
-                renderedMessage = '\n\n✅ Panel message sudah di-refresh.';
+                renderedMessage = '\n\n✅ Panel message refreshed.';
             } else {
-                renderedMessage = '\n\n⚠️ Message panel tidak ditemukan (mungkin dihapus). Metadata tetap diupdate.';
+                renderedMessage = '\n\n⚠️ Panel message not found (possibly deleted). Metadata still updated.';
             }
         } else {
-            renderedMessage = '\n\n⚠️ Channel panel tidak ditemukan. Metadata tetap diupdate.';
+            renderedMessage = '\n\n⚠️ Panel channel not found. Metadata still updated.';
         }
     } catch (editErr) {
-        renderedMessage = `\n\n⚠️ Gagal refresh message: ${editErr.message} (metadata tetap diupdate).`;
+        renderedMessage = `\n\n⚠️ Failed to refresh the message: ${editErr.message} (metadata still updated).`;
     }
 
     await logAudit(interaction.client, {
         action: 'UPDATE_PANEL',
         actorId: interaction.user.id,
         actorTag: interaction.user.tag,
-        // v3.9.29 FIX: baca patch pakai storageKey (dulu patch[field] — selalu
-        // `undefined` untuk image/thumbnail/footer karena patch ditulis ke
+        // v3.9.29 FIX: read the patch using storageKey (previously patch[field] — always
+        // `undefined` for image/thumbnail/footer because the patch is written to
         // imageUrl/thumbnailUrl/footerText).
         details: `Update field \`${field}\` panel \`${panelId}\` → ${
             patch[storageKey] === null
@@ -470,6 +470,6 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
     });
 
     return safeEditReply(interaction, {
-        content: `✅ Field \`${field}\` panel \`${panelId}\` diupdate!${renderedMessage}`
+        content: `✅ Field \`${field}\` of panel \`${panelId}\` updated!${renderedMessage}`
     });
 };

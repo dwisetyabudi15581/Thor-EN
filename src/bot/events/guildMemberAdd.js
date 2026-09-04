@@ -1,7 +1,7 @@
 /**
- * GuildMemberAdd handler — delegate ke handlers/memberHandler.js (legacy).
+ * GuildMemberAdd handler — delegates to handlers/memberHandler.js (legacy).
  *
- * Status: akan di-split ke src/bot/handlers/memberAdd.js setelah migration.
+ * Status: will be split into src/bot/handlers/memberAdd.js after the migration.
  */
 
 const { Events } = require('discord.js');
@@ -9,9 +9,9 @@ const { onMemberAdd } = require('../memberHandler');
 
 async function onEvent(member) {
     try {
-        // v3.9.26 (single-guild hardening): abaikan member dari guild lain.
-        // memberHandler pakai config global (roles.unverified, channels.welcome) —
-        // di guild kedua ID itu tidak valid → role/channel lookup gagal + warn spam.
+        // v3.9.26 (single-guild hardening): ignore members from other guilds.
+        // memberHandler uses the global config (roles.unverified, channels.welcome) —
+        // in a second guild those IDs are invalid → role/channel lookups fail + warn spam.
         if (process.env.GUILD_ID && member.guild?.id && member.guild.id !== process.env.GUILD_ID) return;
         await onMemberAdd(member);
     } catch (err) {

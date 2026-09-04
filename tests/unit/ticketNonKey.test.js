@@ -1,20 +1,21 @@
 /**
- * Unit tests v3.9.27 — transaksi NON-KEY (jual akun ML, jasa, dll).
+ * Unit tests v3.9.27 — NON-KEY transactions (ML account sales, services, etc.).
  *
- * Bug yang diuji: sistem lama mengacaukan `requiresKey` (produk pakai key?)
- * dengan `isTransaction` (ini tiket jual-beli?) → produk non-key:
- *   - tombol close pakai gaya help (tidak ada "Pesanan Sukses")
- *   - invoice/testimoni tidak pernah dikirim
- *   - stats pembelian tidak tercatat, auto-role tidak pernah diberikan
+ * Bug under test: the old system conflated `requiresKey` (does the product
+ * use keys?) with `isTransaction` (is this a buy/sell ticket?) → non-key
+ * products:
+ *   - close buttons used the help style (no "Order Successful")
+ *   - invoice/testimonial was never sent
+ *   - purchase stats were never recorded, auto-role was never granted
  *
- * Yang diuji di sini (data layer murni + router):
- *   1. resolveTicketType() — flag eksplisit, fallback legacy, meta null
+ * What is tested here (pure data layer + router):
+ *   1. resolveTicketType() — explicit flags, legacy fallback, null meta
  *   2. setTicketMeta/getTicketMeta — persist isTransaction/isInvoiceSent/
  *      deliveredAt/deliveredBy
- *   3. patchTicketMeta — partial patch field baru
- *   4. Router interactions — ticket_deliver & modal_deliver_order: dispatch
- *      ke domain tiket (tanpa entry PREFIX_TO_DOMAIN, modal jadi dead
- *      interaction).
+ *   3. patchTicketMeta — partial patch of the new fields
+ *   4. Interactions router — ticket_deliver & modal_deliver_order: dispatch
+ *      to the ticket domain (without a PREFIX_TO_DOMAIN entry, the modal
+ *      became a dead interaction).
  */
 
 const test = require('node:test');
@@ -25,8 +26,8 @@ const path = require('path');
 const ticketsPath = path.join(__dirname, '..', '..', 'data', 'tickets.json');
 
 // ====================================================
-// === Sandbox: tickets.json produksi di-snapshot & restore ===
-// === (pola ticketFlexibility.test.js untuk panels.json) ===
+// === Sandbox: production tickets.json is snapshotted & restored ===
+// === (pattern from ticketFlexibility.test.js for panels.json) ===
 // ====================================================
 const ticketsBackupPath = ticketsPath + '.test-backup';
 let ticketsBackedUp = false;
@@ -54,73 +55,73 @@ function resetTicketsFile() {
 const { resolveTicketType, setTicketMeta, getTicketMeta, patchTicketMeta } = require('../../src/data/ticketManager');
 
 // ====================================================
-// === 1. resolveTicketType — flag eksplisit (v3.9.27+) ===
+// === 1. resolveTicketType — explicit flags (v3.9.27+) ===
 // ====================================================
 
-test('resolveTicketType: null meta → default aman (bukan transaksi)', () => {
+test('resolveTicketType: null meta → safe default (not a transaction)', () => {
     const t = resolveTicketType(null);
     assert.strictEqual(t.isTransaction, false);
     assert.strictEqual(t.requiresKey, false);
     assert.strictEqual(t.isCompleted, false);
 });
 
-test('resolveTicketType: flag eksplisit isTransaction=true, requiresKey=false (produk non-key)', () => {
-    // Tiket "Akun ML Mythic" dibuat v3.9.27+ — inti bug yang diperbaiki.
+test('resolveTicketType: explicit flag isTransaction=true, requiresKey=false (non-key product)', () => {
+    // An "Akun ML Mythic" ticket created on v3.9.27+ — the core of the fixed bug.
     const t = resolveTicketType({ isTransaction: true, requiresKey: false, category: 'transaction' });
-    assert.strictEqual(t.isTransaction, true, 'produk non-key tetap TRANSAKSI');
+    assert.strictEqual(t.isTransaction, true, 'non-key product stays a TRANSACTION');
     assert.strictEqual(t.requiresKey, false);
     assert.strictEqual(t.isCompleted, false);
 });
 
-test('resolveTicketType: flag eksplisit isTransaction=true, requiresKey=true (produk key)', () => {
+test('resolveTicketType: explicit flag isTransaction=true, requiresKey=true (key product)', () => {
     const t = resolveTicketType({ isTransaction: true, requiresKey: true, category: 'transaction' });
     assert.strictEqual(t.isTransaction, true);
     assert.strictEqual(t.requiresKey, true);
 });
 
-test('resolveTicketType: flag eksplisit isTransaction=false (help/report)', () => {
+test('resolveTicketType: explicit flag isTransaction=false (help/report)', () => {
     const t = resolveTicketType({ isTransaction: false, requiresKey: false, category: 'help' });
     assert.strictEqual(t.isTransaction, false);
     assert.strictEqual(t.requiresKey, false);
 });
 
-test('resolveTicketType: isCompleted dipassthrough', () => {
+test('resolveTicketType: isCompleted is passed through', () => {
     const t = resolveTicketType({ isTransaction: true, requiresKey: true, isCompleted: true });
     assert.strictEqual(t.isCompleted, true);
 });
 
 // ====================================================
-// === 2. resolveTicketType — fallback legacy ===
+// === 2. resolveTicketType — legacy fallback ===
 // ====================================================
 
-test('resolveTicketType: legacy requiresKey=true → transaksi (tiket lama key)', () => {
-    // Tiket dibuat v3.9.16–26 tanpa flag isTransaction.
+test('resolveTicketType: legacy requiresKey=true → transaction (old key ticket)', () => {
+    // Ticket created on v3.9.16–26 without the isTransaction flag.
     const t = resolveTicketType({ category: 'transaction', requiresKey: true });
     assert.strictEqual(t.isTransaction, true);
     assert.strictEqual(t.requiresKey, true);
 });
 
-test('resolveTicketType: legacy requiresKey=false → BUKAN transaksi (perilaku lama dipertahankan)', () => {
-    // Tiket non-key lama salah diklasifikasi sebagai bantuan — bug lama
-    // dipertahankan untuk tiket yang masih terbuka (no regression; tiket
-    // baru v3.9.27+ selalu punya flag eksplisit).
+test('resolveTicketType: legacy requiresKey=false → NOT a transaction (old behavior preserved)', () => {
+    // Old non-key tickets were misclassified as support — the old bug is
+    // kept for still-open tickets (no regression; v3.9.27+ tickets always
+    // have explicit flags).
     const t = resolveTicketType({ category: 'transaction', requiresKey: false });
     assert.strictEqual(t.isTransaction, false);
     assert.strictEqual(t.requiresKey, false);
 });
 
-test('resolveTicketType: tiket purba tanpa requiresKey — kategori help/report → bantuan', () => {
+test('resolveTicketType: ancient ticket without requiresKey — help/report category → support', () => {
     assert.strictEqual(resolveTicketType({ category: 'help' }).isTransaction, false);
     assert.strictEqual(resolveTicketType({ category: 'report' }).isTransaction, false);
 });
 
-test('resolveTicketType: tiket purba tanpa requiresKey — kategori transaksi → transaksi', () => {
+test('resolveTicketType: ancient ticket without requiresKey — transaction category → transaction', () => {
     const t = resolveTicketType({ category: 'transaction', productName: 'VIP 30 Hari' });
     assert.strictEqual(t.isTransaction, true);
-    assert.strictEqual(t.requiresKey, true, 'requiresKey default mengikuti isTransaction');
+    assert.strictEqual(t.requiresKey, true, 'requiresKey defaults to follow isTransaction');
 });
 
-test('resolveTicketType: tiket purba — magic string lama → bantuan', () => {
+test('resolveTicketType: ancient ticket — legacy magic string → support', () => {
     assert.strictEqual(resolveTicketType({ productName: 'Bantuan/Lapor' }).isTransaction, false);
     assert.strictEqual(resolveTicketType({ productName: 'Bantuan Staff' }).isTransaction, false);
     assert.strictEqual(resolveTicketType({ productName: 'Laporkan Member' }).isTransaction, false);
@@ -130,7 +131,7 @@ test('resolveTicketType: tiket purba — magic string lama → bantuan', () => {
 // === 3. Persist meta: isTransaction / isInvoiceSent / delivered* ===
 // ====================================================
 
-test('setTicketMeta→getTicketMeta: roundtrip field baru v3.9.27', () => {
+test('setTicketMeta→getTicketMeta: roundtrip of the new v3.9.27 fields', () => {
     resetTicketsFile();
     setTicketMeta('chan_nonkey_1', {
         userId: '111',
@@ -150,7 +151,7 @@ test('setTicketMeta→getTicketMeta: roundtrip field baru v3.9.27', () => {
     assert.strictEqual(meta.isCompleted, false);
 });
 
-test('setTicketMeta: isTransaction=null kalau tidak diberikan (legacy-safe)', () => {
+test('setTicketMeta: isTransaction=null when not provided (legacy-safe)', () => {
     resetTicketsFile();
     setTicketMeta('chan_legacy_1', {
         userId: '222',
@@ -161,14 +162,14 @@ test('setTicketMeta: isTransaction=null kalau tidak diberikan (legacy-safe)', ()
         requiresKey: true
     });
     const meta = getTicketMeta('chan_legacy_1');
-    assert.strictEqual(meta.isTransaction, null, 'tidak di-set → null (resolveTicketType fallback legacy)');
-    // Resolve tetap benar untuk tiket legacy ini:
+    assert.strictEqual(meta.isTransaction, null, 'not set → null (resolveTicketType legacy fallback)');
+    // Resolve still works correctly for this legacy ticket:
     const t = resolveTicketType(meta);
     assert.strictEqual(t.isTransaction, true);
     assert.strictEqual(t.requiresKey, true);
 });
 
-test('patchTicketMeta: patch isInvoiceSent + deliveredAt/deliveredBy tanpa overwrite field lain', () => {
+test('patchTicketMeta: patches isInvoiceSent + deliveredAt/deliveredBy without overwriting other fields', () => {
     resetTicketsFile();
     setTicketMeta('chan_deliver_1', {
         userId: '333',
@@ -191,14 +192,14 @@ test('patchTicketMeta: patch isInvoiceSent + deliveredAt/deliveredBy tanpa overw
     assert.strictEqual(meta.deliveredAt, 12345);
     assert.strictEqual(meta.deliveredBy, 'admin999');
     assert.strictEqual(meta.isInvoiceSent, true);
-    // Field lama tetap utuh:
+    // Old fields remain intact:
     assert.strictEqual(meta.productName, 'Akun ML');
     assert.strictEqual(meta.userId, '333');
     assert.strictEqual(meta.isTransaction, true);
 });
 
-test('resolveTicketType setelah patch: non-key + isCompleted → cabang tombol "Selesai"', () => {
-    // Simulasi tiket yang sudah lewat 📦 Kirim Pesanan:
+test('resolveTicketType after patch: non-key + isCompleted → "Done" button branch', () => {
+    // Simulates a ticket that has already gone through 📦 Deliver Order:
     const t = resolveTicketType({
         isTransaction: true,
         requiresKey: false,
@@ -212,7 +213,7 @@ test('resolveTicketType setelah patch: non-key + isCompleted → cabang tombol "
 });
 
 // ====================================================
-// === 4. Router interactions — dispatch customId baru ===
+// === 4. Interactions router — dispatch of the new customIds ===
 // ====================================================
 
 function makeMockInteraction({ customId, type = 'button', id = `t-${Date.now()}-${Math.random()}` }) {
@@ -226,7 +227,7 @@ function makeMockInteraction({ customId, type = 'button', id = `t-${Date.now()}-
         isChatInputCommand: () => false,
         isButton: () => type === 'button',
         isStringSelectMenu: () => type === 'select',
-        // v3.9.33: router kini juga menerima user select menu.
+        // v3.9.33: the router now also accepts user select menus.
         isUserSelectMenu: () => type === 'userselect',
         isModalSubmit: () => type === 'modal',
         reply: async opts => {
@@ -243,19 +244,19 @@ function makeMockInteraction({ customId, type = 'button', id = `t-${Date.now()}-
     return interaction;
 }
 
-test('router: tombol ticket_deliver dispatch ke domain tiket', async () => {
+test('router: ticket_deliver button dispatches to the ticket domain', async () => {
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({ customId: 'ticket_deliver', type: 'button' });
-    // Handler akan menolak (bukan admin — mock tanpa member) → itu bukti
-    // dispatch sampai handler, bukan "unknown customId".
+    // The handler will reject (not an admin — mock without member) → that
+    // proves the dispatch reaches the handler, not an "unknown customId".
     await routeInteraction(interaction);
     assert.ok(
         interaction._replies.length > 0,
-        'handler merespon (ditolak sebagai non-admin) → dispatch ke domain tiket berhasil'
+        'handler responded (rejected as non-admin) → dispatch to the ticket domain succeeded'
     );
 });
 
-test('router: modal_deliver_order: dispatch ke domain tiket (routing gap fix)', async () => {
+test('router: modal_deliver_order: dispatches to the ticket domain (routing gap fix)', async () => {
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({
         customId: 'modal_deliver_order:akun_ml',
@@ -264,6 +265,6 @@ test('router: modal_deliver_order: dispatch ke domain tiket (routing gap fix)', 
     await routeInteraction(interaction);
     assert.ok(
         interaction._replies.length > 0,
-        'submit modal merespon (ditolak sebagai non-admin) → routing modal_deliver_order: aktif'
+        'modal submit responded (rejected as non-admin) → modal_deliver_order: routing active'
     );
 });

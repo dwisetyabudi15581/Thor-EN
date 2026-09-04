@@ -1,5 +1,5 @@
 /**
- * Stats Manager — track aktivitas user untuk leaderboard & stats.
+ * Stats Manager — track user activity for leaderboards & stats.
  *
  * File: stats.json
  * {
@@ -16,22 +16,22 @@
  * }
  *
  * v3.9.4 FIX: cross-guild data isolation.
- *   Sebelumnya key cuma `userId` → stats dari Guild A bocor ke Guild B.
- *   Sekarang key = `${guildId}:${userId}` (composite, sama seperti warns.json).
- *   Backward compat: legacy entries (key tanpa `:`) di-migrate ke guild pertama
- *   yang didaftarkan via `init()` (dipanggil dari index.js ClientReady).
+ *   Before, the key was only `userId` → stats from Guild A leaked into Guild B.
+ *   Now key = `${guildId}:${userId}` (composite, same as warns.json).
+ *   Backward compat: legacy entries (keys without `:`) are migrated to the first
+ *   guild registered via `init()` (called from index.js ClientReady).
  *
  * Tracking:
- *   - messages: count pesan user (updated by messageCreate event)
- *   - vipPurchases: count pembelian VIP (updated by set-key flow)
- *   - totalSpent: total uang dihabiskan (extracted dari price produk)
- *   - giveawaysWon: count menang giveaway
+ *   - messages: count of user messages (updated by the messageCreate event)
+ *   - vipPurchases: count of VIP purchases (updated by the set-key flow)
+ *   - totalSpent: total money spent (extracted from the product price)
+ *   - giveawaysWon: count of giveaways won
  *
  * === P0-1 FIX: In-memory cache + periodic flush ===
- * Sebelumnya: tiap `incrementMessages` load+save file JSON synchronously
- * → memblock event loop pada setiap pesan → bot lag di server aktif.
- * Sekarang: pakai in-memory cache, flush ke disk tiap 30 detik atau
- * kalau ada perubahan non-message (purchase/win/join).
+ * Before: every `incrementMessages` loaded+saved the JSON file synchronously
+ * → blocking the event loop on every message → bot lag on active servers.
+ * Now: uses an in-memory cache, flushed to disk every 30 seconds or
+ * when a non-message change happens (purchase/win/join).
  */
 
 const fs = require('fs');
@@ -39,13 +39,13 @@ const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'stats.json');
-const FLUSH_INTERVAL_MS = 30 * 1000; // 30 detik
+const FLUSH_INTERVAL_MS = 30 * 1000; // 30 seconds
 
 // === In-memory cache ===
-let cache = null; // null = belum di-load
-let dirty = false; // apakah cache ada perubahan yang belum di-flush?
-let flushTimer = null; // timer periodic flush
-let defaultGuildId = null; // v3.9.4: untuk migrasi legacy entries
+let cache = null; // null = not loaded yet
+let dirty = false; // does the cache have un-flushed changes?
+let flushTimer = null; // periodic flush timer
+let defaultGuildId = null; // v3.9.4: for migrating legacy entries
 
 function defaultUserStats() {
     return {
@@ -66,23 +66,23 @@ function keyFor(guildId, userId) {
 }
 
 /**
- * v3.9.4: Init dengan default guild ID untuk migrasi legacy entries.
- * Dipanggil dari index.js ClientReady. Kalau bot di 1 guild, semua legacy
- * entries akan di-assign ke guild tersebut. Kalau bot di multi-guild,
- * legacy entries di-assign ke guild pertama (cukup untuk mayoritas case).
+ * v3.9.4: Init with the default guild ID for migrating legacy entries.
+ * Called from index.js ClientReady. If the bot is in 1 guild, all legacy
+ * entries get assigned to that guild. If the bot is multi-guild,
+ * legacy entries are assigned to the first guild (good enough for most cases).
  *
  * @param {string} guildId
  */
 function init(guildId) {
     if (!guildId) return;
     defaultGuildId = guildId;
-    // Kalau cache sudah di-load, trigger migrasi sekarang.
+    // If the cache is already loaded, trigger the migration now.
     if (cache !== null) migrateLegacyEntries();
 }
 
 /**
- * v3.9.4: Migrate legacy entries (key tanpa `:`) ke composite key
- * `${defaultGuildId}:${userId}`. Idempotent — entry yang sudah composite tidak diubah.
+ * v3.9.4: Migrate legacy entries (keys without `:`) to the composite key
+ * `${defaultGuildId}:${userId}`. Idempotent — already-composite entries are untouched.
  */
 function migrateLegacyEntries() {
     if (!defaultGuildId || cache === null) return;
@@ -90,7 +90,7 @@ function migrateLegacyEntries() {
     const newCache = {};
     for (const [k, v] of Object.entries(cache)) {
         if (k.includes(':')) {
-            // Sudah composite — keep as-is, backfill guildId/userId fields kalau belum ada.
+            // Already composite — keep as-is, backfill guildId/userId fields if missing.
             if (!v.guildId || !v.userId) {
                 const [gid, uid] = k.split(':');
                 if (!v.guildId) v.guildId = gid;
@@ -98,12 +98,12 @@ function migrateLegacyEntries() {
             }
             newCache[k] = v;
         } else {
-            // Legacy entry — k adalah userId plain. Re-key ke composite.
+            // Legacy entry — k is a plain userId. Re-key to composite.
             const newKey = keyFor(defaultGuildId, k);
             if (!v.guildId) v.guildId = defaultGuildId;
             if (!v.userId) v.userId = k;
-            // Kalau sudah ada entry composite untuk user ini (kasus race condition),
-            // merge: jumlahkan counters, ambil timestamps paling awal.
+            // If a composite entry already exists for this user (race condition case),
+            // merge: sum the counters, take the earliest timestamps.
             if (newCache[newKey]) {
                 const existing = newCache[newKey];
                 existing.messages = (existing.messages || 0) + (v.messages || 0);
@@ -125,7 +125,7 @@ function migrateLegacyEntries() {
     if (migrated > 0) {
         cache = newCache;
         dirty = true;
-        console.log(`🔄 stats.json: ${migrated} legacy entry di-migrate ke guild ${defaultGuildId}.`);
+        console.log(`🔄 stats.json: ${migrated} legacy entries migrated to guild ${defaultGuildId}.`);
         flush();
     }
 }
@@ -139,18 +139,18 @@ function load() {
             cache = JSON.parse(fs.readFileSync(filePath, 'utf8'));
         }
     } catch (err) {
-        console.warn('⚠️ stats.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ stats.json is corrupted:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         cache = {};
     }
-    // v3.9.4: jalankan migrasi legacy kalau defaultGuildId sudah di-set.
+    // v3.9.4: run the legacy migration if defaultGuildId is already set.
     if (defaultGuildId) migrateLegacyEntries();
     return cache;
 }
 
 /**
- * Flush cache ke disk kalau dirty. Tidak throw — log error saja.
+ * Flush the cache to disk if dirty. Doesn't throw — just logs errors.
  */
 // v3.9.0 FIX: atomic write via safeWriteJSON (tmp+rename) to prevent corruption on crash
 function flush() {
@@ -159,22 +159,22 @@ function flush() {
         safeWriteJSON(filePath, cache);
         dirty = false;
     } catch (err) {
-        console.error('⚠️ Gagal flush stats.json:', err.message);
+        console.error('⚠️ Failed to flush stats.json:', err.message);
     }
 }
 
 /**
- * Mulai periodic flush timer. Dipanggil sekali saat bot start (di index.js ready).
+ * Start the periodic flush timer. Called once when the bot starts (in index.js ready).
  */
 function startAutoFlush() {
-    if (flushTimer) return; // sudah start
+    if (flushTimer) return; // already started
     flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
-    // Jangan block process exit
+    // Don't block process exit
     if (typeof flushTimer.unref === 'function') flushTimer.unref();
 }
 
 /**
- * Force flush + stop timer. Dipanggil saat graceful shutdown.
+ * Force flush + stop the timer. Called at graceful shutdown.
  */
 function shutdown() {
     flush();
@@ -185,28 +185,28 @@ function shutdown() {
 }
 
 /**
- * v3.9.1: Invalidate cache + reload dari disk. Dipanggil setelah restoreBackup
- * supaya in-memory cache (yang mungkin berisi data lama) tidak menimpa
- * data hasil restore saat flush berikutnya.
+ * v3.9.1: Invalidate the cache + reload from disk. Called after restoreBackup
+ * so the in-memory cache (which may hold old data) doesn't overwrite the
+ * restored data at the next flush.
  *
- * Skenario sebelum fix:
- *   1. Bot jalan, cache stats.json berisi { userA: 5 messages }
- *   2. Admin restore backup lama (stats.json berisi { userA: 3 messages })
- *   3. User kirim pesan → incrementMessages update cache jadi { userA: 6 }
- *      (seharusnya 4, karena data restore punya 3)
- *   4. Periodic flush tulis { userA: 6 } ke stats.json → data restore hilang
+ * Scenario before the fix:
+ *   1. Bot running, stats.json cache holds { userA: 5 messages }
+ *   2. Admin restores an old backup (stats.json holds { userA: 3 messages })
+ *   3. User sends a message → incrementMessages updates the cache to { userA: 6 }
+ *      (should be 4, since the restored data has 3)
+ *   4. Periodic flush writes { userA: 6 } to stats.json → restored data lost
  *
- * Fix: set cache = null supaya load() baca ulang dari disk.
+ * Fix: set cache = null so load() re-reads from disk.
  */
 function reload() {
-    // Jangan flush cache lama — itu justru data basi yang mau kita buang.
+    // Don't flush the old cache — it's exactly the stale data we want to discard.
     dirty = false;
     cache = null;
     load();
 }
 
 /**
- * v3.9.4: Get stats user scoped ke guild.
+ * v3.9.4: Get a user's stats scoped to the guild.
  * @param {string} guildId
  * @param {string} userId
  */
@@ -216,7 +216,7 @@ function getStats(guildId, userId) {
 }
 
 /**
- * Increment message count — P0-1 fix: pakai cache, TIDAK sync file I/O.
+ * Increment the message count — P0-1 fix: uses the cache, NO sync file I/O.
  * v3.9.4: scoped per guild.
  *
  * @param {string} guildId
@@ -233,7 +233,7 @@ function incrementMessages(guildId, userId) {
     all[k].messages = (all[k].messages || 0) + 1;
     all[k].lastMessageAt = Date.now();
     dirty = true;
-    // Tidak langsung flush — flush periodik tiap 30 detik.
+    // No immediate flush — periodic flush every 30 seconds.
 }
 
 /**
@@ -250,7 +250,7 @@ function recordPurchase(guildId, userId, priceNum) {
     all[k].vipPurchases = (all[k].vipPurchases || 0) + 1;
     all[k].totalSpent = (all[k].totalSpent || 0) + (priceNum || 0);
     dirty = true;
-    flush(); // penting, jangan sampai transaksi hilang kalau bot crash
+    flush(); // important — don't lose the transaction if the bot crashes
 }
 
 /**
@@ -286,8 +286,8 @@ function recordJoin(guildId, userId) {
 }
 
 /**
- * Get top N users berdasarkan metric, scoped ke guild.
- * v3.9.4: hanya hitung entry milik guild ini.
+ * Get the top N users by metric, scoped to the guild.
+ * v3.9.4: only counts entries belonging to this guild.
  *
  * @param {string} guildId
  * @param {string} metric - 'messages' | 'vipPurchases' | 'totalSpent' | 'giveawaysWon'
@@ -299,10 +299,10 @@ function getTopUsers(guildId, metric, limit = 10) {
     const prefix = `${guildId}:`;
     return Object.entries(all)
         .filter(([k]) => k.startsWith(prefix))
-        // v3.9.31 FIX: ...stats DULU, override SETELAHNYA. Pola lama taruh userId
-        // sebelum spread — properti eksplisit undefined di stats bisa menimpa
-        // fallback k.split(':')[1] dengan undefined, dan key legacy tanpa ':'
-        // menghasilkan userId undefined.
+        // v3.9.31 FIX: ...stats FIRST, override AFTER. The old pattern put userId
+        // before the spread — an explicitly undefined property in stats could
+        // override the k.split(':')[1] fallback with undefined, and a legacy key
+        // without ':' would produce userId undefined.
         .map(([k, stats]) => ({ ...stats, userId: stats.userId || k.split(':')[1], value: stats[metric] || 0 }))
         .filter(e => e.value > 0)
         .sort((a, b) => b.value - a.value)
@@ -310,8 +310,8 @@ function getTopUsers(guildId, metric, limit = 10) {
 }
 
 /**
- * Get agregat stats untuk sebuah guild.
- * v3.9.4: hanya hitung entry milik guild ini.
+ * Get aggregate stats for a guild.
+ * v3.9.4: only counts entries belonging to this guild.
  *
  * @param {string} guildId
  */
@@ -341,17 +341,17 @@ function getServerStats(guildId) {
 }
 
 /**
- * Parse price string ke number. Handle "Rp 25.000", "25000", "25.000", "25k", "2.5M"
+ * Parse a price string into a number. Handles "Rp 25.000", "25000", "25.000", "25k", "2.5M"
  *
- * P2-13 FIX: sebelumnya `.replace(/\./g, '').replace(/,/g, '.')` ambigu:
- *   - "25,000" (US thousand) → "25.000" → parseFloat → 25 (SALAH, harusnya 25000)
- *   - "Rp. 50.000" (ID thousand) → 50000 → OK
+ * P2-13 FIX: before, `.replace(/\./g, '').replace(/,/g, '.')` was ambiguous:
+ *   - "25,000" (US thousands) → "25.000" → parseFloat → 25 (WRONG, should be 25000)
+ *   - "Rp. 50.000" (ID thousands) → 50000 → OK
  *   - "2,5M" (ID decimal) → "2.5M" → 2.5 × 1000000 = OK
- * Sekarang: deteksi format berdasarkan keberadaan dot & comma bersamaan.
+ * Now: detect the format based on the presence of both dot & comma.
  */
 function parsePrice(priceStr) {
-    // v3.9.38 FIX: input number negatif juga di-clamp — harga tidak boleh
-    // minus (totalSpent/revenue bisa jadi negatif lewat harga produk).
+    // v3.9.38 FIX: negative numeric input is also clamped — a price must not
+    // be negative (totalSpent/revenue could go negative via the product price).
     if (typeof priceStr === 'number') return isNaN(priceStr) ? 0 : Math.max(0, priceStr);
     if (!priceStr) return 0;
     let s = String(priceStr).toLowerCase().replace(/rp\.?/g, '').replace(/\s/g, '');
@@ -368,70 +368,70 @@ function parsePrice(priceStr) {
     const hasComma = s.includes(',');
 
     if (hasDot && hasComma) {
-        // Ada keduanya → pakai posisi terakhir untuk tentukan decimal.
-        // Mis. "1,234.56" (US) → comma=thousand, dot=decimal
-        // Mis. "1.234,56" (EU/ID) → dot=thousand, comma=decimal
+        // Both present → use the last position to decide the decimal.
+        // E.g. "1,234.56" (US) → comma=thousands, dot=decimal
+        // E.g. "1.234,56" (EU/ID) → dot=thousands, comma=decimal
         if (s.lastIndexOf('.') > s.lastIndexOf(',')) {
-            // US: dot=decimal, comma=thousand → hapus comma, biarkan dot
+            // US: dot=decimal, comma=thousands → remove commas, keep the dot
             s = s.replace(/,/g, '');
         } else {
-            // EU/ID: dot=thousand, comma=decimal → hapus dot, ganti comma jadi dot
+            // EU/ID: dot=thousands, comma=decimal → remove dots, turn commas into dots
             s = s.replace(/\./g, '').replace(/,/g, '.');
         }
     } else if (hasComma) {
-        // Hanya comma. Asumsi: thousand separator (lebih umum di ID).
-        // Mis. "25,000" → 25000
-        // Tapi "2,5" → ambiguous, treat as decimal (2.5).
+        // Only a comma. Assumption: thousands separator (more common in ID).
+        // E.g. "25,000" → 25000
+        // But "2,5" → ambiguous, treat as decimal (2.5).
         const parts = s.split(',');
         if (parts.length === 2 && parts[1].length <= 2) {
-            // Comma sebagai decimal (mis. "2,5")
+            // Comma as decimal (e.g. "2,5")
             s = s.replace(/,/g, '.');
         } else {
-            // Comma sebagai thousand separator
+            // Comma as thousands separator
             s = s.replace(/,/g, '');
         }
     } else if (hasDot) {
-        // Hanya dot. Asumsi: thousand separator (format ID).
-        // Mis. "50.000" → 50000
+        // Only a dot. Assumption: thousands separator (ID format).
+        // E.g. "50.000" → 50000
         //
-        // v3.9.8 FIX: heuristic lama `parts[1].length <= 2` treat sebagai decimal,
-        // bikin "1.50" (ID = 150) salah jadi 1.5, dan "100.00" (ID = 10000) salah jadi 100.
+        // v3.9.8 FIX: the old `parts[1].length <= 2` heuristic treated it as a decimal,
+        // making "1.50" (ID = 150) wrongly 1.5, and "100.00" (ID = 10000) wrongly 100.
         //
-        // v3.9.9 FIX: heuristic lebih ketat. Untuk Rupiah (integer currency),
-        // thousand separator jauh lebih umum daripada decimal. Hanya treat sebagai
-        // decimal kalau SANGAT jelas (int part < 10 DAN fractional 1 digit).
-        // Mis. "2.5" → 2.5 (decimal), "9.9" → 9.9 (decimal).
-        // Tapi "1.50" → 150 (thousand), "10.50" → 1050 (thousand), "2.50" → 250 (thousand).
+        // v3.9.9 FIX: stricter heuristic. For Rupiah (an integer currency),
+        // a thousands separator is far more common than a decimal. Only treat it as
+        // a decimal when it's VERY clear (int part < 10 AND a 1-digit fraction).
+        // E.g. "2.5" → 2.5 (decimal), "9.9" → 9.9 (decimal).
+        // But "1.50" → 150 (thousands), "10.50" → 1050 (thousands), "2.50" → 250 (thousands).
         //
-        // v3.9.17 FIX: untuk currency Rupiah (integer currency), dot SELALU
-        // thousand separator. "1.5" sebagai 1.5 Rupiah tidak masuk akal — kemungkinan
-        // besar admin maksudnya 15 atau 1500. Tapi untuk backward compat, kita keep
-        // heuristic v3.9.9 untuk angka kecil (< 10) supaya test lama gak break.
-        // Dokumentasi: kalau admin mau input harga < 10 Rupiah dengan decimal
-        // (sangat jarang), pakai format "0.5" atau "5" saja.
+        // v3.9.17 FIX: for the Rupiah currency (an integer currency), a dot is ALWAYS
+        // a thousands separator. "1.5" as 1.5 Rupiah makes no sense — the admin most
+        // likely means 15 or 1500. But for backward compat, we keep the
+        // v3.9.9 heuristic for small numbers (< 10) so old tests don't break.
+        // Documentation: if an admin wants a price below 10 Rupiah with a decimal
+        // (very rare), just use the format "0.5" or "5".
         const parts = s.split('.');
         if (parts.length === 2 && parts[0] !== '' && parts[1].length > 0) {
             const intPart = parseInt(parts[0], 10);
-            // Treat sebagai decimal HANYA kalau:
-            //   - int part < 10 (sangat kecil — harga Rupiah jarang < 10)
-            //   - fractional part exactly 1 digit (bukan 2 yang bisa ambiguous)
-            //   - bukan "0" (mis. "1.0" → 10, bukan 1.0)
+            // Treat as a decimal ONLY if:
+            //   - int part < 10 (very small — Rupiah prices are rarely < 10)
+            //   - the fractional part is exactly 1 digit (not the ambiguous 2)
+            //   - not "0" (e.g. "1.0" → 10, not 1.0)
             if (!isNaN(intPart) && intPart < 10 && parts[1].length === 1 && parts[1] !== '0') {
-                // Dot sebagai decimal (mis. "2.5", "9.9")
-                // biarkan
+                // Dot as decimal (e.g. "2.5", "9.9")
+                // keep it
             } else {
-                // Dot sebagai thousand separator
+                // Dot as thousands separator
                 s = s.replace(/\./g, '');
             }
         } else {
-            // Multiple dots (mis. "1.234.567") → thousand separator
+            // Multiple dots (e.g. "1.234.567") → thousands separators
             s = s.replace(/\./g, '');
         }
     }
 
     const n = parseFloat(s);
-    // v3.9.38 FIX: hasil negatif di-clamp ke 0 — string harga "-5000" /
-    // "Rp -25k" tidak boleh bikin totalSpent/revenue jadi minus.
+    // v3.9.38 FIX: negative results are clamped to 0 — a price string "-5000" /
+    // "Rp -25k" must not turn totalSpent/revenue negative.
     return isNaN(n) ? 0 : Math.max(0, Math.round(n * multiplier));
 }
 

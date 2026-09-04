@@ -2,12 +2,12 @@
  * Domain: warn
  * Slash commands: /warn, /warn-list, /warn-remove, /warn-clear
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: kelola warning user + auto-action (mute/kick) berdasarkan threshold.
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: manage user warnings + auto-actions (mute/kick) based on thresholds.
  *
  * v3.9.0: scoped per guild.
- * v3.9.4: jangan markActionTaken kalau action gagal (silent enforcement failure).
- * v3.9.8: cek hierarki bot vs target — kasih warning kalau auto-action bakal gagal.
+ * v3.9.4: don't markActionTaken if the action failed (silent enforcement failure).
+ * v3.9.8: check bot vs target hierarchy — give a warning if the auto-action will fail.
  */
 
 const {
@@ -24,7 +24,7 @@ const {
     safeEditReply
 } = require('./_shared');
 
-// v3.9.25: konversi \n literal → newline asli (fitur multi-line PC)
+// v3.9.25: convert literal \n → real newlines (PC multi-line feature)
 const { normalizeNewlines } = require('../infra/text');
 
 module.exports = async function (interaction) {
@@ -34,39 +34,39 @@ module.exports = async function (interaction) {
     if (interaction.commandName === 'warn') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const user = interaction.options.getUser('user');
-        // v3.9.25: \n literal → newline asli biar alasan warning bisa multi-baris
+        // v3.9.25: literal \n → real newlines so the warning reason can be multi-line
         const reason = normalizeNewlines(interaction.options.getString('reason'));
 
         if (user.id === interaction.user.id) {
-            return safeEditReply(interaction, { content: '❌ Tidak bisa warn diri sendiri.' });
+            return safeEditReply(interaction, { content: '❌ You cannot warn yourself.' });
         }
         if (user.bot) {
-            return safeEditReply(interaction, { content: '❌ Tidak bisa warn bot.' });
+            return safeEditReply(interaction, { content: '❌ You cannot warn a bot.' });
         }
 
         const member = await interaction.guild.members.fetch(user.id).catch(() => null);
         if (!member) {
-            return safeEditReply(interaction, { content: `❌ User <@${user.id}> tidak ada di server.` });
+            return safeEditReply(interaction, { content: `❌ User <@${user.id}> is not on this server.` });
         }
 
-        // Cek hierarki: admin harus lebih tinggi dari target
+        // Check hierarchy: the admin must be higher than the target
         if (member.roles.highest.position >= interaction.member.roles.highest.position) {
             return safeEditReply(interaction, {
-                content: '❌ Kamu tidak bisa warn member dengan role setingkat/lebih tinggi dari kamu.'
+                content: '❌ You cannot warn a member with a role equal to or higher than yours.'
             });
         }
 
-        // Cek hierarki bot vs target juga. Kalau target punya role lebih tinggi dari bot,
-        // auto-action (timeout/kick) bakal throw "Missing Permissions".
-        // Tapi record warn tetap dibuat — berguna buat catatan, meski auto-action gak jalan.
-        // Jadi: jangan return, kasih flag warning aja, lanjut ke addWarn.
+        // Also check bot vs target hierarchy. If the target has a higher role than the bot,
+        // the auto-action (timeout/kick) will throw "Missing Permissions".
+        // But the warn record is still created — useful as a record even if the auto-action can't run.
+        // So: don't return, just set a warning flag and continue to addWarn.
         const botMember = interaction.guild.members.me;
         let botHierarchyWarning = '';
         if (botMember && member.roles.highest.position >= botMember.roles.highest.position) {
-            botHierarchyWarning = `\n\n⚠️ **Heads up:** Role bot (\`${botMember.roles.highest.name || 'top role'}\`) lebih rendah dari role tertinggi target (\`${member.roles.highest.name || 'top role'}\`). Bot gak bakal bisa eksekusi auto-action (timeout/kick) kalau mencapai threshold. Pindahin role bot ke atas role target di Server Settings → Roles biar auto-action jalan.`;
+            botHierarchyWarning = `\n\n⚠️ **Heads up:** The bot's role (\`${botMember.roles.highest.name || 'top role'}\`) is lower than the target's highest role (\`${member.roles.highest.name || 'top role'}\`). The bot won't be able to execute the auto-action (timeout/kick) if a threshold is reached. Move the bot's role above the target's role in Server Settings → Roles so the auto-action works.`;
         }
 
-        // v3.9.0: addWarn sekarang scoped per guild (guildId, userId, data)
+        // v3.9.0: addWarn is now scoped per guild (guildId, userId, data)
         const result = addWarn(interaction.guild.id, user.id, {
             reason,
             warnedBy: interaction.user.id,
@@ -82,29 +82,29 @@ module.exports = async function (interaction) {
             guildId: interaction.guild.id
         });
 
-        // Eksekusi auto-action kalau perlu
-        // P1-7 FIX: kalau actionAlreadyTaken=true, tidak re-apply timeout lagi
-        // (user sudah pernah kena mute yang sama, jangan reset timer).
-        // v3.9.4 FIX: kalau action gagal (e.g., bot kagak punya ModerateMembers permission),
-        // jangan markActionTaken — sebelumnya markActionTaken dipanggil unconditional,
-        // menyebabkan action selanjutnya yang sama di-skip (silent enforcement failure).
+        // Execute the auto-action if needed
+        // P1-7 FIX: if actionAlreadyTaken=true, don't re-apply the timeout
+        // (the user already got the same mute — don't reset the timer).
+        // v3.9.4 FIX: if the action fails (e.g., bot lacks the ModerateMembers permission),
+        // don't markActionTaken — previously markActionTaken was called unconditionally,
+        // causing the next identical action to be skipped (silent enforcement failure).
         let actionMsg = '';
         if (result.actionAlreadyTaken) {
-            actionMsg = `\nℹ️ Auto-action tidak diulang (user sudah pernah kena action yang sama sebelumnya).`;
+            actionMsg = `\nℹ️ Auto-action not repeated (the user already received the same action before).`;
         } else if (result.actionToTake) {
             try {
                 if (result.actionToTake === 'mute_1h' || result.actionToTake === 'mute_1d') {
                     const durationMin = result.actionToTake === 'mute_1h' ? 60 : 1440;
-                    // Cari role mute (atau bikin timeout)
+                    // Find the mute role (or create a timeout)
                     let muted = false;
                     try {
                         await member.timeout(durationMin * 60 * 1000, `Auto-action: ${result.count} warnings`);
                         muted = true;
                     } catch (err) {
-                        actionMsg = `\n⚠️ Auto-action gagal: ${err.message}`;
+                        actionMsg = `\n⚠️ Auto-action failed: ${err.message}`;
                     }
                     if (muted) {
-                        actionMsg = `\n🔇 **Auto-action:** Timeout ${durationMin === 60 ? '1 jam' : '1 hari'} (${result.count} warnings)`;
+                        actionMsg = `\n🔇 **Auto-action:** Timeout ${durationMin === 60 ? '1 hour' : '1 day'} (${result.count} warnings)`;
                         markActionTaken(interaction.guild.id, user.id, result.warnEntry.id, result.actionToTake);
                     }
                 } else if (result.actionToTake === 'kick') {
@@ -113,7 +113,7 @@ module.exports = async function (interaction) {
                         await member.kick(`Auto-action: ${result.count} warnings`);
                         kicked = true;
                     } catch (err) {
-                        actionMsg = `\n⚠️ Auto-action gagal: ${err.message}`;
+                        actionMsg = `\n⚠️ Auto-action failed: ${err.message}`;
                     }
                     if (kicked) {
                         actionMsg = `\n👢 **Auto-action:** Kicked (${result.count} warnings)`;
@@ -121,23 +121,23 @@ module.exports = async function (interaction) {
                     }
                 }
             } catch (err) {
-                actionMsg = `\n⚠️ Auto-action gagal: ${err.message}`;
+                actionMsg = `\n⚠️ Auto-action failed: ${err.message}`;
             }
         }
 
-        // DM user
+        // DM the user
         try {
             await user.send(
-                `⚠️ **Kamu mendapat warning di ${interaction.guild.name}**\n\nReason: ${reason}\nTotal warnings: ${result.count}\n${result.actionToTake ? `Action: ${result.actionToTake}` : 'Belum ada auto-action (threshold: 3=mute 1h, 5=mute 1d, 7=kick)'}`
+                `⚠️ **You received a warning in ${interaction.guild.name}**\n\nReason: ${reason}\nTotal warnings: ${result.count}\n${result.actionToTake ? `Action: ${result.actionToTake}` : 'No auto-action yet (thresholds: 3=mute 1h, 5=mute 1d, 7=kick)'}`
             );
         } catch (_) {}
 
         return safeEditReply(interaction, {
             content:
-                `⚠️ **<@${user.id}> telah diwarn.**\n\n` +
+                `⚠️ **<@${user.id}> has been warned.**\n\n` +
                 `📝 Reason: ${reason}\n` +
                 `📊 Total warnings: **${result.count}**\n` +
-                `👤 Oleh: ${interaction.user.tag}${actionMsg}${botHierarchyWarning}`
+                `👤 By: ${interaction.user.tag}${actionMsg}${botHierarchyWarning}`
         });
     }
 
@@ -147,21 +147,21 @@ module.exports = async function (interaction) {
     if (interaction.commandName === 'warn-list') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const user = interaction.options.getUser('user');
-        // v3.9.0: getWarns sekarang scoped per guild
+        // v3.9.0: getWarns is now scoped per guild
         const warns = getWarns(interaction.guild.id, user.id);
         if (warns.length === 0) {
-            return safeEditReply(interaction, { content: `✅ <@${user.id}> tidak punya warning.` });
+            return safeEditReply(interaction, { content: `✅ <@${user.id}> has no warnings.` });
         }
         const lines = warns
             .map((w, i) => {
-                // v3.9.15: hapus dead variable `date` (sebelumnya dideklarasi tapi tidak dipakai)
-                return `\`${i + 1}.\` 🆔 \`${w.id}\`\n   📝 ${w.reason}\n   👤 Oleh: ${w.warnedByTag} | ⏰ <t:${Math.floor(w.createdAt / 1000)}:R>${w.actionTaken ? ` | ⚡ ${w.actionTaken}` : ''}`;
+                // v3.9.15: removed dead variable `date` (previously declared but unused)
+                return `\`${i + 1}.\` 🆔 \`${w.id}\`\n   📝 ${w.reason}\n   👤 By: ${w.warnedByTag} | ⏰ <t:${Math.floor(w.createdAt / 1000)}:R>${w.actionTaken ? ` | ⚡ ${w.actionTaken}` : ''}`;
             })
             .join('\n\n');
         const embed = new EmbedBuilder()
             .setTitle(`⚠️ WARN HISTORY — ${user.tag}`)
             .setDescription(
-                `Total **${warns.length}** warning.\n\n${lines}\n\n**Threshold:**\n• ${WARN_THRESHOLDS.mute1h} warn → mute 1 jam\n• ${WARN_THRESHOLDS.mute1d} warn → mute 1 hari\n• ${WARN_THRESHOLDS.kick} warn → kick`
+                `Total **${warns.length}** warning(s).\n\n${lines}\n\n**Thresholds:**\n• ${WARN_THRESHOLDS.mute1h} warns → 1 hour mute\n• ${WARN_THRESHOLDS.mute1d} warns → 1 day mute\n• ${WARN_THRESHOLDS.kick} warns → kick`
             )
             .setColor(
                 warns.length >= WARN_THRESHOLDS.kick
@@ -182,22 +182,22 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const user = interaction.options.getUser('user');
         const warnId = interaction.options.getString('warn_id');
-        // v3.9.0: removeWarn sekarang scoped per guild
+        // v3.9.0: removeWarn is now scoped per guild
         const ok = removeWarn(interaction.guild.id, user.id, warnId);
         if (!ok) {
             return safeEditReply(interaction, {
-                content: `❌ Warn ID \`${warnId}\` tidak ditemukan untuk user <@${user.id}> di guild ini.`
+                content: `❌ Warn ID \`${warnId}\` not found for user <@${user.id}> in this guild.`
             });
         }
         await logAudit(interaction.client, {
             action: 'WARN_REMOVE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus warn \`${warnId}\` dari <@${user.id}>. Sisa: ${getWarnCount(interaction.guild.id, user.id)} warn`,
+            details: `Remove warn \`${warnId}\` from <@${user.id}>. Remaining: ${getWarnCount(interaction.guild.id, user.id)} warn(s)`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ Warn \`${warnId}\` dihapus dari <@${user.id}>.\n📊 Sisa warnings: **${getWarnCount(interaction.guild.id, user.id)}**`
+            content: `✅ Warn \`${warnId}\` removed from <@${user.id}>.\n📊 Remaining warnings: **${getWarnCount(interaction.guild.id, user.id)}**`
         });
     }
 
@@ -207,20 +207,20 @@ module.exports = async function (interaction) {
     if (interaction.commandName === 'warn-clear') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const user = interaction.options.getUser('user');
-        // v3.9.0: clearWarns sekarang scoped per guild
+        // v3.9.0: clearWarns is now scoped per guild
         const count = clearWarns(interaction.guild.id, user.id);
         if (count === 0) {
-            return safeEditReply(interaction, { content: `ℹ️ <@${user.id}> memang tidak punya warning di guild ini.` });
+            return safeEditReply(interaction, { content: `ℹ️ <@${user.id}> has no warnings in this guild anyway.` });
         }
         await logAudit(interaction.client, {
             action: 'WARN_CLEAR_ALL',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Clear ALL warns (${count}) dari <@${user.id}> di guild ini`,
+            details: `Clear ALL warns (${count}) from <@${user.id}> in this guild`,
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, {
-            content: `✅ **${count}** warning dihapus dari <@${user.id}> di guild ini.`
+            content: `✅ **${count}** warning(s) removed from <@${user.id}> in this guild.`
         });
     }
 };

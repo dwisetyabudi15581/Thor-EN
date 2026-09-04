@@ -1,26 +1,26 @@
 /**
- * Scheduler Tasks — fungsi-fungsi yang dipanggil scheduler loop di index.js.
+ * Scheduler Tasks — functions called by the scheduler loop in index.js.
  *
- * Tujuan (P3-6 refactor): pisahkan logic scheduler dari entry point bot
- * supaya index.js lebih lean dan mudah dibaca.
+ * Purpose (P3-6 refactor): separate the scheduler logic from the bot entry point
+ * so index.js stays lean and easy to read.
  *
- * Berisi:
- *   - processExpiredRole: proses schedule role removal yang sudah expired
- *   - processGiveawayEnd: proses giveaway yang sudah berakhir (pick winners + announce)
- *   - announceRerollWinner: kirim announce winner baru setelah reroll
- *   - processScheduledAnnouncement: kirim scheduled announcement yang sudah waktunya
+ * Contains:
+ *   - processExpiredRole: processes expired role-removal schedules
+ *   - processGiveawayEnd: processes ended giveaways (pick winners + announce)
+ *   - announceRerollWinner: announces the new winner after a reroll
+ *   - processScheduledAnnouncement: sends scheduled announcements that are due
  *
- * Fungsi `processGiveawayEnd` & `announceRerollWinner` di-attach ke `client`
- * supaya bisa dipanggil dari commandHandler untuk `/giveaway end` & `/giveaway reroll`.
+ * `processGiveawayEnd` & `announceRerollWinner` are attached to `client`
+ * so they can be called from commandHandler for `/giveaway end` & `/giveaway reroll`.
  */
 
-// v3.9.24: getExpired dihapus dari import — tidak pernah dipakai di file ini
-// (hanya dipakai ready.js); salah satu sumber lint warning.
+// v3.9.24: getExpired removed from the import — never used in this file
+// (only used by ready.js); one source of lint warnings.
 const { removeEntry, updateExpireAt } = require('../data/roleScheduler');
 const { hasPermanentKey, getMaxExpireAtByUserAndRole } = require('../data/keyManager');
-// v3.9.35 cleanup: import discord.js di-hoist ke top-level — sebelumnya 2x lazy
-// require di dalam processGiveawayEnd & processScheduledAnnouncement (redundan:
-// discord.js selalu sudah ter-load saat bot start).
+// v3.9.35 cleanup: the discord.js import is hoisted to top level — previously 2 lazy
+// requires inside processGiveawayEnd & processScheduledAnnouncement (redundant:
+// discord.js is always already loaded when the bot starts).
 const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
 const {
     get: getGiveawayById,
@@ -35,115 +35,115 @@ const {
 } = require('../data/scheduledAnnouncements');
 const { pruneClosedOlderThan: pruneOldPolls } = require('../data/pollManager');
 const { recordGiveawayWin: trackGiveawayWin } = require('../data/statsManager');
-// v3.9.37: reconcile deal rekber zombie (lihat reconcileZombieDeals di bawah).
-// v3.9.38 FIX: loadDeals dipakai supaya reconcile bisa iterasi SEMUA deal
-// (termasuk terminal) — getActiveDealsByGuild tidak lagi dipakai di sini.
+// v3.9.37: reconcile zombie escrow deals (see reconcileZombieDeals below).
+// v3.9.38 FIX: loadDeals is used so the reconcile can iterate ALL deals
+// (including terminal) — getActiveDealsByGuild is no longer used here.
 const {
     loadDeals: loadAllDeals,
     removeDeal: removeDealMeta
 } = require('../data/midmanManager');
-// v3.9.38 FIX: GC entry AFK lama (lihat pruneStaleData di bawah).
+// v3.9.38 FIX: GC old AFK entries (see pruneStaleData below).
 const { pruneOldAFK } = require('../data/afkManager');
 
-// v3.9.8 FIX: in-memory guard supaya giveaway/announcement yang sama tidak
-// diproses 2x paralel oleh scheduler tick. Sebelumnya, kalau satu
-// processGiveawayEnd butuh >60s (DM ke banyak winner, rate limit), tick
-// berikutnya pick winner KEDUA kalinya → 2x announce + 2x DM winner.
+// v3.9.8 FIX: in-memory guard so the same giveaway/announcement isn't
+// processed 2x in parallel by a scheduler tick. Previously, if one
+// processGiveawayEnd took >60s (DMs to many winners, rate limit), the next
+// tick picked winners a SECOND time → 2x announce + 2x winner DMs.
 const processingGiveaways = new Set();
 const processingAnns = new Set();
 const processingRoles = new Set();
 
 /**
- * Proses schedule yang sudah expired — MODEL KEY-DRIVEN dengan recheck.
+ * Process an expired schedule — KEY-DRIVEN MODEL with recheck.
  *
  * Logic:
- *   1. Cek apakah user masih ada di guild. Kalau tidak → hapus schedule.
- *   2. Cek key aktif untuk user+role:
- *      a. Kalau ada key PERMANEN → hapus schedule, role tetap (permanen).
- *      b. Kalau ada key aktif dengan expireAt > now → reschedule ke max(expireAt).
- *         Role tetap. (ini kunci MAX EXTEND — schedule tidak boleh lebih pendek dari key terpanjang)
- *      c. Kalau tidak ada key aktif → hapus role + hapus schedule.
+ *   1. Check whether the user is still in the guild. If not → delete the schedule.
+ *   2. Check active keys for user+role:
+ *      a. If a PERMANENT key exists → delete the schedule, the role stays (permanent).
+ *      b. If an active key with expireAt > now exists → reschedule to max(expireAt).
+ *         The role stays. (this is the MAX EXTEND key — the schedule must never be shorter than the longest key)
+ *      c. If no active key exists → remove the role + delete the schedule.
  *
- * v3.9.0 FIX: kalau terjadi transient error (Discord API 5xx, network blip),
- * JANGAN hapus schedule entry. Sebelumnya, catch block selalu removeEntry
- * yang bikin user keep role forever kalau error-nya transient. Sekarang,
- * entry tetap ada untuk di-retry tick berikutnya.
+ * v3.9.0 FIX: if a transient error occurs (Discord API 5xx, network blip),
+ * do NOT delete the schedule entry. Previously, the catch block always called removeEntry,
+ * which made the user keep the role forever if the error was transient. Now,
+ * the entry stays so the next tick can retry.
  */
 async function processExpiredRole(client, entry) {
-    // v3.9.8 FIX: skip kalau entry ini lagi di-process tick sebelumnya.
-    // Sebelumnya, kalau processExpiredRole butuh >60s (Discord API lambat),
-    // tick berikutnya pick entry yang sama → 2x DM "role kamu dihapus".
+    // v3.9.8 FIX: skip if this entry is already being processed by a previous tick.
+    // Previously, if processExpiredRole took >60s (slow Discord API),
+    // the next tick picked the same entry → 2x "your role was removed" DMs.
     if (processingRoles.has(entry.id)) {
-        console.log(`⏭️ processExpiredRole ${entry.id} di-skip (masih diproses tick sebelumnya).`);
+        console.log(`⏭️ processExpiredRole ${entry.id} skipped (still being processed by a previous tick).`);
         return;
     }
     processingRoles.add(entry.id);
     try {
         const guild = await client.guilds.fetch(entry.guildId).catch(() => null);
         if (!guild) {
-            // Guild benar-benar hilang (bot di-kick) → safe to remove.
+            // Guild is truly gone (bot kicked) → safe to remove.
             removeEntry(entry.id);
             return;
         }
         const member = await guild.members.fetch(entry.userId).catch(() => null);
         if (!member) {
-            // User sudah leave guild → safe to remove.
+            // User already left the guild → safe to remove.
             removeEntry(entry.id);
             return;
         }
-        // P2-11 FIX: pakai fetch (fallback ke API) bukan cache.get
-        // supaya role yang belum ter-cache tetap bisa diproses.
+        // P2-11 FIX: use fetch (falls back to the API) instead of cache.get
+        // so roles not yet cached can still be processed.
         const role = await guild.roles.fetch(entry.roleId).catch(() => null);
         const now = Date.now();
 
-        // === 1. Cek key PERMANEN ===
+        // === 1. Check for a PERMANENT key ===
         if (hasPermanentKey(entry.userId, entry.roleId)) {
             console.log(
-                `♾️ ${member.user.tag}: schedule ${role?.name || entry.roleId} dihapus (ada key permanen). Role tetap.`
+                `♾️ ${member.user.tag}: schedule ${role?.name || entry.roleId} removed (permanent key exists). Role stays.`
             );
             removeEntry(entry.id);
             return;
         }
 
-        // === 2. Cek key aktif lain dengan expireAt > now ===
+        // === 2. Check for another active key with expireAt > now ===
         const maxExpireAt = getMaxExpireAtByUserAndRole(entry.userId, entry.roleId, now);
         if (maxExpireAt !== null && maxExpireAt > now) {
-            // Masih ada key aktif dengan sisa waktu → reschedule ke max
+            // An active key with time remaining still exists → reschedule to max
             updateExpireAt(entry.id, maxExpireAt);
             const days = Math.ceil((maxExpireAt - now) / 86400000);
             console.log(
-                `⏰ ${member.user.tag}: schedule ${role?.name || entry.roleId} di-reschedule ke ${days} hari lagi (mengikuti key terpanjang).`
+                `⏰ ${member.user.tag}: schedule ${role?.name || entry.roleId} rescheduled to ${days} more days (following the longest key).`
             );
             return;
         }
 
-        // === 3. Tidak ada key aktif → hapus role + hapus schedule ===
+        // === 3. No active key → remove the role + delete the schedule ===
         if (role && member.roles.cache.has(entry.roleId)) {
             try {
                 await member.roles.remove(entry.roleId);
-                console.log(`✅ Auto-remove role ${role.name} dari ${member.user.tag} (semua key sudah expired).`);
-                // Kirim DM notifikasi
+                console.log(`✅ Auto-removed role ${role.name} from ${member.user.tag} (all keys expired).`);
+                // Send a DM notification
                 try {
                     await member.send({
-                        content: `⏰ Role **${role.name}** kamu di server **${guild.name}** sudah dihapus karena semua key sudah expired.\n\nKalau merasa ini salah, hubungi admin.`
+                        content: `⏰ Your role **${role.name}** on server **${guild.name}** has been removed because all of its keys have expired.\n\nIf you think this is a mistake, contact an admin.`
                     });
                 } catch (_) {}
             } catch (err) {
-                // v3.9.0 FIX: kalau gagal hapus role, cek apakah error transient.
-                // Kalau transient (Discord 5xx, ECONNRESET, ETIMEDOUT), JANGAN hapus
-                // schedule entry — biarkan tick berikutnya retry.
-                // Kalau non-transient (Missing Permissions, Unknown Role), hapus entry
-                // supaya tidak stuck forever.
+                // v3.9.0 FIX: if removing the role fails, check whether the error is transient.
+                // If transient (Discord 5xx, ECONNRESET, ETIMEDOUT), do NOT delete
+                // the schedule entry — let the next tick retry.
+                // If non-transient (Missing Permissions, Unknown Role), delete the entry
+                // so it doesn't get stuck forever.
                 const isTransient = isTransientDiscordError(err);
                 if (isTransient) {
                     console.warn(
-                        `⚠️ Gagal hapus role ${entry.roleId} dari ${member.user.tag} (transient: ${err.code || err.name}). Akan di-retry tick berikutnya. Entry TIDAK dihapus.`
+                        `⚠️ Failed to remove role ${entry.roleId} from ${member.user.tag} (transient: ${err.code || err.name}). Will retry next tick. Entry NOT deleted.`
                     );
-                    return; // penting: jangan removeEntry
+                    return; // important: don't removeEntry
                 }
-                // Non-transient: log error, hapus entry supaya tidak loop forever.
+                // Non-transient: log the error, delete the entry so it doesn't loop forever.
                 console.error(
-                    `❌ Gagal hapus role ${entry.roleId} dari ${member.user.tag} (permanent: ${err.code || err.name}):`,
+                    `❌ Failed to remove role ${entry.roleId} from ${member.user.tag} (permanent: ${err.code || err.name}):`,
                     err.message
                 );
                 removeEntry(entry.id);
@@ -152,26 +152,26 @@ async function processExpiredRole(client, entry) {
         }
         removeEntry(entry.id);
     } catch (err) {
-        // v3.9.0 FIX: hanya hapus entry kalau error-nya non-transient.
-        // Transient error (network blip) → biarkan tick berikutnya retry.
+        // v3.9.0 FIX: only delete the entry if the error is non-transient.
+        // Transient error (network blip) → let the next tick retry.
         const isTransient = isTransientDiscordError(err);
         if (isTransient) {
             console.warn(
-                `⚠️ Transient error di processExpiredRole ${entry.id} (${err.code || err.name}). Entry TIDAK dihapus, akan di-retry.`
+                `⚠️ Transient error in processExpiredRole ${entry.id} (${err.code || err.name}). Entry NOT deleted, will be retried.`
             );
             return;
         }
-        console.error(`❌ Error process expired role ${entry.id} (permanent):`, err.message);
+        console.error(`❌ Error processing expired role ${entry.id} (permanent):`, err.message);
         removeEntry(entry.id);
     } finally {
-        // v3.9.8: pastikan processing lock dilepas walau ada error / return.
+        // v3.9.8: make sure the processing lock is released even on error / return.
         processingRoles.delete(entry.id);
     }
 }
 
 /**
- * Deteksi apakah error adalah transient (network / Discord 5xx / rate limit).
- * Transient errors seharusnya di-retry, bukan dianggap permanent failure.
+ * Detect whether an error is transient (network / Discord 5xx / rate limit).
+ * Transient errors should be retried, not treated as permanent failures.
  */
 function isTransientDiscordError(err) {
     if (!err) return false;
@@ -193,69 +193,70 @@ function isTransientDiscordError(err) {
 }
 
 /**
- * Proses giveaway yang sudah berakhir — pick winners + edit message + announce.
+ * Process a giveaway that has ended — pick winners + edit the message + announce.
  *
- * P0-3 FIX: tambah opsi `options.skipPick` — kalau true, tidak pick winners lagi
- * (dipakai saat manual `/giveaway end` yang sudah pick winners sebelumnya).
+ * P0-3 FIX: added the `options.skipPick` option — if true, winners are not picked again
+ * (used by manual `/giveaway end` when winners were already picked before).
  *
- * Bisa diakses dari commandHandler via `client.processGiveawayEnd(gw, opts)`.
+ * Accessible from commandHandler via `client.processGiveawayEnd(gw, opts)`.
  */
 async function processGiveawayEnd(client, gw, options = {}) {
-    // v3.9.8 FIX: TOCTOU guard. Sebelumnya, kalau satu processGiveawayEnd
-    // butuh >60s (DM ke banyak winner, rate limit), tick berikutnya juga
-    // return gw ini di getEnding() (karena endGiveaway belum jalan) → pick
-    // winner KEDUA kalinya → 2x announce + 2x DM winner.
+    // v3.9.8 FIX: TOCTOU guard. Previously, if one processGiveawayEnd
+    // took >60s (DMs to many winners, rate limit), the next tick also
+    // returned this gw from getEnding() (because endGiveaway hadn't run) → picked
+    // winners a SECOND time → 2x announce + 2x winner DMs.
     if (processingGiveaways.has(gw.id)) {
-        console.log(`⏭️ processGiveawayEnd ${gw.id} di-skip (masih diproses tick sebelumnya).`);
+        console.log(`⏭️ processGiveawayEnd ${gw.id} skipped (still being processed by a previous tick).`);
         return;
     }
     processingGiveaways.add(gw.id);
     try {
-        // v3.9.38 FIX: re-read state FRESH dari disk SETELAH lock scheduler
-        // dipegang. `gw` bisa snapshot STALE dari getEnding() (scheduler await
-        // item tick lain dulu), sementara manual /giveaway end — yang memakai
-        // lock BERBEDA (withUserLock('gw_end'), bukan Set ini) — sudah pick
-        // winners + persist + announce. Scheduler lanjut dengan snapshot lama
-        // → pick KEDUA + endGiveaway menimpa winnerIds → 2x announce + 2x DM.
+        // v3.9.38 FIX: re-read state FRESH from disk AFTER acquiring the scheduler
+        // lock. `gw` can be a STALE snapshot from getEnding() (the scheduler awaited
+        // another tick item first), while manual /giveaway end — which uses a
+        // DIFFERENT lock (withUserLock('gw_end'), not this Set) — already picked
+        // winners + persisted + announced. The scheduler then continued with the
+        // old snapshot → a SECOND pick + endGiveaway overwriting winnerIds → 2x
+        // announce + 2x DMs.
         const fresh = getGiveawayById(gw.id);
         if (!fresh) {
-            console.log(`⏭️ processGiveawayEnd ${gw.id} di-skip (giveaway tidak ada di disk).`);
+            console.log(`⏭️ processGiveawayEnd ${gw.id} skipped (giveaway not on disk).`);
             return;
         }
-        // Jalur announce manual: giveaway SUDAH ended dengan winner ter-persist
-        // (dipick manual oleh /giveaway end sebelum memanggil ini) dan caller
-        // minta skipPick → lanjut announce pakai winnerIds dari disk, TIDAK re-pick.
+        // Manual announce path: the giveaway is ALREADY ended with persisted winners
+        // (picked manually by /giveaway end before calling this) and the caller
+        // requests skipPick → continue announcing using the winnerIds from disk, do NOT re-pick.
         const isManualAnnounce = Boolean(options.skipPick && fresh.winnerIds && fresh.winnerIds.length > 0);
         if (fresh.ended && !isManualAnnounce) {
-            // Sudah di-fully-ended & di-announce oleh proses lain (manual end
-            // ATAU tick scheduler sebelumnya) → jangan dobel announce/DM.
-            console.log(`⏭️ processGiveawayEnd ${gw.id} di-skip (sudah berakhir — dihandle proses lain).`);
+            // Already fully-ended & announced by another process (manual end
+            // OR a previous scheduler tick) → don't double announce/DM.
+            console.log(`⏭️ processGiveawayEnd ${gw.id} skipped (already ended — handled by another process).`);
             return;
         }
 
         const guild = await client.guilds.fetch(fresh.guildId).catch(() => null);
-        // Kalau guild gak ketemu (bot di-kick / guild di-delete), mark giveaway sebagai ended
-        // biar gak di-pick ulang tiap tick. Sebelumnya ini bikin infinite retry loop 60-an.
+        // If the guild isn't found (bot kicked / guild deleted), mark the giveaway as ended
+        // so it isn't re-picked every tick. Previously this caused an infinite retry loop of ~60s ticks.
         if (!guild) {
             console.warn(
-                `⚠️ Giveaway ${fresh.id}: guild ${fresh.guildId} tidak ditemukan, mark ended (bot di-kick / guild di-delete?).`
+                `⚠️ Giveaway ${fresh.id}: guild ${fresh.guildId} not found, marking ended (bot kicked / guild deleted?).`
             );
             endGiveaway(fresh.id, []);
             return;
         }
 
         const channel = guild.channels.cache.get(fresh.channelId);
-        // Sama — kalau channel udah di-delete, mark ended biar gak infinite retry.
+        // Same — if the channel was already deleted, mark ended to avoid an infinite retry.
         if (!channel) {
             console.warn(
-                `⚠️ Giveaway ${fresh.id}: channel ${fresh.channelId} tidak ditemukan di guild ${fresh.guildId}, mark ended.`
+                `⚠️ Giveaway ${fresh.id}: channel ${fresh.channelId} not found in guild ${fresh.guildId}, marking ended.`
             );
             endGiveaway(fresh.id, []);
             return;
         }
 
-        // Pick winners dari state FRESH (skip kalau sudah di-pick sebelumnya — untuk manual /giveaway end).
-        // v3.9.38 FIX: pakai fresh.participantIds/winnersCount, bukan snapshot `gw` yang bisa stale.
+        // Pick winners from the FRESH state (skipped if already picked before — for manual /giveaway end).
+        // v3.9.38 FIX: uses fresh.participantIds/winnersCount, not the possibly stale `gw` snapshot.
         let winnerIds;
         if (isManualAnnounce) {
             winnerIds = fresh.winnerIds;
@@ -264,20 +265,20 @@ async function processGiveawayEnd(client, gw, options = {}) {
             endGiveaway(fresh.id, winnerIds);
         }
 
-        // Edit message
+        // Edit the message
         const msg = await channel.messages.fetch(fresh.messageId).catch(() => null);
-        const winnersStr = winnerIds.length > 0 ? winnerIds.map(id => `<@${id}>`).join(', ') : '_(tidak ada peserta)_';
+        const winnersStr = winnerIds.length > 0 ? winnerIds.map(id => `<@${id}>`).join(', ') : '_(no participants)_';
         if (msg) {
             const embed = new EmbedBuilder()
-                .setTitle('🎉 GIVEAWAY BERAKHIR!')
+                .setTitle('🎉 GIVEAWAY ENDED!')
                 .setDescription(
                     `🎁 **Prize:** ${fresh.prize}\n\n` +
-                        `🏆 **Pemenang:** ${winnersStr}\n` +
-                        `👥 **Peserta:** ${fresh.participantIds.length}\n` +
-                        `⏰ **Berakhir:** <t:${Math.floor(fresh.endsAt / 1000)}:R>\n\n` +
+                        `🏆 **Winners:** ${winnersStr}\n` +
+                        `👥 **Participants:** ${fresh.participantIds.length}\n` +
+                        `⏰ **Ended:** <t:${Math.floor(fresh.endsAt / 1000)}:R>\n\n` +
                         (winnerIds.length > 0
-                            ? '🎊 Selamat kepada pemenang! Host akan DM kalian untuk klaim hadiah.'
-                            : '_(Tidak ada peserta yang ikut)_')
+                            ? '🎊 Congratulations to the winners! The host will DM you to claim the prize.'
+                            : '_(No one joined this giveaway)_')
                 )
                 .setColor(winnerIds.length > 0 ? 0x57f287 : 0x95a5a6)
                 .setFooter({ text: `Host: ${fresh.hostTag} | ID: ${fresh.id}` })
@@ -297,59 +298,59 @@ async function processGiveawayEnd(client, gw, options = {}) {
             await msg.edit({ embeds: [embed], components: [row] }).catch(() => {});
         }
 
-        // Announce winners
+        // Announce the winners
         if (winnerIds.length > 0) {
             await channel
                 .send({
-                    content: `🎊 **GIVEAWAY WINNERS!** 🎊\n\nPrize: **${fresh.prize}**\nPemenang: ${winnersStr}\n\nSelamat! 🎉`
+                    content: `🎊 **GIVEAWAY WINNERS!** 🎊\n\nPrize: **${fresh.prize}**\nWinners: ${winnersStr}\n\nCongratulations! 🎉`
                 })
                 .catch(() => {});
 
-            // DM winners
+            // DM the winners
             for (const wid of winnerIds) {
                 const user = await client.users.fetch(wid).catch(() => null);
                 if (user) {
                     await user
                         .send(
-                            `🎊 **Selamat! Kamu menang giveaway!**\n\nPrize: **${fresh.prize}**\nHost: ${fresh.hostTag}\nServer: ${guild.name}\n\nHubungi host untuk klaim hadiahmu.`
+                            `🎊 **Congratulations! You won a giveaway!**\n\nPrize: **${fresh.prize}**\nHost: ${fresh.hostTag}\nServer: ${guild.name}\n\nContact the host to claim your prize.`
                         )
                         .catch(() => {});
                 }
-                // Track giveaway win untuk leaderboard
-                // v3.9.4: scoped per guild — sebelumnya bocor ke guild lain.
+                // Track the giveaway win for the leaderboard
+                // v3.9.4: scoped per guild — previously leaked to other guilds.
                 try {
                     trackGiveawayWin(fresh.guildId, wid);
                 } catch (_) {}
             }
         } else {
             await channel
-                .send({ content: `📭 Giveaway **${fresh.prize}** berakhir tanpa pemenang (tidak ada peserta).` })
+                .send({ content: `📭 Giveaway **${fresh.prize}** ended with no winners (no participants).` })
                 .catch(() => {});
         }
 
-        console.log(`🎉 Giveaway ${fresh.id} (${fresh.prize}) berakhir. Winners: ${winnerIds.length}`);
+        console.log(`🎉 Giveaway ${fresh.id} (${fresh.prize}) ended. Winners: ${winnerIds.length}`);
     } catch (err) {
         console.error('Error processGiveawayEnd:', err);
     } finally {
-        // v3.9.8: pastikan processing lock dilepas walau ada error / return.
+        // v3.9.8: make sure the processing lock is released even on error / return.
         processingGiveaways.delete(gw.id);
     }
 }
 
 /**
- * v3.9.38 FIX: cek apakah scheduler lagi memproses giveaway ini (natural end).
- * Dipakai /giveaway end (commands/giveaway.js) SEBELUM lock manual — lock
- * manual (withUserLock 'gw_end') dan lock scheduler (Set processingGiveaways)
- * tadinya disjoint: manual end yang masuk di tengah scheduler end bisa
- * menimpa winnerIds yang sedang di-announce → announce/DM dobel.
+ * v3.9.38 FIX: check whether the scheduler is currently processing this giveaway (natural end).
+ * Used by /giveaway end (commands/giveaway.js) BEFORE the manual lock — the manual
+ * lock (withUserLock 'gw_end') and the scheduler lock (Set processingGiveaways)
+ * used to be disjoint: a manual end landing in the middle of a scheduler end could
+ * overwrite winnerIds that were still being announced → double announce/DM.
  */
 function isGiveawayProcessing(giveawayId) {
     return processingGiveaways.has(giveawayId);
 }
 
 /**
- * Helper: kirim announce winner baru ke channel giveaway (untuk /giveaway reroll).
- * Dipakai oleh commandHandler setelah reroll persist winner baru.
+ * Helper: send the new-winner announcement to the giveaway channel (for /giveaway reroll).
+ * Used by commandHandler after a reroll persists the new winner.
  */
 async function announceRerollWinner(client, gw, winnerId) {
     try {
@@ -360,16 +361,16 @@ async function announceRerollWinner(client, gw, winnerId) {
 
         await channel
             .send({
-                content: `🎲 **REROLL!** Winner baru untuk giveaway **${gw.prize}**: <@${winnerId}>!\n\nSelamat! 🎉 Host akan DM kamu untuk klaim hadiah.`
+                content: `🎲 **REROLL!** New winner for giveaway **${gw.prize}**: <@${winnerId}>!\n\nCongratulations! 🎉 The host will DM you to claim the prize.`
             })
             .catch(() => {});
 
-        // DM winner baru
+        // DM the new winner
         const user = await client.users.fetch(winnerId).catch(() => null);
         if (user) {
             await user
                 .send(
-                    `🎊 **Selamat! Kamu menang giveaway (reroll)!**\n\nPrize: **${gw.prize}**\nHost: ${gw.hostTag}\nServer: ${guild.name}\n\nHubungi host untuk klaim hadiahmu.`
+                    `🎊 **Congratulations! You won the giveaway (reroll)!**\n\nPrize: **${gw.prize}**\nHost: ${gw.hostTag}\nServer: ${guild.name}\n\nContact the host to claim your prize.`
                 )
                 .catch(() => {});
         }
@@ -384,37 +385,37 @@ async function announceRerollWinner(client, gw, winnerId) {
 }
 
 /**
- * Proses scheduled announcement yang sudah waktunya dikirim.
- * v3.9.0 FIX: kalau channel target sudah tidak ada (dihapus admin), REMOVE entry
- *   instead of markSent. Sebelumnya, markSent pada recurring announcement akan
- *   membuat entry baru untuk next cycle → next cycle juga gagal karena channel
- *   tetap tidak ada → bikin entry baru lagi → unbounded ghost entries yang
- *   menumpuk dan ngabisin disk + scheduler time.
+ * Process a scheduled announcement that is due to be sent.
+ * v3.9.0 FIX: if the target channel no longer exists (deleted by an admin), REMOVE the entry
+ *   instead of markSent. Previously, markSent on a recurring announcement would
+ *   create a new entry for the next cycle → the next cycle also fails because the
+ *   channel still doesn't exist → creates yet another new entry → unbounded ghost
+ *   entries piling up and eating disk + scheduler time.
  */
 async function processScheduledAnnouncement(client, ann) {
-    // v3.9.8 FIX: TOCTOU guard. Sebelumnya, kalau processScheduledAnnouncement
-    // throw setelah kirim pesan tapi sebelum markSent, tick berikutnya kirim
-    // announcement yang sama → duplicate ping. Guard ini skip duplikat paralel.
+    // v3.9.8 FIX: TOCTOU guard. Previously, if processScheduledAnnouncement
+    // threw after sending the message but before markSent, the next tick sent
+    // the same announcement again → duplicate ping. This guard skips parallel duplicates.
     if (processingAnns.has(ann.id)) {
-        console.log(`⏭️ processScheduledAnnouncement ${ann.id} di-skip (masih diproses tick sebelumnya).`);
+        console.log(`⏭️ processScheduledAnnouncement ${ann.id} skipped (still being processed by a previous tick).`);
         return;
     }
     processingAnns.add(ann.id);
     try {
         const guild = await client.guilds.fetch(ann.guildId).catch(() => null);
         if (!guild) {
-            // Guild hilang (bot di-kick) → hapus entry supaya tidak ghost loop.
-            console.warn(`⚠️ Scheduled announce ${ann.id}: guild ${ann.guildId} tidak ditemukan, hapus entry.`);
+            // Guild gone (bot kicked) → delete the entry to avoid a ghost loop.
+            console.warn(`⚠️ Scheduled announce ${ann.id}: guild ${ann.guildId} not found, deleting entry.`);
             removeAnn(ann.id);
             return;
         }
 
         const channel = guild.channels.cache.get(ann.channelId);
         if (!channel) {
-            // v3.9.0 FIX: channel sudah dihapus → REMOVE entry, jangan markSent
-            // (karena markSent untuk recurring akan bikin entry baru yang juga gagal).
+            // v3.9.0 FIX: channel already deleted → REMOVE the entry, don't markSent
+            // (markSent for recurring entries would create a new entry that also fails).
             console.warn(
-                `⚠️ Scheduled announce ${ann.id}: channel ${ann.channelId} tidak ditemukan di guild ${guild.name}, hapus entry.`
+                `⚠️ Scheduled announce ${ann.id}: channel ${ann.channelId} not found in guild ${guild.name}, deleting entry.`
             );
             removeAnn(ann.id);
             return;
@@ -425,15 +426,15 @@ async function processScheduledAnnouncement(client, ann) {
             .setTitle(d.title)
             .setDescription(d.description.replace(/\\n/g, '\n'))
             .setColor(d.color || 0x5865f2)
-            .setFooter({ text: `Dijadwalkan oleh ${d.authorTag}` })
+            .setFooter({ text: `Scheduled by ${d.authorTag}` })
             .setTimestamp();
         if (d.image) embed.setImage(d.image);
         if (d.thumbnail) embed.setThumbnail(d.thumbnail);
 
-        // v3.9.8 FIX: markSent DULU sebelum kirim, supaya kalau send throw,
-        // tick berikutnya tidak kirim ulang (yang bakal duplicate ping).
-        // Trade-off: kalau send gagal total, announcement dianggap "terkirim"
-        // padahal belum. Tapi ini lebih baik daripada duplicate ping.
+        // v3.9.8 FIX: markSent BEFORE sending, so if send throws,
+        // the next tick doesn't resend (which would duplicate the ping).
+        // Trade-off: if the send fails completely, the announcement is treated as
+        // "sent" even though it wasn't. But that's better than a duplicate ping.
         markAnnSent(ann.id);
 
         await channel
@@ -441,111 +442,111 @@ async function processScheduledAnnouncement(client, ann) {
                 content: d.mention || null,
                 embeds: [embed]
             })
-            .catch(err => console.warn('Gagal kirim scheduled ann:', err.message));
+            .catch(err => console.warn('Failed to send scheduled announcement:', err.message));
 
-        console.log(`📢 Scheduled announce ${ann.id} terkirim ke ${channel.name}.`);
+        console.log(`📢 Scheduled announce ${ann.id} sent to ${channel.name}.`);
     } catch (err) {
         console.error('Error processScheduledAnnouncement:', err);
     } finally {
-        // v3.9.8: pastikan processing lock dilepas walau ada error / return.
+        // v3.9.8: make sure the processing lock is released even on error / return.
         processingAnns.delete(ann.id);
     }
 }
 
 /**
- * v3.9.26 (GC): prune data lama yang tumbuh tanpa batas.
- * - Giveaway ended > 30 hari → dihapus dari giveaways.json
- * - Poll closed > 30 hari → dihapus dari polls.json
- * - Scheduled announcement terkirim > 30 hari → dihapus (recurring tetap
- *   jalan — entry BARU untuk cycle berikutnya tidak pernah `sent`)
- * Data aktif TIDAK PERNAH di-touch. Dijalankan sekali/hari oleh scheduler
- * (guard lastDataPruneDay supaya tidak jalan tiap tick 60 detik).
+ * v3.9.26 (GC): prune old data that grows without bounds.
+ * - Giveaways ended > 30 days ago → deleted from giveaways.json
+ * - Polls closed > 30 days ago → deleted from polls.json
+ * - Scheduled announcements sent > 30 days ago → deleted (recurring ones keep
+ *   running — the NEW entry for the next cycle is never `sent`)
+ * Active data is NEVER touched. Runs once per day by the scheduler
+ * (lastDataPruneDay guard so it doesn't run on every 60-second tick).
  */
-const PRUNE_OLDER_THAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 hari
+const PRUNE_OLDER_THAN_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 let lastDataPruneDay = 0;
 
 function pruneStaleData() {
     const today = Math.floor(Date.now() / 86400000);
-    if (today === lastDataPruneDay) return; // sudah jalan hari ini
+    if (today === lastDataPruneDay) return; // already ran today
     lastDataPruneDay = today;
 
     try {
         const gwRemoved = pruneOldGiveaways(PRUNE_OLDER_THAN_MS);
-        if (gwRemoved > 0) console.log(`🧹 GC: ${gwRemoved} giveaway ended >30h dihapus.`);
+        if (gwRemoved > 0) console.log(`🧹 GC: removed ${gwRemoved} giveaway(s) ended >30d ago.`);
     } catch (err) {
         console.warn('⚠️ GC giveaway error:', err.message);
     }
     try {
         const pollRemoved = pruneOldPolls(PRUNE_OLDER_THAN_MS);
-        if (pollRemoved > 0) console.log(`🧹 GC: ${pollRemoved} poll closed >30h dihapus.`);
+        if (pollRemoved > 0) console.log(`🧹 GC: removed ${pollRemoved} poll(s) closed >30d ago.`);
     } catch (err) {
         console.warn('⚠️ GC poll error:', err.message);
     }
     try {
         const annRemoved = pruneOldAnns(PRUNE_OLDER_THAN_MS);
-        if (annRemoved > 0) console.log(`🧹 GC: ${annRemoved} scheduled announcement terkirim >30h dihapus.`);
+        if (annRemoved > 0) console.log(`🧹 GC: removed ${annRemoved} scheduled announcement(s) sent >30d ago.`);
     } catch (err) {
         console.warn('⚠️ GC announcement error:', err.message);
     }
-    // v3.9.38 FIX: GC entry AFK lama — afk.json sebelumnya TIDAK PERNAH di-GC
-    // (user yang leave guild tetap AFK selamanya, file tumbuh tanpa batas).
+    // v3.9.38 FIX: GC old AFK entries — afk.json was previously NEVER GC'd
+    // (users who left the guild stayed AFK forever, the file grew without bounds).
     try {
         const afkRemoved = pruneOldAFK(PRUNE_OLDER_THAN_MS);
-        if (afkRemoved > 0) console.log(`🧹 GC: ${afkRemoved} AFK entry >30h dihapus.`);
+        if (afkRemoved > 0) console.log(`🧹 GC: removed ${afkRemoved} AFK entr(y/ies) older than 30d.`);
     } catch (err) {
         console.warn('⚠️ GC afk error:', err.message);
     }
 }
 
 /**
- * v3.9.37: reconcile deal rekber zombie — deal yang channel-nya sudah tidak ada
- * (dihapus manual dari UI Discord oleh admin / channel hilang).
- * v3.9.38 FIX: SEMUA deal di-inspect (aktif + terminal) — deal terminal yang
- * gagal hapus channel saat finalize juga dibersihkan.
+ * v3.9.37: reconcile zombie escrow deals — deals whose channel no longer exists
+ * (deleted manually from the Discord UI by an admin / channel lost).
+ * v3.9.38 FIX: ALL deals are inspected (active + terminal) — terminal deals that
+ * failed to delete their channel on finalize are also cleaned up.
  *
- * Tanpa reconcile, user yang terlibat deal zombie TERKUNCI SELAMANYA:
- *   - tidak bisa buka tiket reguler (hasActiveDealFor → tolak di createTicket),
- *   - tidak bisa dipilih jadi pembeli/penjual deal baru (validasi pick flow),
- *   - /midman-deals menampilkan link channel mati.
- * Tiket punya self-healing serupa (findActiveTicketFor) — mulai v3.9.37 deal
- * juga. Cleanup pakai removeDeal (pola finalizeDeal): riwayat deal terminal
- * memang tidak disimpan jangka panjang.
+ * Without the reconcile, users involved in a zombie deal are LOCKED OUT FOREVER:
+ *   - can't open regular tickets (hasActiveDealFor → rejected in createTicket),
+ *   - can't be picked as buyer/seller in a new deal (pick flow validation),
+ *   - /midman-deals shows dead channel links.
+ * Tickets have similar self-healing (findActiveTicketFor) — since v3.9.37 deals
+ * do too. Cleanup uses removeDeal (the finalizeDeal pattern): terminal deal
+ * history is indeed not kept long-term.
  *
- * Dipanggil: (a) sekali saat startup (ready.js), (b) harian oleh scheduler
- * tick via wrapper reconcileZombieDealsDaily (guard hari — mirror pruneStaleData).
+ * Called: (a) once at startup (ready.js), (b) daily by the scheduler
+ * tick via the wrapper reconcileZombieDealsDaily (day guard — mirrors pruneStaleData).
  *
  * @param {Client} client - Discord client (guilds cache)
- * @returns {Promise<number>} jumlah zombie deal yang dibersihkan
+ * @returns {Promise<number>} number of zombie deals cleaned up
  */
 async function reconcileZombieDeals(client) {
     let removed = 0;
     for (const [gid, guild] of client.guilds.cache) {
         let deals;
         try {
-            // v3.9.38 FIX: iterasi SEMUA deal guild ini (aktif + terminal).
-            // Sebelumnya hanya deal non-terminal (getActiveDealsByGuild) →
-            // deal terminal (COMPLETED/CANCELLED/REFUNDED) yang gagal hapus
-            // channel-nya saat finalize (error ≠ 10003) TIDAK PERNAH
-            // dibersihkan → meta menumpuk di deals.json selamanya.
-            // loadDeals = full map (key channelId) — filter guild lokal di sini.
+            // v3.9.38 FIX: iterate ALL deals of this guild (active + terminal).
+            // Previously only non-terminal deals (getActiveDealsByGuild) →
+            // terminal deals (COMPLETED/CANCELLED/REFUNDED) that failed to delete
+            // their channel on finalize (error ≠ 10003) were NEVER cleaned up
+            // → metadata piled up in deals.json forever.
+            // loadDeals = full map (keyed by channelId) — filter the local guild here.
             deals = Object.values(loadAllDeals()).filter(d => d && d.guildId === gid);
         } catch (err) {
-            console.warn(`⚠️ Reconcile deal: gagal load deals guild ${gid}:`, err.message);
+            console.warn(`⚠️ Deal reconcile: failed to load deals for guild ${gid}:`, err.message);
             continue;
         }
         for (const deal of deals) {
             if (!deal.channelId) continue;
             try {
-                // Cache dulu, fetch API kalau cache miss (pola findActiveTicketFor).
+                // Cache first, fetch from the API on cache miss (the findActiveTicketFor pattern).
                 let ch = guild.channels.cache.get(deal.channelId);
                 if (!ch) {
                     try {
                         ch = await guild.channels.fetch(deal.channelId);
                     } catch (fetchErr) {
-                        // 10003 = Unknown Channel → channel benar-benar dihapus.
-                        // Error lain (5xx / network / rate-limit) = TRANSIENT —
-                        // jangan hapus deal aktif cuma karena blip sesaat;
-                        // biarkan entry, retry tick berikutnya.
+                        // 10003 = Unknown Channel → the channel is really deleted.
+                        // Other errors (5xx / network / rate-limit) = TRANSIENT —
+                        // don't delete an active deal just because of a momentary blip;
+                        // leave the entry, retry on the next tick.
                         if (fetchErr?.code !== 10003) continue;
                         ch = null;
                     }
@@ -554,11 +555,11 @@ async function reconcileZombieDeals(client) {
                     removeDealMeta(deal.channelId);
                     removed++;
                     console.log(
-                        `🧹 Reconcile deal: channel ${deal.channelId} (guild ${gid}, state ${deal.state}) sudah tidak ada — meta deal dihapus.`
+                        `🧹 Deal reconcile: channel ${deal.channelId} (guild ${gid}, state ${deal.state}) no longer exists — deal metadata removed.`
                     );
                 }
             } catch (_) {
-                // Defensive — error tak terduga per-deal tidak boleh abort loop.
+                // Defensive — an unexpected per-deal error must not abort the loop.
             }
         }
     }
@@ -568,9 +569,9 @@ async function reconcileZombieDeals(client) {
 let lastDealReconcileDay = 0;
 
 /**
- * Wrapper harian untuk scheduler tick — reconcileZombieDeals max 1x/hari
- * (guard hari, mirror pruneStaleData; startup ready.js memanggil versi
- * non-guard langsung supaya fresh-check setelah restart).
+ * Daily wrapper for the scheduler tick — reconcileZombieDeals max 1x/day
+ * (day guard, mirrors pruneStaleData; startup ready.js calls the non-guarded
+ * version directly so a fresh check runs after a restart).
  */
 async function reconcileZombieDealsDaily(client) {
     const today = Math.floor(Date.now() / 86400000);
@@ -580,13 +581,13 @@ async function reconcileZombieDealsDaily(client) {
 }
 
 /**
- * Attach semua function ke client supaya commandHandler bisa akses.
- * Dipanggil sekali saat bot ready.
+ * Attach all functions to the client so commandHandler can access them.
+ * Called once when the bot is ready.
  */
 function attachToClient(client) {
     client.processGiveawayEnd = processGiveawayEnd;
     client.announceRerollWinner = announceRerollWinner;
-    // v3.9.38 FIX: dipakai /giveaway end untuk cek scheduler in-flight (anti dobel end).
+    // v3.9.38 FIX: used by /giveaway end to check for an in-flight scheduler end (anti double-end).
     client.isGiveawayProcessing = isGiveawayProcessing;
 }
 

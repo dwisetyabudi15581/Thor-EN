@@ -1,11 +1,11 @@
 /**
- * Temp Voice Manager — track temporary voice channels yang dibuat member.
+ * Temp Voice Manager — tracks temporary voice channels created by members.
  *
  * File: tempVoice.json
  * {
  *   "guildId": {
- *     "creatorChannelId": "123",   // voice channel trigger (member join → bikin baru)
- *     "categoryId": "456",         // kategori tempat channel baru dibuat
+ *     "creatorChannelId": "123",   // trigger voice channel (member joins → a new one is created)
+ *     "categoryId": "456",         // the category where new channels are created
  *     "channels": {
  *       "channelId": {
  *         "ownerId": "userId",
@@ -19,13 +19,13 @@
  *   }
  * }
  *
- * Cara kerja:
- *   1. Admin setup via /setup-tempvoice → bot buat kategori + trigger channel + control panel
- *   2. Member join trigger channel "🔊 Buat Voice" → bot bikin voice channel private untuk member
- *   3. Member jadi owner, otomatis dipindah ke channel baru
- *   4. Panel global di control channel menampilkan semua voice aktif + button kontrol
- *   5. Owner pakai button: rename, kick, limit, lock, transfer, delete, info room
- *   6. Saat owner leave dan channel kosong → bot hapus channel otomatis
+ * How it works:
+ *   1. An admin sets it up via /setup-tempvoice → the bot creates a category + trigger channel + control panel
+ *   2. A member joins the trigger channel "🔊 Create Voice" → the bot creates a private voice channel for the member
+ *   3. The member becomes the owner and is automatically moved to the new channel
+ *   4. A global panel in the control channel shows all active voices + control buttons
+ *   5. The owner uses buttons: rename, kick, limit, lock, transfer, delete, room info
+ *   6. When the owner leaves and the channel is empty → the bot deletes the channel automatically
  */
 
 const fs = require('fs');
@@ -39,8 +39,8 @@ function load() {
         if (!fs.existsSync(filePath)) return {};
         return JSON.parse(fs.readFileSync(filePath, 'utf8'));
     } catch (err) {
-        console.warn('⚠️ tempVoice.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ tempVoice.json is corrupted:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         return {};
     }
@@ -52,12 +52,12 @@ function save(data) {
 }
 
 /**
- * Setup temp voice untuk guild: simpan trigger channel + category + control channel.
+ * Set up temp voice for a guild: store the trigger channel + category + control channel.
  *
  * @param {string} guildId
- * @param {string} creatorChannelId - voice channel trigger (member join → bikin baru)
- * @param {string} categoryId - kategori tempat channel baru dibuat
- * @param {string} controlChannelId - text channel tempat panel kontrol global dipasang
+ * @param {string} creatorChannelId - trigger voice channel (member joins → a new one is created)
+ * @param {string} categoryId - the category where new channels are created
+ * @param {string} controlChannelId - the text channel where the global control panel is posted
  */
 function setupGuild(guildId, creatorChannelId, categoryId, controlChannelId) {
     const all = load();
@@ -70,8 +70,8 @@ function setupGuild(guildId, creatorChannelId, categoryId, controlChannelId) {
 }
 
 /**
- * Simpan controlMessageId (pesan panel global yang sudah dipasang).
- * Dipakai untuk edit panel yang sama (refresh) saat ada perubahan.
+ * Store controlMessageId (the posted global panel message).
+ * Used to edit (refresh) the same panel when something changes.
  */
 function setControlMessageId(guildId, messageId) {
     const all = load();
@@ -92,12 +92,12 @@ function getControlMessageId(guildId) {
 }
 
 /**
- * v3.8.2: Set owner yang sedang fokus di panel global.
- * Dipakai saat owner pilih channel mereka via switch select menu.
- * Panel global akan menampilkan channel milik focusedOwnerId.
+ * v3.8.2: Set the owner currently focused in the global panel.
+ * Used when an owner picks their channel via the switch select menu.
+ * The global panel will show the channels owned by focusedOwnerId.
  *
  * @param {string} guildId
- * @param {string} ownerId - userId owner yang sedang fokus (null = reset ke default terbaru)
+ * @param {string} ownerId - userId of the focused owner (null = reset to the most recent default)
  */
 function setFocusedOwner(guildId, ownerId) {
     const all = load();
@@ -111,7 +111,7 @@ function setFocusedOwner(guildId, ownerId) {
 function getFocusedOwner(guildId) {
     const cfg = getGuildConfig(guildId);
     if (!cfg?.focusedOwnerId) return null;
-    // Auto-expire setelah 5 menit kalau owner tidak ada di voice lagi
+    // Auto-expire after 5 minutes if the owner is no longer in voice
     if (cfg.focusedAt && Date.now() - cfg.focusedAt > 5 * 60 * 1000) {
         return null;
     }
@@ -128,7 +128,7 @@ function clearFocusedOwner(guildId) {
 }
 
 /**
- * Hapus setup temp voice untuk guild.
+ * Remove the temp voice setup for a guild.
  */
 function removeGuild(guildId) {
     const all = load();
@@ -151,7 +151,7 @@ function getCreatorChannelId(guildId) {
 }
 
 /**
- * Daftarkan channel voice baru milik user.
+ * Register a new voice channel owned by a user.
  */
 function registerChannel(guildId, channelId, ownerId, ownerTag, name) {
     const all = load();
@@ -170,7 +170,7 @@ function registerChannel(guildId, channelId, ownerId, ownerTag, name) {
 }
 
 /**
- * Hapus channel dari registry (saat channel dihapus).
+ * Remove a channel from the registry (when the channel is deleted).
  */
 function unregisterChannel(guildId, channelId) {
     const all = load();
@@ -189,10 +189,10 @@ function getChannel(guildId, channelId) {
 }
 
 /**
- * Update field channel (locked, limit, name, ownerId).
- * v3.9.8 FIX: whitelist field yang boleh di-update. Sebelumnya pakai Object.assign
- * yang blindly merge any key — caller bisa overwrite createdAt, inject field aneh,
- * atau (kalau ada bug di caller) corrupt struktur entry.
+ * Update channel fields (locked, limit, name, ownerId).
+ * v3.9.8 FIX: whitelist of fields that may be updated. Before it used Object.assign
+ * which blindly merged any key — a caller could overwrite createdAt, inject odd fields,
+ * or (with a caller bug) corrupt the entry structure.
  */
 function updateChannel(guildId, channelId, updates) {
     const all = load();
@@ -209,7 +209,7 @@ function updateChannel(guildId, channelId, updates) {
 }
 
 /**
- * Transfer ownership ke member baru.
+ * Transfer ownership to a new member.
  */
 function transferOwnership(guildId, channelId, newOwnerId, newOwnerTag) {
     return updateChannel(guildId, channelId, {
@@ -219,7 +219,7 @@ function transferOwnership(guildId, channelId, newOwnerId, newOwnerTag) {
 }
 
 /**
- * Cek apakah user adalah owner channel tertentu.
+ * Check whether a user owns a specific channel.
  */
 function isOwner(guildId, channelId, userId) {
     const ch = getChannel(guildId, channelId);
@@ -227,8 +227,8 @@ function isOwner(guildId, channelId, userId) {
 }
 
 /**
- * Cari channel temp voice milik user tertentu di guild.
- * Returns channelId atau null.
+ * Find the temp voice channel owned by a specific user in a guild.
+ * Returns the channelId or null.
  */
 function findChannelByOwner(guildId, userId) {
     const cfg = getGuildConfig(guildId);
@@ -240,22 +240,22 @@ function findChannelByOwner(guildId, userId) {
 }
 
 /**
- * v3.9.8: Reconcile registry dengan real state di Discord.
+ * v3.9.8: Reconcile the registry with the real state in Discord.
  *
- * Kenapa ini perlu:
- *   - Bot crash setelah guild.channels.create tapi sebelum registerChannel →
- *     channel Discord ada, tapi gak ada di tempVoice.json → orphan selamanya.
- *   - Admin hapus channel manual tanpa via bot → entry registry tetap ada
- *     (zombie) → refreshGlobalControlPanel tampil entry untuk channel hilang.
- *   - Channel dipindahkan keluar dari category temp voice oleh admin →
- *     bukan orphan tapi perlu di-unregister supaya panel bersih.
+ * Why this is needed:
+ *   - Bot crashes after guild.channels.create but before registerChannel →
+ *     the Discord channel exists but isn't in tempVoice.json → an orphan forever.
+ *   - An admin deletes a channel manually without the bot → the registry entry stays
+ *     (zombie) → refreshGlobalControlPanel shows an entry for a missing channel.
+ *   - A channel is moved out of the temp voice category by an admin →
+ *     not an orphan, but it should be unregistered so the panel stays clean.
  *
  * Logic:
- *   - Untuk tiap entry di registry: kalau channel tidak ada di guild (cache),
- *     unregister (zombie cleanup).
- *   - Untuk tiap voice channel di category temp voice yang TIDAK ada di
- *     registry: skip (jangan auto-register — kita gak tau siapa ownernya).
- *     Hanya log warning supaya admin sadar ada channel orphan.
+ *   - For every registry entry: if the channel doesn't exist in the guild (cache),
+ *     unregister it (zombie cleanup).
+ *   - For every voice channel in the temp voice category that is NOT in the
+ *     registry: skip (don't auto-register — we don't know who the owner is).
+ *     Just log a warning so the admin is aware of orphan channels.
  *
  * @param {Client} client
  * @param {string} guildId
@@ -269,10 +269,10 @@ function reconcileGuild(client, guildId) {
     const guild = client.guilds?.cache?.get(guildId);
     if (!guild) return result;
 
-    // 1. Cleanup zombie entries (channel udah gak ada di Discord).
-    // Batch delete biar cuma 1 load + 1 save per reconcile. Dulu unregisterChannel
-    // dipanggil per zombie → N load+save cycles. Buat bot yang offline lama + banyak
-    // channel terhapus, ini lambat & boros I/O.
+    // 1. Clean up zombie entries (the channel no longer exists in Discord).
+    // Batch delete so there's only 1 load + 1 save per reconcile. Previously unregisterChannel
+    // was called per zombie → N load+save cycles. For a bot that was offline a long time + many
+    // deleted channels, that was slow & wasteful I/O.
     const zombieIds = [];
     for (const channelId of Object.keys(cfg.channels)) {
         const channel = guild.channels.cache.get(channelId);
@@ -290,22 +290,22 @@ function reconcileGuild(client, guildId) {
         }
         result.zombiesRemoved = zombieIds.length;
         for (const id of zombieIds) {
-            console.log(`🧹 tempVoice reconcile: zombie entry ${id} dihapus (channel tidak ada).`);
+            console.log(`🧹 tempVoice reconcile: zombie entry ${id} removed (channel no longer exists).`);
         }
     }
 
-    // 2. Detect orphan channels (voice channel di category tapi gak ada di registry)
+    // 2. Detect orphan channels (voice channel in the category but not in the registry)
     if (cfg.categoryId) {
         const knownChannelIds = new Set(Object.keys(getGuildConfig(guildId)?.channels || {}));
         const category = guild.channels.cache.get(cfg.categoryId);
         if (category) {
             for (const [, ch] of category.children?.cache || []) {
                 if (ch.type === 2 /* GuildVoice */ && !knownChannelIds.has(ch.id)) {
-                    // Skip kalau ini creator channel (trigger)
+                    // Skip if this is the creator (trigger) channel
                     if (ch.id === cfg.creatorChannelId) continue;
                     result.orphansDetected++;
                     console.warn(
-                        `⚠️ tempVoice reconcile: orphan voice channel ${ch.name} (${ch.id}) terdeteksi di category temp voice — tidak ada owner. Hapus manual atau via /tempvoice-remove.`
+                        `⚠️ tempVoice reconcile: orphan voice channel ${ch.name} (${ch.id}) detected in the temp voice category — no owner. Delete it manually or via /tempvoice-remove.`
                     );
                 }
             }

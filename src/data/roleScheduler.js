@@ -12,21 +12,21 @@ const scheduledPath = path.join(__dirname, '..', '..', 'data', 'scheduledRoles.j
  *     "userId": "123456",
  *     "roleId": "789012",
  *     "guildId": "345678",
- *     "expireAt": 1735689600000,  // timestamp ms. null = permanen
+ *     "expireAt": 1735689600000,  // timestamp ms. null = permanent
  *     "productName": "30 Days",
  *     "createdAt": 1735000000000
  *   }
  * ]
  *
- * === MODEL KEY-DRIVEN — MAX EXTEND ===
- * Schedule expireAt di-update ke max(existing.expireAt, newKey.expireAt).
- * Tidak pernah dipendekkan. Dipakai oleh Set Key button & /set-key command.
+ * === KEY-DRIVEN MODEL — MAX EXTEND ===
+ * A schedule's expireAt is updated to max(existing.expireAt, newKey.expireAt).
+ * It is never shortened. Used by the Set Key button & /set-key command.
  *
- * Saat schedule fires (di index.js processExpiredRole), scheduler akan:
- *   1. Cek getActiveKeysByUserAndRole(userId, roleId)
- *   2. Kalau ada key PERMANEN → hapus schedule, role tetap
- *   3. Kalau ada key aktif dengan expireAt > sekarang → updateExpireAt ke max, role tetap
- *   4. Kalau tidak ada key aktif → hapus role + hapus schedule
+ * When a schedule fires (in index.js processExpiredRole), the scheduler will:
+ *   1. Check getActiveKeysByUserAndRole(userId, roleId)
+ *   2. If a PERMANENT key exists → delete the schedule, the role stays
+ *   3. If an active key with expireAt > now exists → updateExpireAt to the max, the role stays
+ *   4. If no active key exists → remove the role + delete the schedule
  */
 
 function loadScheduled() {
@@ -34,8 +34,8 @@ function loadScheduled() {
         if (!fs.existsSync(scheduledPath)) return [];
         return JSON.parse(fs.readFileSync(scheduledPath, 'utf8'));
     } catch (err) {
-        console.error('Error load scheduledRoles.json:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.error('Error loading scheduledRoles.json:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(scheduledPath);
         return [];
     }
@@ -49,8 +49,8 @@ function saveScheduled(list) {
 }
 
 /**
- * Hitung sisa hari dari sebuah schedule entry (bisa negatif kalau sudah expired).
- * Return Infinity kalau permanen (expireAt = null).
+ * Compute the remaining days of a schedule entry (can be negative if already expired).
+ * Returns Infinity if permanent (expireAt = null).
  */
 function getRemainingDays(entry, now = Date.now()) {
     if (entry.expireAt === null) return Infinity;
@@ -58,12 +58,12 @@ function getRemainingDays(entry, now = Date.now()) {
 }
 
 /**
- * Hapus SEMUA schedule aktif untuk userId + roleId tertentu.
- * Dipakai kalau user upgrade ke produk permanent (days=0) supaya role gak auto-remove.
+ * Remove ALL active schedules for a specific userId + roleId.
+ * Used when a user upgrades to a permanent product (days=0) so the role isn't auto-removed.
  *
  * @param {string} userId
  * @param {string} roleId
- * @returns {number} jumlah entry yang dihapus
+ * @returns {number} number of entries removed
  */
 function removeActiveByUserAndRole(userId, roleId) {
     const list = loadScheduled();
@@ -75,49 +75,49 @@ function removeActiveByUserAndRole(userId, roleId) {
 }
 
 /**
- * Schedule penghapusan role — MODE MAX EXTEND (key-driven).
+ * Schedule role removal — MAX EXTEND mode (key-driven).
  *
  * Logic:
- * 1. Kalau data.expireAt diberikan langsung, pakai itu.
- *    Kalau tidak, hitung dari data.days (now + days * 86400000).
- *    Kalau days <= 0 (atau expireAt = null) → permanen, hapus schedule lama.
- * 2. Cek apakah user sudah punya schedule aktif untuk role yang sama.
- * 3. Kalau ada:
- *    - existing.expireAt = null (permanen) → tidak ada yang perlu diubah, return.
- *    - Kalau newExpireAt = null (permanen) → update jadi permanen.
- *    - Kalau newExpireAt > existing.expireAt → UPDATE (extend).
- *    - Kalau newExpireAt <= existing.expireAt → TIDAK diubah (no shorten).
- * 4. Kalau belum ada: buat schedule baru.
+ * 1. If data.expireAt is given directly, use it.
+ *    Otherwise compute from data.days (now + days * 86400000).
+ *    If days <= 0 (or expireAt = null) → permanent, delete the old schedule.
+ * 2. Check whether the user already has an active schedule for the same role.
+ * 3. If there is one:
+ *    - existing.expireAt = null (permanent) → nothing to change, return.
+ *    - If newExpireAt = null (permanent) → update to permanent.
+ *    - If newExpireAt > existing.expireAt → UPDATE (extend).
+ *    - If newExpireAt <= existing.expireAt → NOT changed (no shortening).
+ * 4. If none exists yet: create a new schedule.
  *
  * @param {Object} data - { userId, roleId, guildId, days?, expireAt?, productName? }
  * @returns {{
  *   entry: Object,
- *   extended: boolean,        // true kalau schedule di-extend
+ *   extended: boolean,        // true if the schedule was extended
  *   previousExpireAt: number|null,
  *   newExpireAt: number|null,
- *   permanent: boolean        // true kalau jadi permanen
+ *   permanent: boolean        // true if it became permanent
  * }}
  */
 function scheduleRoleRemoval(data) {
     const list = loadScheduled();
     const now = Date.now();
 
-    // Hitung newExpireAt
+    // Compute newExpireAt
     let newExpireAt;
     let permanent = false;
 
-    // expireAt <= 0 dianggap permanen (bukan timestamp valid).
-    // Dulu, expireAt=0 lolos check (!== undefined && !== null) → newExpireAt = 0
-    // → dianggap "sudah expire" → scheduler langsung hapus role dalam 60 detik.
-    // Misal: produk dengan days=0 yang somehow resolve ke expireAt=0 → role VIP
-    // dihapus otomatis segera setelah diberikan. Silent data loss.
+    // expireAt <= 0 is treated as permanent (not a valid timestamp).
+    // Before, expireAt=0 passed the check (!== undefined && !== null) → newExpireAt = 0
+    // → treated as "already expired" → the scheduler removed the role within 60 seconds.
+    // Example: a product with days=0 that somehow resolved to expireAt=0 → the VIP
+    // role was auto-removed right after being granted. Silent data loss.
     if (data.expireAt !== undefined && data.expireAt !== null && data.expireAt > 0) {
-        // Langsung pakai expireAt yang diberikan
+        // Use the given expireAt directly
         newExpireAt = data.expireAt;
     } else {
         const days = Number(data.days) || 0;
         if (days <= 0) {
-            // Permanen
+            // Permanent
             newExpireAt = null;
             permanent = true;
         } else {
@@ -129,7 +129,7 @@ function scheduleRoleRemoval(data) {
 
     const existingIndex = list.findIndex(e => e.userId === data.userId && e.roleId === data.roleId);
 
-    // === KASUS PERMANEN: hapus schedule lama, role jadi permanen ===
+    // === PERMANENT CASE: delete the old schedule, the role becomes permanent ===
     if (permanent) {
         let previousExpireAt = null;
         if (existingIndex !== -1) {
@@ -146,12 +146,12 @@ function scheduleRoleRemoval(data) {
         };
     }
 
-    // === KASUS NON-PERMANEN ===
+    // === NON-PERMANENT CASE ===
     if (existingIndex !== -1) {
         const existing = list[existingIndex];
         const previousExpireAt = existing.expireAt;
 
-        // Existing permanen → tidak perlu diubah
+        // Existing is permanent → nothing to change
         if (existing.expireAt === null) {
             return {
                 entry: existing,
@@ -162,7 +162,7 @@ function scheduleRoleRemoval(data) {
             };
         }
 
-        // MAX EXTEND: hanya update kalau newExpireAt lebih besar
+        // MAX EXTEND: only update if newExpireAt is larger
         if (newExpireAt > existing.expireAt) {
             existing.expireAt = newExpireAt;
             if (data.productName) existing.productName = data.productName;
@@ -175,7 +175,7 @@ function scheduleRoleRemoval(data) {
                 permanent: false
             };
         } else {
-            // Tidak extend (newExpireAt <= existing) — keep existing
+            // No extension (newExpireAt <= existing) — keep existing
             return {
                 entry: existing,
                 extended: false,
@@ -186,7 +186,7 @@ function scheduleRoleRemoval(data) {
         }
     }
 
-    // === BELUM ADA SCHEDULE → buat baru ===
+    // === NO SCHEDULE YET → create a new one ===
     const entry = {
         id: `${now}_${Math.random().toString(36).slice(2, 8)}`,
         userId: data.userId,
@@ -209,39 +209,39 @@ function scheduleRoleRemoval(data) {
 }
 
 /**
- * Update expireAt dari sebuah schedule entry (dipakai saat scheduler recheck).
- * Dipakai oleh index.js processExpiredRole ketika key aktif masih ada dengan
- * expireAt yang lebih besar → reschedule ke max.
- * v3.9.0 FIX: skip write kalau nilai tidak berubah (hindari disk I/O + race window).
+ * Update the expireAt of a schedule entry (used when the scheduler re-checks).
+ * Used by index.js processExpiredRole when an active key still exists with a
+ * larger expireAt → reschedule to the max.
+ * v3.9.0 FIX: skip the write if the value is unchanged (avoids disk I/O + a race window).
  *
  * @param {string} id - schedule entry id
- * @param {number} newExpireAt - timestamp ms baru
- * @returns {boolean} true kalau berhasil diupdate
+ * @param {number} newExpireAt - new timestamp ms
+ * @returns {boolean} true if successfully updated
  */
 function updateExpireAt(id, newExpireAt) {
     const list = loadScheduled();
     const entry = list.find(e => e.id === id);
     if (!entry) return false;
-    if (entry.expireAt === newExpireAt) return true; // tidak ada perubahan, skip write
+    if (entry.expireAt === newExpireAt) return true; // unchanged, skip the write
     entry.expireAt = newExpireAt;
     saveScheduled(list);
     return true;
 }
 
 /**
- * Hapus entry dari scheduled list (biasanya setelah role berhasil di-remove).
- * v3.9.0 FIX: skip write kalau entry tidak ditemukan (hindari disk I/O).
+ * Remove an entry from the scheduled list (usually after the role was successfully removed).
+ * v3.9.0 FIX: skip the write if the entry is not found (avoids disk I/O).
  */
 function removeEntry(id) {
     const list = loadScheduled();
     const filtered = list.filter(e => e.id !== id);
-    if (filtered.length === list.length) return; // tidak ada yang dihapus, skip write
+    if (filtered.length === list.length) return; // nothing removed, skip the write
     saveScheduled(filtered);
 }
 
 /**
- * Ambil semua entry yang sudah expired (expireAt !== null && expireAt <= now).
- * Entry permanen (expireAt = null) TIDAK akan pernah masuk sini.
+ * Get all entries that have already expired (expireAt !== null && expireAt <= now).
+ * Permanent entries (expireAt = null) will NEVER end up here.
  */
 function getExpired() {
     const list = loadScheduled();
@@ -250,7 +250,7 @@ function getExpired() {
 }
 
 /**
- * Ambil semua entry aktif (untuk dipakai saat re-schedule saat bot restart).
+ * Get all active entries (used for re-scheduling when the bot restarts).
  */
 function getAllActive() {
     return loadScheduled();
@@ -258,7 +258,7 @@ function getAllActive() {
 
 /**
  * v3.9.4: Guild-scoped variant of getAllActive.
- * Hanya return schedule milik guild ini.
+ * Only returns schedules belonging to this guild.
  *
  * @param {string} guildId
  * @returns {Array}
@@ -269,7 +269,7 @@ function getActiveByGuild(guildId) {
 }
 
 /**
- * Cari scheduled role aktif untuk user tertentu + role tertentu.
+ * Find the active scheduled role for a specific user + role.
  */
 function findActive(userId, roleId) {
     const list = loadScheduled();
@@ -277,7 +277,7 @@ function findActive(userId, roleId) {
 }
 
 /**
- * Ambil semua schedule milik user tertentu (semua role).
+ * Get all schedules owned by a specific user (all roles).
  */
 function findAllByUser(userId) {
     const list = loadScheduled();
@@ -285,12 +285,12 @@ function findAllByUser(userId) {
 }
 
 /**
- * Hapus SEMUA schedule milik user tertentu.
- * v3.9.0 FIX: tambah parameter guildId supaya cross-guild wipe tidak terjadi
- * saat bot di-deploy multi-guild.
- *   - guildId diberikan → hanya hapus entry yang match userId DAN guildId.
- *   - guildId undefined → hapus semua entry user (backward compat).
- * @returns {number} jumlah yang dihapus
+ * Remove ALL schedules owned by a specific user.
+ * v3.9.0 FIX: added the guildId parameter so no cross-guild wipe happens
+ * when the bot is deployed multi-guild.
+ *   - guildId given → only remove entries matching userId AND guildId.
+ *   - guildId undefined → remove all of the user's entries (backward compat).
+ * @returns {number} number removed
  */
 function removeAllByUser(userId, guildId) {
     const list = loadScheduled();

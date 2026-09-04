@@ -1,429 +1,428 @@
 # Changelog
 
-Semua perubahan penting pada project ini didokumentasikan di file ini.
-Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
+All notable changes to this project are documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/id/1.1.0/).
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
 ## [3.9.38] — 2026-09-04
 
-### Fixed — 🛡️ Audit menyeluruh v3: 34 bug/issue diperbaiki lintas seluruh domain (rekber, tiket, data layer, automod, router)
+### Fixed — 🛡️ Full audit v3: 34 bugs/issues fixed across every domain (escrow, tickets, data layer, automod, router)
 
-Audit penuh seluruh codebase (~23.400 baris) menemukan 34 issue nyata — semuanya diverifikasi dengan bukti kode sebelum diperbaiki. Dua di antaranya berdampak langsung ke alur uang escrow.
+A full audit of the entire codebase (~23,400 lines) uncovered 34 real issues — every one of them verified against code evidence before being fixed. Two of them directly affected the escrow money flow.
 
-- 🔴 **Observer add/remove deal bypass `transitionLocks`** — handler 👥 Tambah Member / ➖ Keluarkan Member menulis snapshot deal STALE ke disk setelah await permission → transisi tervalidasi (mis. Dana Masuk) bisa TERREVERT: deal mundur state, history hilang, DISPUTE bisa unfreeze tanpa resolve admin. Kini: lock transisi di-acquire + deal di-RE-READ fresh setelah await sebelum ditulis.
-- 🔴 (lanjutan) **Race dobel-submit formulir deal** — re-submit dropdown penjual saat window in-flight menciptakan 2 deal + 2 channel untuk pasangan buyer/seller sama. Kini: session pending dihapus SEBELUM await + re-check `hasActiveDealFor` tepat sebelum `setDeal`.
-- 🟠 **Self-healing tiket hapus meta tiket AKTIF saat error transient** — `findActiveTicketFor` men-treat 429/5xx sebagai "channel hilang" → meta terhapus → user bisa buka tiket kedua + guard invoice/isCompleted hilang. Kini hanya error code 10003 (Unknown Channel) yang memicu cleanup (mirror pola rekber).
-- 🟠 **Set Key tanpa gate `isCompleted`** → invoice dobel di channel testimoni + stats dobel + pembeli dapat 2 key. Kini: gate di tombol + re-check di modal + lock per-channel (`completionLocks`) yang juga melindungi Kirim Pesanan & tombol ✅ Pesanan Sukses (race 2 admin → recordPurchase dobel).
-- 🟠 **Giveaway dobel-end** — scheduler pakai snapshot stale vs `/giveaway end` manual (namespace lock berbeda) → winner ditimpa + announce/DM 2×. Kini: re-load fresh dari disk setelah lock + `/giveaway end` cek `isGiveawayProcessing()` dulu.
-- 🟠 **`linkAllowedRoles` = whitelist SEMUA automod** — role yang di-whitelist untuk link jadi bebas spam/kata terlarang/mass-mention. Kini: split `isUserWhitelisted` (admin-only) vs `isLinkAllowed` (khusus cek link).
-- 🟡 **`parsePriceNumber("1.5m")` → 15.000.000** (desimal jadi digit ekstra, inflasi 10×) — kini separator hanya valid sebagai grup ribuan (`1.000.000` ✓, `1.5m` → ditolak).
-- 🟡 **Meta tiket simpan label produk, bukan value** — rename produk mematikan Set Key di semua tiket terbuka (fix v3.9.26 tidak efektif); label dobal → role salah. Kini meta menyimpan `productValue` + helper `resolveProduct()` (value-first, label fallback untuk tiket lama).
-- 🟡 **Poll multi-choice: unvote tidak pernah jalan** (klik opsi yang sudah di-vote = no-op senyap) — kini toggle beneran untuk single & multi.
-- 🟡 **Cooldown 0 tidak bisa matikan responder** (`0 || 3000`) & **leveling** (`0 || 60000`) — kini `??` (nullish): 0 = off sesuai dokumentasi.
-- 🟡 **`containsLink` miss domain polos** (`discord.gg/xxx`, `t.me/x`) — kini regex TLD kurasi match domain tanpa scheme/www.
-- 🟡 **Kata exempt menutupi kata terlarang terpisah** (`"asus asu"` lolos) — kini exempt di-mask per-occurrence SEBELUM deteksi.
-- 🟡 **`/setup-ticket` crash saat body + `{price_list}` > 4096** — kini di-validasi pre-send dengan pesan jelas.
-- 🟡 **`/config-show` crash di ~12 produk** (field > 1024) & **`/announce-list` crash di ~27 entry** — kini di-cap dengan note "+N lainnya".
-- 🟡 **`/announce-schedule` klaim WITA tapi parse timezone host** — VPS UTC = telat 8 jam. Kini offset eksplisit default +8, configurable via env `TZ_OFFSET_HOURS`.
-- 🟢 **Transcript hanya 100 pesan terakhir** (bukti transfer di awal hilang) — kini paginasi sampai 1000 pesan + note truncation.
-- 🟢 Key kosong (spasi) ditolak di 3 lapis; **raw key tidak lagi bocor ke console** (masking len-only, pesan error duplikat tanpa nilai key).
-- 🟢 `endGiveaway` kini set `endedAt` (GC akurat); **AFK di-GC** (entry >30 hari di-prune oleh `pruneStaleData`); `parsePrice` tolak harga negatif.
-- 🟢 Deal terminal zombie (channel gagal dihapus ≠ 10003) ikut di-reconcile; creator pihak ketiga masuk `observers` (bisa dikeluarkan lewat tombol); `handleEvent` deferReply duluan (tidak lagi "interaction failed" >3s).
-- 🟢 Temp voice orphan saat music bot keluar terakhir — event bot kini tetap menjalankan cleanup channel kosong.
-- 🟢 `/set-role` validasi role assignable (@everyone/managed/posisi di atas bot ditolak); `/announce` + `/announce-schedule` validasi tipe channel (kategori/forum ditolak); `/help` auto-split 2 embed saat > 5800 char; dedup router mark-AFTER-success (replay interaction yang crash bisa retry); whole-word boundary unicode-aware (Cyrillic/CJK); truncation surrogate-safe (`truncateUtf8Safe`).
+- 🔴 **Observer add/remove bypassed `transitionLocks`** — the 👥 Add Member / ➖ Remove Member handlers wrote a STALE deal snapshot to disk after awaiting permissions, so a validated transition (e.g. Funds Received) could be REVERTED: the deal rolled back a state, history was lost, and a DISPUTE could unfreeze without an admin resolving it. Now: the transition lock is acquired and the deal is RE-READ fresh after the await, before anything is written.
+- 🔴 (follow-up) **Double-submit race in the deal form** — re-submitting the seller dropdown while a submission was still in flight created 2 deals + 2 channels for the same buyer/seller pair. Now: the pending session is deleted BEFORE the await + `hasActiveDealFor` is re-checked right before `setDeal`.
+- 🟠 **Ticket self-healing deleted the meta of an ACTIVE ticket on transient errors** — `findActiveTicketFor` treated 429/5xx as "the channel is gone" → the meta was deleted → the user could open a second ticket + the invoice/isCompleted guards were lost. Now only error code 10003 (Unknown Channel) triggers cleanup (mirroring the escrow pattern).
+- 🟠 **Set Key had no `isCompleted` gate** → a duplicate invoice in the testimonial channel + duplicate stats + the buyer getting 2 keys. Now: gated on the button + re-checked in the modal + a per-channel lock (`completionLocks`) that also protects Deliver Order and the ✅ Order Successful button (2-admin race → duplicate recordPurchase).
+- 🟠 **Giveaway double-end** — the scheduler worked from a stale snapshot while a manual `/giveaway end` ran under a different lock namespace → the winner got overwritten + the announce/DM fired 2×. Now: a fresh re-load from disk after acquiring the lock + `/giveaway end` checks `isGiveawayProcessing()` first.
+- 🟠 **`linkAllowedRoles` acted as a whitelist for ALL of automod** — roles whitelisted for links became exempt from spam, blocked words, and mass-mention checks too. Now: split into `isUserWhitelisted` (admin-only) vs `isLinkAllowed` (link checks only).
+- 🟡 **`parsePriceNumber("1.5m")` → 15,000,000** (the decimal point became an extra digit — 10× inflation) — now the separator is only valid as a thousands separator (`1.000.000` ✓, `1.5m` → rejected).
+- 🟡 **Ticket meta stored the product label, not the value** — renaming a product broke Set Key in every open ticket (the v3.9.26 fix was ineffective); duplicate labels → the wrong role granted. Now the meta stores `productValue` + a `resolveProduct()` helper (value-first, with a label fallback for old tickets).
+- 🟡 **Multi-choice polls: unvote never worked** (clicking an already-voted option was a silent no-op) — now it properly toggles for both single & multi choice.
+- 🟡 **Cooldown 0 couldn't turn a responder off** (`0 || 3000`) & **leveling** (`0 || 60000`) — now `??` (nullish coalescing): 0 = off, as documented.
+- 🟡 **`containsLink` missed bare domains** (`discord.gg/xxx`, `t.me/x`) — now a curated-TLD regex matches domains without a scheme or www.
+- 🟡 **Exempt words masked separate blocked words** (`"asus asu"` slipped through) — now exemptions are masked per-occurrence BEFORE detection.
+- 🟡 **`/setup-ticket` crashed when body + `{price_list}` > 4096** — now validated pre-send with a clear message.
+- 🟡 **`/config-show` crashed at ~12 products** (field > 1024) & **`/announce-list` crashed at ~27 entries** — now capped with a "+N more" note.
+- 🟡 **`/announce-schedule` claimed WITA (UTC+8) but parsed the host timezone** — a UTC VPS = 8 hours late. Now an explicit offset defaults to +8, configurable via the `TZ_OFFSET_HOURS` env var.
+- 🟢 **Transcripts only kept the last 100 messages** (transfer proof near the top was lost) — now paginated up to 1000 messages + a truncation note.
+- 🟢 Empty (whitespace-only) keys rejected at 3 layers; **raw keys no longer leak to the console** (length-only masking; duplicate-key error messages carry no key value).
+- 🟢 `endGiveaway` now sets `endedAt` (accurate GC); **AFK entries are GC'd** (entries older than 30 days pruned by `pruneStaleData`); `parsePrice` rejects negative prices.
+- 🟢 Zombie terminal deals (channel deletion failed with something other than 10003) are reconciled too; third-party creators are placed in `observers` (removable via the button); `handleEvent` calls deferReply up front (no more "interaction failed" after >3s).
+- 🟢 Temp voice orphans when a music bot leaves last — bot events now still run the empty-channel cleanup.
+- 🟢 `/set-role` validates that the role is assignable (@everyone, managed roles, and roles above the bot are rejected); `/announce` + `/announce-schedule` validate channel type (categories/forums rejected); `/help` auto-splits into 2 embeds past 5800 chars; the router marks dedup AFTER success (a crashed interaction replay can retry); whole-word boundaries are unicode-aware (Cyrillic/CJK); truncation is surrogate-safe (`truncateUtf8Safe`).
 
 ### Tests
 
-- 🟢 +62 unit test (total **386**, dari 324) di 5 file baru: `hardeningV38Midman` (12 — lock interleaving, TOCTOU, parse), `hardeningV38Ticket` (12 — transient fetch, race 2 admin, productValue, transcript 150 pesan), `hardeningV38Data` (12 — giveaway double-end, poll toggle, cooldown 0, AFK GC), `hardeningV38Automod` (14 — bare domain, exempt masking, whitelist split, unicode, bot voice cleanup), `hardeningV38Router` (12 — TZ offset, dedup retry, set-role validation, truncateUtf8Safe). Full suite: 386/386 hijau, ESLint 0 warning.
+- 🟢 +62 unit tests (total **386**, up from 324) across 5 new files: `hardeningV38Midman` (12 — lock interleaving, TOCTOU, parsing), `hardeningV38Ticket` (12 — transient fetch, the 2-admin race, productValue, 150-message transcripts), `hardeningV38Data` (12 — giveaway double-end, poll toggle, cooldown 0, AFK GC), `hardeningV38Automod` (14 — bare domains, exempt masking, the whitelist split, unicode, bot voice cleanup), `hardeningV38Router` (12 — TZ offset, dedup retry, set-role validation, truncateUtf8Safe). Full suite: 386/386 green, ESLint 0 warnings.
 
 ## [3.9.37] — 2026-09-02
 
-### Fixed — 🐛 /help kedaluwarsa + audit menyeluruh v2: 5 bug/issue pasca-fitur rekber (user-reported: "auto split masih 2")
+### Fixed — 🐛 Outdated /help + full audit v2: 5 bugs/issues following the escrow feature (user-reported: "auto split still 2")
 
-Permintaan user: kesalahan di `/help` (fitur middleman sudah ada tapi Auto-Split masih tertulis **2 kategori**) + baca keseluruhan kode & sync semuanya. Fix `/help` sekaligus audit kedua yang menemukan 5 issue nyata — dua di antaranya berdampak serius ke alur rekber.
+User request: an error in `/help` (the middleman feature existed but Auto-Split still said **2 categories**) plus a full read-through of the code to sync everything. The `/help` fix came along with a second audit that found 5 real issues — two of them seriously affecting the escrow flow.
 
-- 🟠 **/help Auto-Split 2 → 3 kategori** (bug user-reported): sekarang menyebut **🎫 TRANSAKSI / 🎫 BANTUAN / 🤝 REKBER** + key custom `midman.category`; ditambah section **🤝 Midman / Rekber (Escrow)** (`/set-role midman`, `/set-midman-fee`, `/midman-deals` + ringkasan alur 3 langkah); daftar role kini menyebut `midman`; typo "TAU" → "ATAU".
-- 🟢 **Versi embed /help kini dinamis** dari `package.json` (footer + description) — sebelumnya hardcode `v3.9.26` padahal bot sudah jauh lebih baru; tidak akan stale lagi.
-- 🔴 **`deals.json` bolong dari FILES_TO_BACKUP** — `/backup-now` & `/restore-backup` TIDAK mem-backup data deal rekber (fitur v3.9.32). Konsekuensi: restore = semua deal escrow aktif **terputus** (meta hilang; pembeli/penjual terkunci selamanya). Ditemukan guard test "file live wajib di-backup" begitu deals.json ada di `data/`. Kini di-backup penuh.
-- 🟠 **Deal zombie terkunci selamanya → self-healing** (paritas dengan tiket): deal non-terminal yang channel-nya dihapus manual dari UI Discord selama ini bikin pembeli/penjual **tidak bisa buka tiket reguler / dipilih di deal baru** selamanya, dan `/midman-deals` menampilkan link mati. Kini di-reconcile otomatis: saat **startup** (ready.js 6b) + **harian** oleh scheduler tick (guard per-hari). Transient error (5xx/network) TIDAK menghapus deal — hanya channel yang benar-benar hilang (null / error 10003) yang dibersihkan.
-- 🟠 **Router `ticket_cat:midman` kini exact-match** — kategori custom yang id-nya diawali `midman` (mis. `midman_jual`, valid per CATEGORY_ID_REGEX) sebelumnya kena prefix-match → jatuh ke fallback domain midman → tombol **mati tanpa reply** ("interaction failed"). Kembali di-route benar ke domain ticket.
-- 🟡 **Penjual deal kini juga dicek tiket aktifnya** — dulunya hanya pembeli yang dicek (asimetri kebijakan 1-channel-aktif-per-user): user dengan tiket terbuka bisa jadi penjual deal.
-- 🟢 **Teks panel tidak lagi menyesatkan**: deskripsi dropdown kategori rekber "Bantuan / buka tiket langsung" → "Deal escrow rekber — 3 pihak"; warning `findEmptyCategoryWarnings` tidak lagi menyarankan "tambah produk ke kategori midman" (produk di kategori midman memang tidak pernah tampil — klik selalu buka deal); pesan `/list-categories` config kosong "Default 4 kategori" → **5** (termasuk midman); pesan console migration config kini menyebut midman; ADMIN_GUIDE "4 tombol default" → 5.
-- 🟢 **Label audit log MIDMAN_xxx + SET_MIDMAN_FEE** — sebelumnya tampil sebagai raw action string di channel audit log (inkonsisten dengan konvensi label v3.9.4/v3.9.17).
-- 🟢 **Hardening kecil**: guard `<@&undefined>` di pengumuman dispute saat role admin belum di-set (jadi fallback **Admin**); guard `deal.history` bukan-array di remove-member (mirror guard handler lain); transcript chunk kosong (code block blank saat sisa hard-split tepat 1900 char) tidak dikirim.
+- 🟠 **/help Auto-Split 2 → 3 categories** (user-reported bug): now mentions **🎫 TRANSACTION / 🎫 SUPPORT / 🤝 ESCROW** + the custom key `midman.category`; adds a **🤝 Midman / Escrow** section (`/set-role midman`, `/set-midman-fee`, `/midman-deals` + a summary of the 3-step flow); the role list now mentions `midman`; typo "TAU" → "ATAU".
+- 🟢 **The /help embed version is now dynamic**, pulled from `package.json` (footer + description) — it was previously hardcoded as `v3.9.26` even though the bot was far newer; it can't go stale again.
+- 🔴 **`deals.json` was missing from FILES_TO_BACKUP** — `/backup-now` & `/restore-backup` did NOT back up escrow deal data (the v3.9.32 feature). Consequence: a restore severed every active escrow deal (meta gone; the buyer/seller locked out forever). Caught by the "live files must be backed up" guard test as soon as deals.json landed in `data/`. Now fully backed up.
+- 🟠 **Zombie deals locked forever → self-healing** (parity with tickets): a non-terminal deal whose channel had been deleted manually from the Discord UI used to leave the buyer/seller **unable to open regular tickets or be picked for a new deal** forever, and `/midman-deals` showed dead links. Now reconciled automatically: at **startup** (ready.js 6b) + **daily** by the scheduler tick (with a per-day guard). Transient errors (5xx/network) do NOT delete a deal — only channels that are truly gone (null / error 10003) are cleaned up.
+- 🟠 **Router `ticket_cat:midman` is now exact-match** — custom categories whose id starts with `midman` (e.g. `midman_jual`, valid per CATEGORY_ID_REGEX) previously hit a prefix-match → fell into the midman domain fallback → the button **died without a reply** ("interaction failed"). Now routed correctly back to the ticket domain.
+- 🟡 **Deal sellers are now checked for active tickets too** — previously only the buyer was checked (an asymmetry in the 1-active-channel-per-user policy): a user with an open ticket could still become a deal seller.
+- 🟢 **Panel text no longer misleads**: the escrow category dropdown description "Support / open a ticket directly" → "3-party escrow deal"; the `findEmptyCategoryWarnings` warning no longer suggests "add products to the midman category" (products in the midman category genuinely never show — a click always opens a deal); the `/list-categories` empty-config message "Default 4 categories" → **5** (including midman); the config migration console message now mentions midman; ADMIN_GUIDE "4 default buttons" → 5.
+- 🟢 **Audit log labels for MIDMAN_xxx + SET_MIDMAN_FEE** — previously rendered as raw action strings in the audit log channel (inconsistent with the label convention from v3.9.4/v3.9.17).
+- 🟢 **Minor hardening**: `<@&undefined>` guard in dispute announcements when the admin role isn't set yet (falls back to **Admin**); non-array `deal.history` guard in remove-member (mirroring the other handlers' guards); empty transcript chunks (a blank code block when the hard-split remainder is exactly 1900 chars) are no longer sent.
 
 ### Tests
 
-- 🟢 +12 unit test (total **324**, dari 312): `tests/unit/hardeningV37.test.js` — router exact-match (kategori `midman_jual` → ticket domain, tombol `ticket_cat:midman` → midman domain), warning/deskripsi panel rekber, label audit, isi /help (3 kategori + section midman + versi dinamis), reconcile zombie deal (null/10003/transient/terminal + wrapper harian), formulir deal 3-langkah (penjual ber-tiket ditolak + happy-path regression), transcript tanpa chunk kosong, pin `deals.json` di FILES_TO_BACKUP.
-- 🟢 Test lama yang mengunci literal `v3.9.26` di /help di-update: sekarang menyamakan dengan `package.json` (future-proof).
+- 🟢 +12 unit tests (total **324**, up from 312): `tests/unit/hardeningV37.test.js` — router exact-match (category `midman_jual` → ticket domain, button `ticket_cat:midman` → midman domain), the escrow panel warning/description, audit labels, /help contents (3 categories + the midman section + the dynamic version), zombie deal reconciliation (null/10003/transient/terminal + the daily wrapper), the 3-step deal form (a seller with an active ticket rejected + a happy-path regression), transcripts without empty chunks, pinning `deals.json` in FILES_TO_BACKUP.
+- 🟢 Old tests that pinned the literal `v3.9.26` in /help were updated: they now compare against `package.json` (future-proof).
 
 ## [3.9.36] — 2026-09-02
 
-### Changed — 🧹 Code cleanup: audit menyeluruh (37 lint warning → 0), dead code dihapus, typo pesan diperbaiki
+### Changed — 🧹 Code cleanup: a full audit (37 lint warnings → 0), dead code removed, message typo fixed
 
-Audit final menyeluruh seluruh kodebase (permintaan "cek keseluruhan lagi"): semua 37 warning ESLint dibersihkan jadi **0 error 0 warning**, code sampah (dead code, variabel/import tak terpakai, require redundan) dihapus, dan satu pesan warning yang terpotong diperbaiki. Tidak ada perubahan perilaku — 312 unit test tetap hijau tanpa perubahan test.
+A final full audit of the codebase (requested as "check the whole thing again"): all 37 ESLint warnings cleaned up to **0 errors 0 warnings**, junk code removed (dead code, unused variables/imports, redundant requires), and one truncated warning message fixed. No behavior changes — the 312 unit tests stayed green with no test modifications.
 
-- 🟢 **Dead code dihapus** — fungsi yang tidak pernah dipanggil/di-export: `formatTimeLeft` duplikat di `giveawayManager.js` DAN di `scheduledAnnouncements.js` (keduanya tanpa pemanggil — sisa refactor v3.9.26), `findOwnerVoiceChannel` di `tempvoice.js` (komentarnya meng-claim "dipertahankan untuk backward compat / digunakan di beberapa handler" — ternyata tidak dipakai di mana pun), `save()` legacy di `statsManager.js` (tidak di-export, tak pernah dipanggil).
-- 🟢 **Variabel/junk assignment dihapus** — `timeLeft` (announce), `newConfig` (automod-toggle), `found` + `newName` (tempvoice rename path), `prefix` (afkManager listGuildAFK), `total = 0` + `pct = 0` (poll create — template sudah hardcode "0 votes (0%)"), parameter `i`/`k` tak terpakai di map/filter.
-- 🟢 **Import tak terpakai dibersihkan** — `ChannelType` (panels-mgmt, poll), `createPoll` (commands/poll), `ModalBuilder`/`TextInputBuilder`/`TextInputStyle`/`saveConfig`/`DEFAULTS`/`safeEditReply` (interactions/config), `getConfig`/`saveConfig` (responder), `path` (safeWrite).
-- 🟢 **Require redundan disatukan** — `require('./_shared')` dobel di `leveling.js` di-merge; lazy `require('discord.js')` 2× di dalam fungsi `schedulerTasks.js` di-hoist ke top-level (discord.js selalu sudah ter-load saat bot start); alias `PFB` di `voiceStateUpdate.js` dihapus (menggunakan import `PermissionFlagsBits` yang sudah ada di atas); lazy `require('../data/statsManager')` 3× di `ticket.js` di-hoist ke import utama (`_shared` sudah memuat statsManager secara transitif — lazy require murni redundan).
-- 🟡 **Typo pesan diperbaiki** — warning `completeNonKeyOrder` di `ticket.js`: `"produk X tidak ditemukan di config — auto-role & tidak diproses"` terpotong & janggal → `"auto-role tidak diproses"` (akurat: stats tetap tercatat, hanya auto-role yang dilewati).
-- 🟢 `catch (err)` dengan `err` tak terpakai → `catch (_err)` di 8 lokasi (afk/automod/level/responderManager, levelManager, keys ×2, auditLog, permissions) — konsisten konvensi `^_` yang sudah dipakai codebase.
-- 🟢 Escape tak perlu dihapus: `\`` di dalam single-quoted string (giveaway reroll hint).
+- 🟢 **Dead code removed** — functions never called/exported: a duplicate `formatTimeLeft` in `giveawayManager.js` AND in `scheduledAnnouncements.js` (both with zero callers — leftovers from the v3.9.26 refactor), `findOwnerVoiceChannel` in `tempvoice.js` (its comment claimed "kept for backward compat / used in a few handlers" — turns out it wasn't used anywhere), and a legacy `save()` in `statsManager.js` (not exported, never called).
+- 🟢 **Junk variables/assignments removed** — `timeLeft` (announce), `newConfig` (automod-toggle), `found` + `newName` (the tempvoice rename path), `prefix` (afkManager listGuildAFK), `total = 0` + `pct = 0` (poll create — the template already hardcodes "0 votes (0%)"), and unused `i`/`k` parameters in map/filter.
+- 🟢 **Unused imports cleaned up** — `ChannelType` (panels-mgmt, poll), `createPoll` (commands/poll), `ModalBuilder`/`TextInputBuilder`/`TextInputStyle`/`saveConfig`/`DEFAULTS`/`safeEditReply` (interactions/config), `getConfig`/`saveConfig` (responder), `path` (safeWrite).
+- 🟢 **Redundant requires consolidated** — the double `require('./_shared')` in `leveling.js` merged; lazy `require('discord.js')` 2× inside functions in `schedulerTasks.js` hoisted to top-level (discord.js is always already loaded when the bot starts); the `PFB` alias in `voiceStateUpdate.js` removed (uses the `PermissionFlagsBits` import already at the top); lazy `require('../data/statsManager')` 3× in `ticket.js` hoisted into the main import (`_shared` already loads statsManager transitively — the lazy requires were purely redundant).
+- 🟡 **Message typo fixed** — the `completeNonKeyOrder` warning in `ticket.js`: `"product X not found in config — auto-role & not processed"` was truncated & awkward → `"auto-role not processed"` (accurate: stats are still recorded, only the auto-role is skipped).
+- 🟢 `catch (err)` with an unused `err` → `catch (_err)` in 8 places (afk/automod/level/responderManager, levelManager, keys ×2, auditLog, permissions) — consistent with the `^_` convention the codebase already uses.
+- 🟢 Unnecessary escapes removed: `\`` inside single-quoted strings (the giveaway reroll hint).
 
 ## [3.9.35] — 2026-09-02
 
-### Fixed — 🎫 Tiket: tombol "Tutup Tanpa Selesai" tidak berfungsi (kedua tombol sama-sama membatalkan penutupan)
+### Fixed — 🎫 Tickets: the "Close Without Completing" button didn't work (both buttons just cancelled the close)
 
-Bug user-reported pada tiket non-transaksi (**bantuan / help / report / claim / giveaway**): saat admin klik 🔒 Tutup Tiket, konfirmasi ephemeral menampilkan 3 tombol — ✅ Selesai, ❌ Tutup Tanpa Selesai, ⏏️ Batal Tutup. Namun tombol **❌ Tutup Tanpa Selesai** salah wiring ke customId `ticket_close_abort` — **customId yang sama dengan ⏏️ Batal Tutup**. Akibatnya kedua tombol berperilaku identik (hanya membatalkan penutupan): tiket non-transaksi **tidak bisa ditutup tanpa diselesaikan** — satu-satunya jalan adalah ✅ Selesai (transcript tercatat sukses, padahal tidak) atau hapus channel manual dari UI Discord (tanpa transcript/meta cleanup).
+A user-reported bug on non-transaction tickets (**support / help / report / claim / giveaway**): when an admin clicked 🔒 Close Ticket, the ephemeral confirmation showed 3 buttons — ✅ Done, ❌ Close Without Completing, ⏏️ Cancel Close. But the **❌ Close Without Completing** button was mis-wired to the customId `ticket_close_abort` — **the same customId as ⏏️ Cancel Close**. As a result both buttons behaved identically (they only cancelled the close): a non-transaction ticket **could not be closed without being completed** — the only ways out were ✅ Done (the transcript recorded as successful, even though it wasn't) or deleting the channel manually from the Discord UI (no transcript, no meta cleanup).
 
-- 🟠 **Tombol "❌ Tutup Tanpa Selesai" kini benar-benar menutup tiket** — memakai customId baru `ticket_close_cancel` yang di-handle bersama `ticket_close_cancel_trans` (satu perilaku: `closeTicket(channel, user, isSuccess=false)` — transcript tersimpan & ditandai **tidak selesai**, channel dihapus, metadata tickets.json dibersihkan, tanpa invoice). Dulu: keduanya cuma menampilkan "❌ Penutupan tiket dibatalkan."
-- 🟢 **"⏏️ Batal Tutup" konsisten di semua skenario** — kini memakai `ticket_close_abort` juga di cabang help/report (dulunya `ticket_close_abort2`). CustomId `_abort2` **tetap di-handle** untuk ephemeral lama yang masih terbuka saat bot update (tidak ada dead button).
-- 🟢 **Pesan konfirmasi help/report dirinci per tombol** (pola yang sama dengan cabang transaksi non-key): "✅ Selesai — selesai, transcript ditandai sukses / ❌ Tutup Tanpa Selesai — tutup tiket sekarang, transcript ditandai tidak selesai".
-- 🟢 Defense-in-depth tetap berlaku untuk tombol baru: re-check admin (non-admin ditolak) + validasi channel adalah tiket terdaftar (forged customId tidak bisa menghapus channel sembarangan).
+- 🟠 **The "❌ Close Without Completing" button now actually closes the ticket** — it uses the new customId `ticket_close_cancel`, handled together with `ticket_close_cancel_trans` (one shared behavior: `closeTicket(channel, user, isSuccess=false)` — the transcript is saved & marked **not completed**, the channel deleted, the tickets.json metadata cleaned up, no invoice). Before: both merely displayed "❌ Ticket closing cancelled."
+- 🟢 **"⏏️ Cancel Close" is now consistent in every scenario** — it uses `ticket_close_abort` in the help/report branch too (previously `ticket_close_abort2`). The `_abort2` customId **is still handled** for old ephemeral confirmations that remain open while the bot updates (no dead buttons).
+- 🟢 **The help/report confirmation message now details each button** (the same pattern as the non-key transaction branch): "✅ Done — completed, transcript marked successful / ❌ Close Without Completing — close the ticket now, transcript marked not completed".
+- 🟢 Defense-in-depth still applies to the new button: an admin re-check (non-admins rejected) + validation that the channel is a registered ticket (a forged customId can't delete arbitrary channels).
 
 ### Tests
 
-- 🟢 +7 unit test (total **312**, dari 305): `tests/unit/ticketCloseButtons.test.js` — komposisi row konfirmasi tiket help & claim_giveaway (customId benar, unik, label benar), klik `ticket_close_cancel` di tiket help/report → channel terhapus + meta bersih, klik `ticket_close_abort` → tiket tetap hidup, non-admin ditolak, kompatibilitas customId `ticket_close_abort2` lama.
+- 🟢 +7 unit tests (total **312**, up from 305): `tests/unit/ticketCloseButtons.test.js` — the confirmation row composition for help & claim_giveaway tickets (correct, unique customIds and correct labels), clicking `ticket_close_cancel` on a help/report ticket → channel deleted + meta clean, clicking `ticket_close_abort` → the ticket stays alive, non-admin rejected, and compatibility with the old `ticket_close_abort2` customId.
 
 ## [3.9.34] — 2026-09-02
 
-### Changed — 🤝 Rekber: buat deal oleh siapa saja (formulir eksplisit) + persetujuan ganda + kelola member di dalam channel deal
+### Changed — 🤝 Escrow: anyone can create a deal (explicit form) + dual consent + member management inside the deal channel
 
-Redesign alur buat deal berdasarkan arah pengguna: **siapa pun boleh open ticket rekber** (pembeli, penjual, atau pihak yang menolong) — yang penting **formulirnya jelas menyebut siapa pembeli & siapa penjual**, dan **member bisa ditambah/dikeluarkan di dalam channel deal**.
+A redesign of the deal-creation flow based on user direction: **anyone may open an escrow ticket** (the buyer, the seller, or a helper) — what matters is that **the form explicitly states who the buyer and the seller are**, and **members can be added/removed inside the deal channel**.
 
-- 🟢 **Formulir 3 langkah (peran eksplisit)** — sebelumnya yang klik tombol 🤝 Rekber otomatis dianggap pembeli (seller tidak bisa membuka deal; kalau nekat, perannya terbalik dan arus uang bisa terbalik). Sekarang: (1) modal item + harga, (2) **pilih 🛒 PEMBELI** via dropdown member searchable (`mm_pick_buyer`), (3) **pilih 🏷️ PENJUAL** (`mm_pick_seller`) → channel deal dibuat dengan peran yang benar. Semua pilihan tetap cukup ketik nama — tanpa mention/copy ID. Validasi (member ada, bukan bot, tidak pegang deal/tiket aktif) dijalankan pada pihak yang dipilih; validasi gagal → dropdown dirender ulang di pesan ephemeral yang sama (tidak perlu isi ulang modal). Creator pihak ketiga (mis. midman yang menolong) tetap dapat akses channel deal-nya.
-- 🟡 **Persetujuan ganda (state `WAITING_AGREE`)** — menggantikan `WAITING_SELLER`. Karena creator bisa siapa saja, terms (item+harga) terkunci HANYA setelah **pembeli & penjual dua-duanya** klik **🤝 Setuju Deal** (`applyAgreement()` pure — klik pertama = persetujuan parsial: tercatat di history, board update menampilkan ✅/⏳ per pihak, pihak yang belum di-ping; klik kedua = transisi `join` → `WAITING_PAYMENT`). Guard aktor join kini `buyer` + `seller`. Deal lama `WAITING_SELLER` **dimigrasi otomatis** saat load (buyerAgreed=true — pembeli lama = penulis terms, setuju implisit; sellerAgreed=false; field `observers` diisi `[]`).
-- 🟢 **👥 Tambah Member / ➖ Keluarkan Member di dalam channel deal** — tombol baru di baris ke-2 Deal Board (semua state non-terminal, khusus midman/admin; observer & peserta ditolak dengan pesan jelas). Tambah: dropdown member searchable (`mm_pick_member`) → grant akses lihat/chat/attach (bukan peserta transaksi — `resolveActor` tidak mengakuinya, jadi tidak bisa menggerakkan deal; maks 10 per deal). Keluarkan: dropdown berisi observer saat ini (`mm_remove_pick`) → hapus akses. **Pembeli/penjual tidak bisa dikeluarkan** — urusan mereka lewat batal deal/dispute. Setiap add/remove tercatat di history deal + audit log (`MIDMAN_MEMBER_ADD`/`MIDMAN_MEMBER_REMOVE`) + field baru **👀 Member Tambahan** di Deal Board. Ini juga solusi resmi untuk "salah menambahkan member": keluarkan lewat tombol (tercatat), bukan edit permission manual di UI Discord (tidak tercatat).
-- 🟢 Router: prefix `mm_` kini menangani user select (`mm_pick_buyer`, `mm_pick_member`) + string select (`mm_remove_pick`) — filter `isUserSelectMenu`/`isStringSelectMenu` sudah ada; hanya mapping domain yang dikonfirmasi.
+- 🟢 **3-step form (explicit roles)** — previously, whoever clicked the 🤝 Escrow button was automatically treated as the buyer (a seller couldn't open a deal; if they tried anyway, the roles were reversed and the money flow could go the wrong way). Now: (1) an item + price modal, (2) **pick the 🛒 BUYER** via a searchable member dropdown (`mm_pick_buyer`), (3) **pick the 🏷️ SELLER** (`mm_pick_seller`) → the deal channel is created with the correct roles. Every choice still only requires typing a name — no mentions, no copying IDs. Validation (member exists, not a bot, holds no active deal/ticket) runs on the selected party; if validation fails → the dropdown re-renders in the same ephemeral message (no need to re-fill the modal). Third-party creators (e.g. a middleman helping out) still get access to their deal channel.
+- 🟡 **Dual consent (state `WAITING_AGREE`)** — replaces `WAITING_SELLER`. Since the creator can now be anyone, the terms (item + price) are locked ONLY after **both the buyer and the seller** click **🤝 Agree to Deal** (`applyAgreement()` is pure — the first click = partial consent: recorded in history, the board updates with ✅/⏳ per party, and the party that hasn't agreed gets pinged; the second click = the `join` transition → `WAITING_PAYMENT`). The join actor guard is now `buyer` + `seller`. Old `WAITING_SELLER` deals are **migrated automatically** on load (buyerAgreed=true — the original buyer wrote the terms, so consent is implicit; sellerAgreed=false; the `observers` field filled with `[]`).
+- 🟢 **👥 Add Member / ➖ Remove Member inside the deal channel** — new buttons on row 2 of the Deal Board (all non-terminal states, middleman/admin only; observers & participants are rejected with a clear message). Add: a searchable member dropdown (`mm_pick_member`) → grants view/chat/attach access (they are not transaction participants — `resolveActor` doesn't recognize them, so they can't move the deal forward; max 10 per deal). Remove: a dropdown listing the current observers (`mm_remove_pick`) → revokes access. **The buyer/seller cannot be removed** — their matters go through deal cancel/dispute. Every add/remove is recorded in the deal history + audit log (`MIDMAN_MEMBER_ADD`/`MIDMAN_MEMBER_REMOVE`) + a new **👀 Extra Members** field on the Deal Board. This is also the official remedy for "accidentally added the wrong member": remove them via the button (recorded), not by manually editing permissions in the Discord UI (unrecorded).
+- 🟢 Router: the `mm_` prefix now handles user selects (`mm_pick_buyer`, `mm_pick_member`) + string selects (`mm_remove_pick`) — the `isUserSelectMenu`/`isStringSelectMenu` filters already existed; only the domain mapping was added.
 
 ### Security
 
-- 🔴 Fix potensial saat build permissionOverwrites channel deal: overwrite creator pihak ketiga dibangun **kondisional** di array (bukan inline dengan `allow: undefined`) — pola lama pada percobaan awal berisiko menimpa deny `@everyone` dan membocorkan channel; versi final tidak menyentuh overwrite `@everyone`.
+- 🔴 Fixed a potential issue when building the deal channel's permissionOverwrites: the third-party creator's overwrite is now built **conditionally** in the array (not inlined with `allow: undefined`) — the earlier draft's pattern risked overwriting the `@everyone` deny and exposing the channel; the final version never touches the `@everyone` overwrite.
 
 ### Tests
 
-- 🟢 +14 unit test (total **305**, dari 291): `applyAgreement` (parsial/both/double-click/non-peserta/urutan penjual-duluan), kontrak caller `applyAgreement`+`recordTransition`, observer (add/remove/principal/duplikat/limit 10/invalid), migration deal `WAITING_SELLER` (disk diverifikasi bentuk baru + idempotent + deal lain tak tersentuh), router dispatch `mm_pick_buyer`/`mm_pick_member`/`mm_remove_pick`, persistensi menyesuaikan field ternormalisasi.
+- 🟢 +14 unit tests (total **305**, up from 291): `applyAgreement` (partial/both/double-click/non-participant/seller-first order), the `applyAgreement`+`recordTransition` caller contract, observers (add/remove/principal/duplicate/limit 10/invalid), the `WAITING_SELLER` deal migration (disk verified in the new shape + idempotent + other deals untouched), router dispatch of `mm_pick_buyer`/`mm_pick_member`/`mm_remove_pick`, and persistence adapting to the normalized fields.
 
 ## [3.9.33] — 2026-09-02
 
-### Changed — 🤝 Rekber: pilih penjual via dropdown + fee ditambah di atas harga
+### Changed — 🤝 Escrow: pick the seller via a dropdown + the fee is added on top of the price
 
-Dua revisi desain atas fitur rekber v3.9.32, keduanya dari feedback penggunaan nyata:
+Two design revisions to the v3.9.32 escrow feature, both driven by real-world usage feedback:
 
-- 🟢 **Pilih penjual lewat dropdown member (User Select Menu)** — sebelumnya pembeli harus mengetik mention/user ID penjual di modal (`parseSellerInput`), yang menyulitkan user dengan nama susah / yang tidak tahu cara copy ID. Sekarang buat deal jadi **2 langkah**: (1) modal item + harga, (2) **dropdown daftar member Discord** dengan kolom pencarian, avatar, dan nama — cukup ketik nama, tanpa mention, tanpa copy ID. Data langkah 1 disimpan sementara (in-memory, TTL 15 menit = umur ephemeral, auto-prune). Router kini juga menerima interaksi `isUserSelectMenu()` (`mm_pick_seller`). Validasi lengkap tetap dijalankan saat penjual dipilih (re-check deal/tiket aktif, anti-self, anti-bot, member harus ada).
-- 🟢 **Fee model ADDITIVE — ditambah di atas harga, bukan dipotong dari dana penjual.** Contoh: harga 100.000 + fee 5% (5.000) → pembeli transfer **105.000**, penjual menerima **100.000 PENUH**, midman menyimpan 5.000. Implementasi: `calcTotals(price, fee)` (pure, di-unit-test) jadi sumber tunggal hitungan; cap `Math.min(fee, price)` di `calcFee` dihapus (tidak relevan untuk fee additive); `/set-midman-fee` tetap membatasi persen maks 90% sebagai sanity guard.
-- 🟢 **Deal Board & messaging disesuaikan**: field baru `💳 Total Dibayar Pembeli` (harga + fee) dan `🏷️ Diterima Penjual` menampilkan harga penuh "tanpa potongan"; deskripsi state `WAITING_PAYMENT`/`WAITING_RELEASE` kini menampilkan nominal persis (total transfer / jumlah pencairan penuh + fee midman); pengumuman `fundin` menyebut nominal yang masuk; pengumuman `release` menyebut pencairan penuh + fee; mode & nilai fee di-snapshot ke record deal (`feeMode`, `feeValue`) supaya board deal berjalan tidak berubah saat config diubah admin.
-- 🟢 **Invoice & stats mencatat pengeluaran nyata pembeli** (harga + fee), transcript merekam rincian `total (harga + fee)`.
-- 🟢 `parseSellerInput` dihapus dari `midmanManager` (dead code — digantikan dropdown). `/midman-deals` kini menampilkan total (harga + fee) per deal.
+- 🟢 **Pick the seller from a member dropdown (User Select Menu)** — previously the buyer had to type the seller's mention/user ID into the modal (`parseSellerInput`), which tripped up users with hard-to-type names or who didn't know how to copy an ID. Deal creation is now **2 steps**: (1) an item + price modal, (2) a **Discord member dropdown** with a search box, avatars, and names — just type a name, no mention, no ID copying. Step-1 data is held temporarily (in-memory, TTL 15 minutes = the ephemeral lifetime, auto-pruned). The router now also accepts `isUserSelectMenu()` interactions (`mm_pick_seller`). Full validation still runs when the seller is picked (re-check for active deals/tickets, anti-self, anti-bot, the member must exist).
+- 🟢 **ADDITIVE fee model — added on top of the price, not deducted from the seller's funds.** Example: price 100,000 + a 5% fee (5,000) → the buyer transfers **105,000**, the seller receives the **full 100,000**, and the middleman keeps 5,000. Implementation: `calcTotals(price, fee)` (pure, unit-tested) is the single source of the calculation; the `Math.min(fee, price)` cap in `calcFee` was removed (irrelevant for an additive fee); `/set-midman-fee` still caps the percentage at 90% as a sanity guard.
+- 🟢 **Deal Board & messaging adjusted**: a new field `💳 Total Paid by Buyer` (price + fee), and `🏷️ Received by Seller` showing the full price "— no deductions"; the `WAITING_PAYMENT`/`WAITING_RELEASE` state descriptions now display the exact amounts (the transfer total / the full payout + the middleman fee); the `fundin` announcement states the amount received; the `release` announcement states the full payout + the fee; the fee mode & value are snapshotted onto the deal record (`feeMode`, `feeValue`) so a running deal's board doesn't change when an admin edits the config.
+- 🟢 **Invoices & stats record the buyer's actual outlay** (price + fee), and the transcript captures the `total (price + fee)` breakdown.
+- 🟢 `parseSellerInput` removed from `midmanManager` (dead code — replaced by the dropdown). `/midman-deals` now shows the total (price + fee) per deal.
 
 ### Fixed
 
-- 🟡 Mock interaction di 4 file test (`interactionsRouter`, `ticketNonKey`, `panelEdit`, `hardeningV31`) ditambah method `isUserSelectMenu` — tanpa ini router baru melempar `TypeError: interaction.isUserSelectMenu is not a function` saat test lama jalan.
+- 🟡 Mock interactions in 4 test files (`interactionsRouter`, `ticketNonKey`, `panelEdit`, `hardeningV31`) gained the `isUserSelectMenu` method — without it, the new router threw `TypeError: interaction.isUserSelectMenu is not a function` when the old tests ran.
 
 ## [3.9.32] — 2026-09-02
 
-### Added — 🤝 FITUR BARU: Midman / Rekber (Deal Escrow 3-Pihak)
+### Added — 🤝 NEW FEATURE: Midman / Escrow (3-Party Escrow Deals)
 
-Layanan rekber (jasa tengah) untuk transaksi antar-member: pembeli, penjual, dan midman dalam satu channel deal dengan **Deal Board** (embed bot) sebagai sumber kebenaran dan **state machine** yang menjaga urutan — uang jalan dulu → barang nyampe → baru uang cair, dan setiap perpindahan harus dikonfirmasi pihak yang berbeda.
+A middleman (escrow) service for member-to-member transactions: the buyer, the seller, and the middleman share one deal channel with a **Deal Board** (a bot embed) as the source of truth and a **state machine** that enforces the order — the money moves first → the goods arrive → only then are the funds released, and every step must be confirmed by a different party.
 
-- **State machine escrow** (`src/data/midmanManager.js`): `WAITING_SELLER → WAITING_PAYMENT → WAITING_DELIVERY → WAITING_RELEASE → COMPLETED`, plus `DISPUTE` (freeze, hanya admin resolve: cairkan/refund) dan `CANCELLED`/`REFUNDED`. Setiap klik tombol divalidasi ganda — (1) urutan state harus mengizinkan event (`canTransition`), (2) kliker harus berperan sebagai aktor yang diizinkan (`actorAllowed`). Bot menolak struktural skema fraud klasik: cairkan sebelum barang diterima, buyer klik "Dana Masuk" menyamar midman, aksi apa pun saat dispute.
-- **Deal Board**: embed bot (item, harga, fee, diterima penjual, status, instruksi per state) yang di-edit otomatis tiap transisi — terms terkunci setelah seller setuju (ubah = batal & buat ulang). Board terhapus admin → self-healing (dikirim ulang). Tombol per state hanya merender aksi yang valid.
-- **Channel deal 3-pihak**: kategori `🤝 REKBER`, overwrites untuk buyer, seller, role midman, role admin. History lengkap per klik (siapa, kapan, event apa) tersimpan di `data/deals.json` + dikirim sebagai ringkasan sebelum close (ikut ke transcript).
-- **Integrasi ekosistem Thor**: invoice ke channel testimoni + `recordPurchase` stats saat deal COMPLETED (reuse `sendInvoice`), transcript otomatis (reuse `saveTranscript`), audit log setiap transisi (`MIDMAN_*`), lock per-channel anti double-click, cleanup meta hanya kalau channel benar-benar terhapus (pola v3.9.31).
-- **Anti-bypass**: user dengan deal aktif (buyer/seller) tidak bisa buka tiket reguler; buyer dengan tiket aktif tidak bisa buat deal; 1 deal aktif per orang (sebagai buyer/seller). Loop cek tiket di `createTicket` diekstrak ke `findActiveTicketFor()` (dipakai ulang).
-- **Commands**: `/set-role midman`, `/remove-role midman`, `/set-midman-fee` (persen 0–90% atau nominal flat; fee dihitung otomatis dari config — tidak bisa dipatok manual per deal), `/midman-deals` (list deal aktif), tampilan rekber di `/config-show`. Total **80 → 82 slash command**.
-- **Kategori panel `🤝 Rekber / Middleman`** otomatis ditambahkan (migration sekali-jalan, pola claim_giveaway): tombol di-intercept router → domain midman; dropdown di-redirect dari handler tiket. Tidak mau fitur rekber? `/remove-category midman` — flag `midmanCategoryDismissed` mencegah kategori "hidup lagi".
-- 31 unit test baru (`tests/unit/midman.test.js`): matriks state machine (happy path, gerbang ganda, dispute, terminal), matriks aktor, fee (persen/flat/cap/invalid), parser input modal, persistensi deals.json, migration kategori + flag dismissed, `findActiveTicketFor` (aktif/zombie-cleanup). Total **258 → 289 unit test**.
+- **Escrow state machine** (`src/data/midmanManager.js`): `WAITING_SELLER → WAITING_PAYMENT → WAITING_DELIVERY → WAITING_RELEASE → COMPLETED`, plus `DISPUTE` (frozen; only an admin resolves it: release/refund) and `CANCELLED`/`REFUNDED`. Every button click is double-validated — (1) the state order must allow the event (`canTransition`), (2) the clicker must hold the allowed actor role (`actorAllowed`). The bot structurally rejects classic fraud schemes: releasing before the goods are delivered, a buyer clicking "Funds Received" while impersonating the middleman, or any action during a dispute.
+- **Deal Board**: a bot embed (item, price, fee, the seller's take, status, per-state instructions) edited automatically on every transition — the terms lock once the seller agrees (changing them = cancel & recreate). If an admin deletes the board → self-healing (it is re-sent). Each state renders only the buttons for valid actions.
+- **3-party deal channel**: the `🤝 ESCROW` category, with overwrites for the buyer, the seller, the middleman role, and the admin role. A full per-click history (who, when, which event) is stored in `data/deals.json` + sent as a summary before close (and included in the transcript).
+- **Thor ecosystem integration**: an invoice to the testimonial channel + `recordPurchase` stats when a deal reaches COMPLETED (reusing `sendInvoice`), automatic transcripts (reusing `saveTranscript`), an audit log entry on every transition (`MIDMAN_*`), a per-channel anti-double-click lock, and meta cleanup only when the channel is truly gone (the v3.9.31 pattern).
+- **Anti-bypass**: a user with an active deal (as buyer/seller) can't open a regular ticket; a buyer with an active ticket can't create a deal; 1 active deal per person (as buyer or seller). The ticket-check loop in `createTicket` was extracted into `findActiveTicketFor()` (and reused).
+- **Commands**: `/set-role midman`, `/remove-role midman`, `/set-midman-fee` (a 0–90% percentage or a flat amount; the fee is computed automatically from the config — it can't be negotiated per deal), `/midman-deals` (list active deals), plus an escrow view in `/config-show`. Total **80 → 82 slash commands**.
+- **The `Midman / Escrow` panel category** is added automatically (a one-shot migration, the claim_giveaway pattern): its button is intercepted by the router → the midman domain; its dropdown is redirected from the ticket handler. Don't want the escrow feature? `/remove-category midman` — the `midmanCategoryDismissed` flag keeps the category from "coming back to life".
+- 31 new unit tests (`tests/unit/midman.test.js`): the state machine matrix (happy path, double gates, dispute, terminal), the actor matrix, fees (percentage/flat/cap/invalid), the modal input parser, deals.json persistence, the category migration + the dismissed flag, and `findActiveTicketFor` (active/zombie cleanup). Total **258 → 289 unit tests**.
 
 ### Fixed
 
-- 🟡 **`actorAllowed` key mismatch** (kelewat tanpa test): daftar aktor transisi memakai nama `buyer`/`seller`/... sementara pemanggil mengirim flags `isBuyer`/`isSeller`/... — mapping `ACTOR_KEY_MAP` menyatukan keduanya (tertangkap test aktor).
+- 🟡 **`actorAllowed` key mismatch** (slipped through untested): the transition actor lists use the names `buyer`/`seller`/... while callers passed flags `isBuyer`/`isSeller`/... — the `ACTOR_KEY_MAP` mapping unifies the two (caught by the actor tests).
 
 ## [3.9.31] — 2026-09-01
 
 ### Fixed
 
-- 🔴 **Orphan meta saat close tiket** — `removeTicketMeta` tetap dijalankan walau `channel.delete()` gagal karena alasan non-10003 (Missing Permissions / network). Channel masih hidup tapi meta hilang → close berikutnya jatuh ke fallback topic-parsing yang kehilangan flag `isCompleted`/`isInvoiceSent`/`isTransaction` → **invoice terkirim dobel** + skenario tombol close salah. Sekarang meta hanya dihapus kalau channel benar-benar sudah tidak ada; kalau delete gagal, admin cukup klik close lagi setelah permission dibereskan (self-healing).
-- 🟠 **TypeError di `ticket_close` / `ticket_set_key` saat channel null** — `interaction.channel.id` tanpa guard (inconsistent dengan modal yang sudah punya guard P1-8). Kalau channel terhapus tepat sebelum admin klik tombol (partial/uncached), error ditelan handler global sebagai error generik. Sekarang ada guard + pesan ephemeral yang jelas.
-- 🟠 **`/clear-schedule` heuristic role-removal terlalu broad** — kandidat role dikumpulkan dari SEMUA entry `scheduledRoles.json` (termasuk milik user lain) → role manual member yang kebetulan sama dengan role VIP terjadwal user lain ikut terlepas. Sekarang: snapshot roleId milik user target saja (schedule + key, diambil SEBELUM penghapusan).
-- 🟡 **Layering violation di `/clear-schedule`** — blok lama membaca `data/scheduledRoles.json` langsung via `fs.readFileSync` + path hardcode, melewati API `roleScheduler` (gagal diam-diam kalau path/schema berubah). Sekarang via API `findAllSchedulesByUser` + snapshot key via `findAllByUser`; komentar stream-of-consciousness 45 baris diringkas.
-- 🟡 **`getTopUsers` urutan spread menimpa fallback userId** — `{ userId: ..., ...stats }` bisa menghasilkan `userId: undefined` untuk entry dengan properti eksplisit undefined; urutan dibalik jadi `{ ...stats, userId: ..., value: ... }`.
+- 🔴 **Orphaned meta on ticket close** — `removeTicketMeta` still ran even when `channel.delete()` failed for a non-10003 reason (Missing Permissions / network). The channel was still alive but its meta was gone → the next close fell into the topic-parsing fallback, losing the `isCompleted`/`isInvoiceSent`/`isTransaction` flags → **the invoice was sent twice** + the wrong close-button scenario. Now the meta is only deleted once the channel is truly gone; if the delete fails, the admin just clicks close again after fixing permissions (self-healing).
+- 🟠 **TypeError in `ticket_close` / `ticket_set_key` when the channel is null** — `interaction.channel.id` without a guard (inconsistent with the modal, which already had the P1-8 guard). If the channel was deleted right before an admin clicked the button (partial/uncached), the global handler swallowed the error as a generic one. Now there's a guard + a clear ephemeral message.
+- 🟠 **The `/clear-schedule` role-removal heuristic was too broad** — role candidates were collected from ALL `scheduledRoles.json` entries (including other users') → a member's manually granted role that happened to match another user's scheduled VIP role got removed too. Now: a snapshot of only the target user's roleIds (schedule + key, taken BEFORE the deletion).
+- 🟡 **Layering violation in `/clear-schedule`** — the old block read `data/scheduledRoles.json` directly via `fs.readFileSync` + a hardcoded path, bypassing the `roleScheduler` API (failing silently if the path/schema changed). Now it goes through the `findAllSchedulesByUser` API + a key snapshot via `findAllByUser`; a 45-line stream-of-consciousness comment was condensed.
+- 🟡 **`getTopUsers` spread order overwrote the fallback userId** — `{ userId: ..., ...stats }` could produce `userId: undefined` for entries with an explicit undefined property; the order is now reversed to `{ ...stats, userId: ..., value: ... }`.
 
 ### Changed
 
-- 🟢 `getActiveKeysByUserAndRole` kini menerima optional `guildId` (param ke-4) — konsistensi pola dengan `findAllByUser`; key legacy tanpa guildId tetap dihitung (backward compat). Dipanggil dengan guild dari flow Set Key (command & modal).
-- 🟢 Dead code `createContext()` dihapus dari `src/commands/_shared.js` (tidak pernah dipanggil handler mana pun).
+- 🟢 `getActiveKeysByUserAndRole` now accepts an optional `guildId` (4th param) — pattern-consistent with `findAllByUser`; legacy keys without a guildId still count (backward compat). Called with the guild from the Set Key flow (command & modal).
+- 🟢 Dead code `createContext()` removed from `src/commands/_shared.js` (never called by any handler).
 
 ### Added
 
-- 10 unit test baru (`tests/unit/hardeningV31.test.js`): orphan-meta guard (delete gagal non-10003 / 10003 / sukses / self-healing), guard channel null via router interaksi, kontrak snapshot schedule (roleId milik user target saja), filter guildId + backward compat legacy, fallback userId leaderboard, eksport `_shared` tetap utuh. Total **258 unit test**.
+- 10 new unit tests (`tests/unit/hardeningV31.test.js`): the orphan-meta guard (delete failing non-10003 / 10003 / success / self-healing), the null-channel guard via the interaction router, the schedule snapshot contract (only the target user's roleIds), the guildId filter + legacy backward compat, the leaderboard userId fallback, and `_shared` exports intact. Total **258 unit tests**.
 
 ## [3.9.30] — 2026-09-01
 
 ### Changed
 
-- 🟢 **`/set-transcript-channel` digabung ke `/set-channel tipe:transcript`** — permintaan admin: dua command channel yang mirip bikin bingung. Kini **satu command `/set-channel`** mengatur semua channel: `invoice`, `welcome`, `goodbye`, `audit-log`, `transcript`. Command terpisah dihapus dari registry (total **81 → 80 slash command**); `ready.js` me-register ulang otomatis saat restart, jadi command lama hilang dari Discord tanpa langkah manual. Data tidak berubah (tetap `config.channels.transcript`).
-- `/remove-channel` kini juga punya choice `transcript` — pola set/hapus konsisten untuk semua tipe channel.
-- `/config-show` menampilkan Audit Log + Transcript Tiket di field Channels (sebelumnya hanya welcome/goodbye/invoice).
-- `/set-channel` kini menolak channel non-text (voice/category) untuk **semua** tipe — guard yang dulu hanya ada di handler transcript.
+- 🟢 **`/set-transcript-channel` merged into `/set-channel tipe:transcript`** — an admin request: two similar channel commands were confusing. Now **one command, `/set-channel`**, manages every channel: `invoice`, `welcome`, `goodbye`, `audit-log`, `transcript`. The separate command was removed from the registry (total **81 → 80 slash commands**); `ready.js` re-registers automatically on restart, so the old command disappears from Discord with no manual steps. The data is unchanged (still `config.channels.transcript`).
+- `/remove-channel` now also has a `transcript` choice — a consistent set/remove pattern for every channel type.
+- `/config-show` displays Audit Log + Ticket Transcript in the Channels field (previously only welcome/goodbye/invoice).
+- `/set-channel` now rejects non-text channels (voice/category) for **all** types — a guard that previously existed only in the transcript handler.
 
 ### Added
 
-- 10 unit test baru (`tests/unit/setChannelMerge.test.js`): registry (command lama hilang, total tepat 80, choice baru), router (command lama → "belum didukung"), handler (set transcript + tip khusus, tolak voice channel, regression tipe lain, remove transcript, roundtrip key yang dibaca `saveTranscript`).
+- 10 new unit tests (`tests/unit/setChannelMerge.test.js`): registry (the old command gone, the exact total of 80, the new choice), router (the old command → "not supported"), handler (set transcript + the dedicated tip, voice-channel rejection, regressions on the other types, remove transcript, and the round-trip key read by `saveTranscript`).
 
 ## [3.9.29] — 2026-09-01
 
 ### Fixed
 
-- 🔴 **`/update-panel` — URL gambar/thumbnail ditolak input**: batas panjang input modal `image`/`thumbnail` hanya 500 karakter, sementara URL CDN Discord yang signed umumnya 300–450 karakter — Discord menolak input sebelum sempat disubmit. Batas dinaikkan menjadi **2048 karakter** (limit URL embed Discord), ditambah guard 2048 dengan pesan error jelas di `/update-panel` (modal) dan `/setup-ticket-panel` (slash command).
-- 🟠 **Audit log `/update-panel` menampilkan `undefined`** untuk field image/thumbnail/footer — pembacaan memakai `patch[field]` padahal data tersimpan di key `imageUrl`/`thumbnailUrl`/`footerText`.
-- Catatan: bug key-mapping image/thumbnail (perubahan tersimpan tapi tidak pernah muncul di panel) sudah diperbaiki sejak v3.9.26 — pastikan bot berjalan dengan kode terbaru (restart bot).
+- 🔴 **`/update-panel` — image/thumbnail URLs rejected on input**: the modal input length cap for `image`/`thumbnail` was only 500 characters, while signed Discord CDN URLs typically run 300–450 — Discord rejected the input before it could even be submitted. The cap was raised to **2048 characters** (Discord's embed URL limit), plus a 2048 guard with a clear error message in `/update-panel` (modal) and `/setup-ticket-panel` (slash command).
+- 🟠 **The `/update-panel` audit log displayed `undefined`** for the image/thumbnail/footer fields — it read `patch[field]` while the data is stored under the keys `imageUrl`/`thumbnailUrl`/`footerText`.
+- Note: the image/thumbnail key-mapping bug (changes saved but never shown on the panel) has been fixed since v3.9.26 — make sure the bot is running the latest code (restart the bot).
 
 ### Added
 
-- ✅ **Safety-net kategori kosong** — `/setup-ticket-panel` & `/refresh-panel` kini memberi peringatan jika ada kategori di panel yang belum punya produk ("klik tombol kategori kosong membuka tiket BANTUAN, bukan transaksi — tambahkan produk via `/add-product`"). Kategori `help`/`report` tidak diperingatkan (memang quick-action).
-- 14 unit test baru (`tests/unit/panelEdit.test.js`): flow modal end-to-end (URL CDN tersimpan & dirender, guard 2048, clear, URL invalid, cross-guild guard), safety-net 5 skenario, regression guard panjang input.
+- ✅ **Empty-category safety net** — `/setup-ticket-panel` & `/refresh-panel` now warn when a panel category has no products yet ("clicking an empty category button opens a SUPPORT ticket, not a transaction — add products via `/add-product`"). The `help`/`report` categories are not warned about (they are quick actions by design).
+- 14 new unit tests (`tests/unit/panelEdit.test.js`): the end-to-end modal flow (CDN URL saved & rendered, the 2048 guard, clearing, an invalid URL, the cross-guild guard), the safety net across 5 scenarios, and input-length guard regressions.
 
 ## [3.9.28] — 2026-09-01
 
 ### Added
 
-- ✅ **`classifyProduct()`** — pure function hasil ekstraksi dari `createTicket`. Rule klasifikasi: hanya kategori `help`/`report`/produk ber-flag `isHelp` yang masuk **BANTUAN**; **semua id kategori lain apa pun (`akun_ml`, `lisensi_key`, `jasa`, `topup`, custom...) otomatis TRANSAKSI**. Menambah kategori baru tidak memerlukan perubahan kode sama sekali.
-- 14 unit test baru (`tests/unit/newCategorySafety.test.js`): skenario akun_ml non-key (📦 Kirim Pesanan), lisensi_key (🔑 Set Key), roundtrip meta → resolveTicketType → matriks tombol, pewarisan `requires_key` kategori→produk di `/add-product`, deskripsi dropdown.
+- ✅ **`classifyProduct()`** — a pure function extracted from `createTicket`. Classification rule: only the `help`/`report` categories and products flagged `isHelp` count as **SUPPORT**; **every other category id, whatever it is (`akun_ml`, `lisensi_key`, `jasa`, `topup`, custom...), is automatically a TRANSACTION**. Adding a new category requires zero code changes.
+- 14 new unit tests (`tests/unit/newCategorySafety.test.js`): a non-key `akun_ml` scenario (📦 Deliver Order), `lisensi_key` (🔑 Set Key), the meta → resolveTicketType → button-matrix round trip, `requires_key` inheritance from category→product in `/add-product`, and dropdown descriptions.
 
 ### Fixed
 
-- 🟠 **Deskripsi dropdown panel untuk kategori campur** — sebelumnya memakai flag `requiresKey` kategori (menyesatkan jika kategori berisi campuran produk key & non-key). Sekarang dihitung dari produk aktual: semua key → "pakai key", semua non-key → "tanpa key", campur → "N tanpa key / M pakai key".
+- 🟠 **Panel dropdown descriptions for mixed categories** — previously they used the category's `requiresKey` flag (misleading when a category mixes key & non-key products). Now computed from the actual products: all keyed → "with keys", all non-key → "without keys", mixed → "N without keys / M with keys".
 
 ### Documented
 
-- Gotcha: produk transaksi **tanpa** flag `requires_key` dianggap pakai key (tombol Set Key). Untuk produk akun/jasa: set `requires_key:false` di **kategori** — produk baru mewarisi otomatis.
+- Gotcha: a transaction product **without** the `requires_key` flag is treated as keyed (the Set Key button). For account/service products: set `requires_key:false` on the **category** — new products inherit it automatically.
 
 ## [3.9.27] — 2026-09-01
 
 ### Fixed
 
-- 🔴 **Produk non-key (jual akun/jasa) dianggap tiket BANTUAN** — sistem lama mengacaukan `requiresKey` (produk pakai key?) dengan `isTransaction` (tiket jual-beli?). Diperbaiki dengan flag `isTransaction` eksplisit via `resolveTicketType()` (satu sumber kebenaran, 5 skenario tombol close).
-- 🔴 **Tombol close produk non-key memakai gaya help** — "✅ Pesanan Sukses / ❌ Tidak Jadi Beli" tidak pernah muncul.
-- 🔴 **Invoice/testimoni tidak pernah dikirim untuk produk non-key** — `requiresKey=false` salah dianggap "help/report" di `closeTicket`.
-- 🔴 **Stats/leaderboard tidak mencatat penjualan non-key** — `recordPurchase` hanya jalan di flow Set Key.
-- 🔴 **Auto-role produk non-key tidak pernah diberikan** padahal `/set-product-role` menjanjikannya (sekarang lewat Kirim Pesanan ATAU Pesanan Sukses).
-- 🔴 **Routing `modal_deliver_order:` hilang** — prefix modal tanpa fallback generik di router → submit modal menjadi dead interaction.
-- 🟠 **Invoice dobel untuk transaksi key** — dikirim saat Set Key DAN saat close "Selesai". Diperbaiki dengan flag `isInvoiceSent` di meta tiket.
-- 🟠 **Modal title > 45 karakter membuat `showModal` throw** — "Set Key — <label produk>" bisa 89 karakter → tombol Set Key mati diam-diam. Fixed (slice 45).
-- 🟠 **Deskripsi dropdown panel menyesatkan** — kategori non-key berproduk dilabeli "Bantuan / non-transaksi". Sekarang berbasis konten aktual.
+- 🔴 **Non-key products (account/service sales) were treated as SUPPORT tickets** — the old system confused `requiresKey` (is the product key-based?) with `isTransaction` (is this a buy/sell ticket?). Fixed with an explicit `isTransaction` flag via `resolveTicketType()` (one source of truth, 5 close-button scenarios).
+- 🔴 **Non-key products used the help-style close buttons** — "✅ Order Successful / ❌ Purchase Cancelled" never appeared.
+- 🔴 **Invoices/testimonials were never sent for non-key products** — `requiresKey=false` was wrongly treated as "help/report" in `closeTicket`.
+- 🔴 **Stats/leaderboards didn't record non-key sales** — `recordPurchase` only ran in the Set Key flow.
+- 🔴 **Non-key product auto-roles were never granted** even though `/set-product-role` promised them (now granted via Deliver Order OR Order Successful).
+- 🔴 **`modal_deliver_order:` routing was missing** — a modal prefix with no generic fallback in the router → the modal submit became a dead interaction.
+- 🟠 **Double invoice for key transactions** — sent at Set Key AND again at the "Done" close. Fixed with an `isInvoiceSent` flag on the ticket meta.
+- 🟠 **Modal titles > 45 characters made `showModal` throw** — "Set Key — <product label>" could reach 89 characters → the Set Key button died silently. Fixed (sliced to 45).
+- 🟠 **Misleading panel dropdown descriptions** — product-bearing non-key categories were labeled "Support / non-transaction". Now based on the actual content.
 
 ### Added
 
-- ✅ **Tombol 📦 Kirim Pesanan** untuk produk non-key (mirror Set Key): admin isi detail pesanan (multi-baris) di modal → bot **DM detail ke pembeli** (chat tiket terhapus saat close — DM menjadi satu-satunya salinan permanen) + auto-role + auto-expire + invoice + stats + audit log `ORDER_DELIVERED`.
-- Emoji dropdown produk kini membedakan 🔑 (pakai key) vs 📦 (tanpa key).
-- `resolveTicketType()` backward-compatible: tiket lama (tanpa flag) tetap memakai klasifikasi lama — tanpa regresi; tiket baru selalu benar.
+- ✅ **The 📦 Deliver Order button** for non-key products (mirrors Set Key): the admin fills in the order details (multi-line) in a modal → the bot **DMs the details to the buyer** (the ticket chat is deleted at close — the DM becomes the only permanent copy) + auto-role + auto-expire + invoice + stats + an `ORDER_DELIVERED` audit log entry.
+- The product dropdown emoji now distinguishes 🔑 (keyed) vs 📦 (non-key).
+- `resolveTicketType()` is backward-compatible: old tickets (without flags) keep the old classification — no regressions; new tickets are always correct.
 
 ## [3.9.26] — 2026-08-31
 
-Audit ulang seluruh codebase dengan konteks **bot dipakai untuk 1 guild saja** — 6 temuan baru diperbaiki + hardening + garbage collector.
+A re-audit of the entire codebase with the context that **the bot serves a single guild** — 6 new findings fixed + hardening + a garbage collector.
 
 ### Fixed
 
-- 🔴 **`/update-panel` image/thumbnail/footer tidak pernah berfungsi** — patch tersimpan di key yang salah (`image`) padahal builder membaca `imageUrl` → 3 dari 6 field yang diiklankan adalah no-op diam-diam. Fixed (key mapping) + pre-fill modal.
-- 🔴 **`/giveaway list` & `/poll list` mati permanen di ~30 entry** — description embed > 4096 → throw. Sekarang: 15 terbaru + ringkasan + GC harian (entry > 30 hari dipangkas otomatis).
-- 🔴 **Poll dengan question panjang = zombie + admin stuck "Bot is thinking..."** — entry persist sebelum render throw. Fixed: validasi di command (maks 250) + render-first + safeEditReply.
-- 🔴 **`claim_giveaway` tidak bisa dihapus permanen** — migration di `getConfig()` (jalan per pesan) menambahkan kategori kembali setelah `/remove-category`. Fixed dengan flag `claimGiveawayDismissed`.
-- 🟠 **Label/price produk panjang mematikan flow tiket** — dropdown throw `addOptions` (limit 100). Fixed: cap di registry + handler + slice defensif di 3 dropdown.
-- 🟠 **Emoji bebas tersimpan bisa meracuni panel** — string bukan-emoji membuat `/setup-verify` & semua panel tiket mati. Fixed: validasi emoji di set-verify-button, add-category, update-category.
+- 🔴 **`/update-panel` image/thumbnail/footer never worked** — patches were saved under the wrong key (`image`) while the builder reads `imageUrl` → 3 of the 6 advertised fields were silent no-ops. Fixed (key mapping) + the modal is now pre-filled.
+- 🔴 **`/giveaway list` & `/poll list` permanently dead at ~30 entries** — an embed description > 4096 → throw. Now: the 15 most recent + a summary + daily GC (entries older than 30 days pruned automatically).
+- 🔴 **A poll with a long question = zombie + the admin stuck on "Bot is thinking..."** — the entry persisted before the render threw. Fixed: validation in the command (max 250) + render-first + safeEditReply.
+- 🔴 **`claim_giveaway` couldn't be removed permanently** — the migration in `getConfig()` (which runs per message) re-added the category after `/remove-category`. Fixed with the `claimGiveawayDismissed` flag.
+- 🟠 **Long product labels/prices killed the ticket flow** — the dropdown threw on `addOptions` (the 100-option limit). Fixed: caps in the registry + handler + defensive slicing in 3 dropdowns.
+- 🟠 **Free-form stored emojis could poison panels** — non-emoji strings broke `/setup-verify` & every ticket panel. Fixed: emoji validation in set-verify-button, add-category, and update-category.
 
-### Changed (Hardening & Performa)
+### Changed (Hardening & Performance)
 
-- 🟢 **Karantina file korup** — 16 file data di-rename `.corrupt-<ts>` sebelum fallback default (sebelumnya: isi korup tertimpa diam-diam oleh save berikutnya).
-- 🟢 **Hot-path cache** — automod/afk/responders/levels kini read-through cache (sebelumnya 5–7 `readFileSync` sinkron per pesan). AFK mention di-batch.
-- 🟢 **Guard `GUILD_ID` di semua event** — pesan/command/member/voice dari guild lain diabaikan.
-- 🟢 **Migrasi v1→v2 config tidak lagi drop field modern** (ticketCategories/leveling/verifyButton preserve).
-- 🟡 messageCreate per-hook try/catch; `getSubcommand(false)` + hint; prize/question/key max_length; reroll guild-check; backup cancel tombol di-handle; logAudit tahan detail panjang; DM set-key & transcript tahan data panjang; Set Key lookup produk pakai `value` (tahan rename); admin re-check di modal update-panel; leveling clamp nilai.
+- 🟢 **Corrupt file quarantine** — 16 data files are renamed `.corrupt-<ts>` before falling back to defaults (previously: corrupt contents were silently overwritten by the next save).
+- 🟢 **Hot-path caching** — automod/afk/responders/levels now use a read-through cache (previously 5–7 synchronous `readFileSync` calls per message). AFK mentions are batched.
+- 🟢 **A `GUILD_ID` guard on every event** — messages/commands/members/voice from other guilds are ignored.
+- 🟢 **The v1→v2 config migration no longer drops modern fields** (ticketCategories/leveling/verifyButton preserved).
+- 🟡 messageCreate per-hook try/catch; `getSubcommand(false)` + hints; prize/question/key max_length; a reroll guild-check; the backup cancel button handled; logAudit tolerates long details; set-key DMs & transcripts tolerate long data; the Set Key product lookup uses `value` (rename-proof); an admin re-check in the update-panel modal; leveling value clamping.
 
 ### Docs
 
-- `docs/ADMIN_GUIDE.md` + `docs/README.md` disinkronkan — struktur folder `src/` yang sebenarnya (sebelumnya masih struktur lama pre-refactor + 47 command).
+- `docs/ADMIN_GUIDE.md` + `docs/README.md` synced — to the real `src/` folder structure (previously still the old pre-refactor structure + 47 commands).
 
 ## [3.9.25] — 2026-08-31
 
 ### Added
 
-- Support `\n` (baris baru) ditambahkan ke field yang terlewat di v3.9.24: `/set-message` (tipe Body), `/afk reason`, `/warn reason`, `/setup-selfrole` & `/selfrole-add` description. Hint `(support \n)` tampil di deskripsi opsi command.
-- Catatan: tipe **Title** sengaja tidak dikonversi — embed title Discord menolak newline. Input **modal** tidak memerlukan `\n` (Enter menghasilkan baris baru asli).
+- `\n` (newline) support added to the fields missed in v3.9.24: `/set-message` (Body type), `/afk reason`, `/warn reason`, and the `/setup-selfrole` & `/selfrole-add` descriptions. A `(supports \n)` hint appears in the command option descriptions.
+- Note: the **Title** type deliberately isn't converted — Discord embed titles reject newlines. **Modal** inputs don't need `\n` (Enter produces a real newline).
 
 ## [3.9.24] — 2026-08-31
 
 ### Added
 
-- **Fitur `\n` (baris baru) untuk semua input teks multi-baris** — input slash command di Discord tidak bisa tekan Enter (Enter = kirim form): `/send-message`, `/announce`, `/announce-schedule`, `/setup-ticket-panel body`, `/add-responder reply`.
+- **`\n` (newline) feature for all multi-line text input** — slash command inputs in Discord can't press Enter (Enter = submit the form): `/send-message`, `/announce`, `/announce-schedule`, `/setup-ticket-panel body`, `/add-responder reply`.
 
 ### Fixed
 
-- 🔴 **`/update-category` & `/update-product` tidak pernah berfungsi** — terdaftar di registry + diiklankan di /help, tapi tidak di-map di router. Fixed + guard test.
-- 🔴 **Backup bolong** — `automod.json`, `levels.json`, `responders.json`, `afk.json`, `panels.json` tidak pernah di-backup. Fixed + guard test.
-- 🔴 **Crash exit code 0** — PM2/systemd/Docker tidak restart bot setelah crash. Sekarang `exit(1)` + shutdown guard anti double-flush.
-- 🔴 **Test menulis/hapus data produksi** — `npm test` di server live menghapus `panels.json` & meng-evict backup asli. Test sekarang sandbox (snapshot/restore).
-- 🟠 ready.js: satu try/catch raksasa → per-langkah; userLock bisa dihapus holder basi → owner-token; tombol close ticket & modal set key tanpa re-check admin → fixed (defense-in-depth); AFK reason bisa mass-ping → `parse: []`; member kehilangan required role tidak bisa keluar giveaway → cek role hanya saat join; `/giveaway end` tidak ber-lock → withUserLock; phantom devDeps; engines node; filter webhook di messageCreate; defer modal poll.
+- 🔴 **`/update-category` & `/update-product` never worked** — registered in the registry + advertised in /help, but not mapped in the router. Fixed + a guard test.
+- 🔴 **Backup holes** — `automod.json`, `levels.json`, `responders.json`, `afk.json`, `panels.json` were never backed up. Fixed + a guard test.
+- 🔴 **Crashes exited with code 0** — PM2/systemd/Docker wouldn't restart the bot after a crash. Now `exit(1)` + a shutdown guard against double-flushing.
+- 🔴 **Tests wrote to/deleted production data** — `npm test` on a live server deleted `panels.json` & evicted real backups. Tests now run sandboxed (snapshot/restore).
+- 🟠 ready.js: one giant try/catch → per-step; userLock could delete a stale holder → owner-token; the ticket close button & the set key modal lacked an admin re-check → fixed (defense-in-depth); AFK reasons could mass-ping → `parse: []`; a member losing the required role couldn't leave a giveaway → the role is checked only at join; `/giveaway end` had no lock → withUserLock; phantom devDeps; engines node; a webhook filter in messageCreate; poll modal defer.
 
 ## [3.9.23] — 2026-08-31
 
 ### Added — Auto-mod WORD FLEX
 
-- **Word filter fleksibel**: `wordRules` per kata `{word, action, addedBy, addedAt}` + `exemptWords` + `wordMatchMode` (`whole_word` default).
-- Matching **whole-word** dengan regex escape — "asu" tidak match "asus" (anti false-positive).
-- **Action per kata** — kata ringan cukup delete, kata berat langsung mute/kick.
-- 4 command baru: `/add-word` (append, tanpa replace), `/remove-word`, `/list-words`, `/remove-link-whitelist` — total 81 slash command.
-- Migrasi otomatis `blockWords` legacy → `wordRules` (idempotent, lazy persist).
+- **Flexible word filter**: per-word `wordRules` `{word, action, addedBy, addedAt}` + `exemptWords` + `wordMatchMode` (`whole_word` by default).
+- **Whole-word** matching with regex escaping — "asu" doesn't match "asus" (anti false-positive).
+- **Per-word actions** — mild words can just be deleted; severe words go straight to mute/kick.
+- 4 new commands: `/add-word` (appends, doesn't replace), `/remove-word`, `/list-words`, `/remove-link-whitelist` — 81 slash commands total.
+- Automatic migration of legacy `blockWords` → `wordRules` (idempotent, lazy persist).
 
 ## [3.9.22] — 2026-08-16
 
 ### Changed
 
-- **DM set-key memakai emoji** (📦🌐🔑🎭⏰📋💡) dan **nama role** (bukan mention — mention role tidak ke-resolve di DM).
-- Notif di channel tiket lebih singkat & ditujukan ke user ("key sudah dikirim via DM"), dengan fallback manual jika DM gagal.
-- DM `/set-key` konsisten dengan ticket Set Key, dibingkai sebagai hadiah ("kamu mendapat hadiah") — konteks gift untuk member.
+- **Set-key DMs use emojis** (📦🌐🔑🎭⏰📋💡) and the **role name** (not a mention — role mentions don't resolve in DMs).
+- The ticket-channel notification is shorter & addressed to the user ("your key has been sent via DM"), with a manual fallback if the DM fails.
+- The `/set-key` DM is consistent with ticket Set Key, framed as a gift ("you got a gift") — a gift context for the member.
 
 ## [3.9.21] — 2026-08-16
 
 ### Changed
 
-- DM ke member memakai inline code (`` `key` ``) bukan codeblock — long-press di Discord mobile langsung memunculkan menu Copy. Bahasa lebih natural.
-- Di channel tiket, bot hanya mengirim pesan singkat untuk user (bukan panel baru untuk admin).
+- DMs to members use inline code (`` `key` ``) instead of a code block — a long-press on Discord mobile instantly brings up the Copy menu. More natural wording.
+- In the ticket channel, the bot only sends a short message for the user (not a new panel for admins).
 
 ## [3.9.20] — 2026-08-16
 
 ### Changed
 
-- **Set Key sukses → channel tiket tetap terbuka** (sebelumnya otomatis dihapus → transcript tidak tersimpan, member tidak sempat bertanya). Bot mengirim pesan singkat "key sudah dikirim ke DM".
-- Admin & member bisa Q&A dulu; saat Tutup Tiket dengan `meta.isCompleted=true`, hanya muncul tombol "✅ Selesai" (tanpa "Tidak Jadi Beli").
-- Transcript otomatis tersimpan ke channel transcript saat close + invoice dikirim jika belum.
+- **Set Key success → the ticket channel stays open** (previously auto-deleted → the transcript wasn't saved and the member had no time to ask questions). The bot sends a short "your key has been sent to your DMs" message.
+- Admin & member can Q&A first; on Close Ticket with `meta.isCompleted=true`, only the "✅ Done" button appears (without "Purchase Cancelled").
+- The transcript is automatically saved to the transcript channel at close + the invoice is sent if it hasn't been already.
 
 ## [3.9.19] — 2026-08-16
 
 ### Added — MAX FLEXIBILITY
 
-- **Routing tiket berbasis "kategori punya produk atau tidak"** — kategori berproduk → tiket TRANSAKSI + dropdown produk; kategori kosong → tiket BANTUAN langsung (quick action).
-- `/update-category` & `/update-product` — edit tanpa hapus+tambah ulang (semua field opsional, hanya yang diisi yang berubah).
+- **Ticket routing based on "does the category have products"** — a category with products → a TRANSACTION ticket + a product dropdown; an empty category → a straight SUPPORT ticket (quick action).
+- `/update-category` & `/update-product` — edit without delete + re-add (all fields optional; only the filled ones change).
 
 ## [3.9.18] — 2026-08-16
 
 ### Changed
 
-- Label tombol default tiket diubah ke **Help** & **Report** (sebelumnya "Bantuan Staff" & "Laporkan Member") + kategori contoh **Claim Giveaway** ditambahkan (bisa dihapus permanen sejak v3.9.26).
-- Fix bug generalisasi `requiresKey` di kategori.
-- Migrasi otomatis label lama saat bot start (hanya jika belum di-customize admin).
+- The default ticket button labels changed to **Help** & **Report** (previously "Staff Help" & "Report a Member") + the example category **Claim Giveaway** was added (permanently removable since v3.9.26).
+- Fixed a `requiresKey` over-generalization bug in categories.
+- Automatic migration of old labels at bot startup (only if the admin hasn't customized them).
 
 ## [3.9.17] — 2026-08-06
 
 ### Fixed
 
-- Fix 38+ temuan audit (CRITICAL + HIGH + MEDIUM + LOW).
-- Hotfix: `DiscordAPIError 50035` — option description command > 100 karakter.
-- Hotfix: `/help` embed melebihi limit 6000 karakter.
+- Fixed 38+ audit findings (CRITICAL + HIGH + MEDIUM + LOW).
+- Hotfix: `DiscordAPIError 50035` — command option descriptions > 100 characters.
+- Hotfix: the `/help` embed exceeded the 6000-character limit.
 
 ## [3.9.15] — 2026-08-02
 
 ### Fixed
 
-- Ronde 2 audit — 16 bug lintas commands/interactions/data/events/services/ui.
-- 🔴 CRITICAL: auto-responder tidak berfungsi karena **Message Content Intent** tidak diaktifkan — ditambahkan hint di console + dokumentasi.
+- Audit round 2 — 16 bugs across commands/interactions/data/events/services/ui.
+- 🔴 CRITICAL: the auto-responder didn't work because the **Message Content Intent** wasn't enabled — added a console hint + documentation.
 
 ## [3.9.14] — 2026-08-06
 
 ### Added
 
-- **Multi-panel tiket persisten** — panel berbeda dengan subset kategori berbeda di channel berbeda, tersimpan di `data/panels.json` (ikut backup). Fix 10 runtime bugs.
+- **Persistent multi-panel tickets** — different panels with different category subsets in different channels, saved to `data/panels.json` (included in backups). Fixed 10 runtime bugs.
 
 ## [3.9.13] — 2026-08-01
 
 ### Added
 
-- 4 fitur komunitas baru: **Auto-Responder**, **Anti-Spam & Auto-Mod**, **AFK System**, **Leveling System** (XP, role reward, leaderboard) + rebrand ke generic Community Bot.
+- 4 new community features: **Auto-Responder**, **Anti-Spam & Auto-Mod**, **AFK System**, **Leveling System** (XP, role rewards, leaderboard) + a rebrand to a generic Community Bot.
 
 ## [3.9.12] — 2026-08-01
 
 ### Added
 
-- Ticket body fleksibel via modal editor + template variables (`{server}`, `{price_list}`) + update `/help`.
+- A flexible ticket body via a modal editor + template variables (`{server}`, `{price_list}`) + an updated `/help`.
 
 ## [3.9.11] — 2026-08-01
 
 ### Added
 
-- Flexible ticket panel: kategori custom, multi-panel, transcript, conditional roles (Phase 1+2+3).
+- Flexible ticket panel: custom categories, multi-panel, transcripts, conditional roles (Phases 1+2+3).
 
 ## [3.9.10] — 2026-08-01
 
 ### Changed
 
-- Refactor penuh per-domain (commands/interactions/data/services/ui/infra), tanpa kode legacy + CI/CD (GitHub Actions) — 71 test saat itu.
+- A full per-domain refactor (commands/interactions/data/services/ui/infra), no legacy code + CI/CD (GitHub Actions) — 71 tests at the time.
 
 ## [3.9.9] — 2026-08-01
 
 ### Changed
 
-- Refactor ke struktur folder profesional + penambahan test.
+- Refactor to a professional folder structure + more tests.
 
 ## [3.9.8] — 2026-08-01
 
 ### Fixed
 
-- 30+ bug lintas CRITICAL/HIGH/MEDIUM (ronde 1 + ronde 2: constants sync, audit retry logic, genId entropy).
+- 30+ bugs across CRITICAL/HIGH/MEDIUM (rounds 1 + 2: constants sync, audit retry logic, genId entropy).
 
 ## [3.9.7] — 2026-08-01
 
 ### Fixed
 
-- 🔴 Crash tombol **Send** di embed builder (`ExpectedConstraintError` label > 45 karakter).
-- 🟠 `InteractionNotReplied` saat modal submit handler fallback.
+- 🔴 Crash on the embed builder's **Send** button (`ExpectedConstraintError`, label > 45 characters).
+- 🟠 `InteractionNotReplied` in the modal-submit handler fallback.
 
 ## [3.9.6] — 2026-08-01
 
 ### Added
 
-- Opsi **💬 Message (plain text)** di embed builder — teks pengantar di luar embed (`@everyone`, mention, `\n`, maks 2000 char) + pre-fill modal Send.
+- A **💬 Message (plain text)** option in the embed builder — intro text outside the embed (`@everyone`, mentions, `\n`, max 2000 chars) + a pre-filled Send modal.
 
 ## [3.9.5] — 2026-08-01
 
 ### Added
 
-- Command `/send-message` — kirim plain text ke channel (support `\n` & mention valid).
-- `/embed-list` menampilkan summary message.
+- The `/send-message` command — send plain text to a channel (supports `\n` & valid mentions).
+- `/embed-list` displays the summary message.
 
 ## [3.9.4] — 2026-07-31
 
 ### Fixed
 
-- 🔴 CRITICAL: `stats.json` cross-guild data leak — sekarang composite key `${guildId}:${userId}`.
-- 🔴 CRITICAL: `safeEditReply` helper dengan `followUp` fallback untuk 10008/10062/40060.
-- 🟠 ticket close + set key memakai `getTicketMeta` (anti spoof via channel topic); temp voice orphan cleanup; warn auto-action hanya mark jika API sukses; auto-transfer voice ownership filter bot; `restoreBackup` invalidate permissions cache; `/config-show` guild-scoped.
+- 🔴 CRITICAL: `stats.json` cross-guild data leak — now a composite key `${guildId}:${userId}`.
+- 🔴 CRITICAL: the `safeEditReply` helper with a `followUp` fallback for 10008/10062/40060.
+- 🟠 ticket close + set key now use `getTicketMeta` (anti-spoof via the channel topic); temp voice orphan cleanup; warn auto-actions only mark on API success; the auto voice-ownership transfer filters bots; `restoreBackup` invalidates the permissions cache; `/config-show` is guild-scoped.
 
 ## [3.9.3] — 2026-07-31
 
 ### Fixed
 
-- 🔴 CRITICAL: `removeAllKeysByUser` cross-guild wipe — sekarang scoped per guild.
-- Validasi title (256) & description (4096) di `/announce` & `/announce-schedule`.
+- 🔴 CRITICAL: `removeAllKeysByUser` cross-guild wipe — now scoped per guild.
+- Title (256) & description (4096) validation in `/announce` & `/announce-schedule`.
 
 ## [3.9.2] — 2026-07-31
 
 ### Fixed
 
-- Per-user lock untuk giveaway join/leave & poll vote (anti double-click TOCTOU).
-- TTL cache 30s untuk admin role check; retry 1x audit log; validasi panjang embed builder; `.env.example` dengan catatan keamanan.
+- Per-user locks for giveaway join/leave & poll votes (anti-double-click TOCTOU).
+- A 30s TTL cache for the admin role check; a 1× audit log retry; embed builder length validation; a `.env.example` with security notes.
 
 ## [3.9.1] — 2026-07-31
 
 ### Fixed — Security & Race Condition Hardening
 
-- 🔴 **Mask key di audit log** (sebelumnya bocor 8 karakter pertama key).
-- 2-step confirmation `/restore-backup`; poll modal customId pakai session store (anti 100-char limit); metadata tiket pindah ke `tickets.json` (sebelumnya di channel topic — bisa di-spoof); validasi mention ketat; hapus hardcoded `@everyone` ping di giveaway; `Math.max(...spread)` diganti loop (anti RangeError); restore lock + path traversal guard; `statsManager.reload()` setelah restore; range validation `parseTime` (maks 365 hari relatif / 5 tahun absolut).
+- 🔴 **Keys masked in the audit log** (previously the first 8 characters leaked).
+- 2-step confirmation for `/restore-backup`; poll modal customIds use a session store (beats the 100-char limit); ticket metadata moved to `tickets.json` (previously in the channel topic — spoofable); strict mention validation; removed the hardcoded `@everyone` ping in giveaways; `Math.max(...spread)` replaced with a loop (anti-RangeError); a restore lock + path traversal guard; `statsManager.reload()` after a restore; `parseTime` range validation (max 365 relative days / 5 absolute years).
 
 ## [3.9.0] — 2026-07-31
 
 ### Fixed — Critical Bug Fixes & Data Integrity
 
-- 🔴 **Atomic write** (`safeWriteJSON`, tmp+rename) untuk semua JSON store — anti corrupt saat crash/power loss.
-- `/clear-schedule` scoped per guild; 2-step confirmation `/reset-config`; exclusive mode self-role select; prototype pollution guard di `configManager.setField`; `warnManager` keyed `(guildId, userId)` + auto-migration; `processExpiredRole` tidak hapus schedule saat transient error; ghost loop fix recurring announcements; skip bots + single audit log fetch di memberHandler.
+- 🔴 **Atomic writes** (`safeWriteJSON`, tmp+rename) for every JSON store — corruption-proof against crashes and power loss.
+- `/clear-schedule` is guild-scoped; 2-step confirmation for `/reset-config`; exclusive mode for the self-role select; a prototype pollution guard in `configManager.setField`; `warnManager` keyed by `(guildId, userId)` + auto-migration; `processExpiredRole` doesn't delete schedules on transient errors; a ghost-loop fix for recurring announcements; skip bots + a single audit log fetch in memberHandler.

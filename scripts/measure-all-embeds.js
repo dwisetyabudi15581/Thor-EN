@@ -1,9 +1,9 @@
 /**
- * Measure embed size untuk SEMUA command handler yang reply embed.
- * Cari yang potensi exceed 6000 char.
+ * Measure embed size for EVERY command handler that replies with an embed.
+ * Find the ones that potentially exceed 6000 chars.
  *
- * Strategy: panggil setiap command handler dengan mock interaction,
- * capture embed yang direply, hitung total char.
+ * Strategy: call each command handler with a mock interaction,
+ * capture the embed it replies with, count the total chars.
  */
 const path = require('path');
 
@@ -115,7 +115,7 @@ async function test() {
             const interaction = makeMockInteraction(cmd);
             await handler(interaction);
         } catch (err) {
-            // ignore — kita cuma peduli embed yang berhasil direply
+            // ignore — we only care about the embeds that get replied successfully
         }
     }
 

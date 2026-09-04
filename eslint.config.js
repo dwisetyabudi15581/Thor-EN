@@ -1,4 +1,4 @@
-// ESLint v9 flat config (migrasi dari .eslintrc.json)
+// ESLint v9 flat config (migrated from .eslintrc.json)
 // Docs: https://eslint.org/docs/latest/use/configure/migration-guide
 
 const js = require('@eslint/js');
@@ -8,7 +8,7 @@ module.exports = [
     // Base config: recommended rules
     js.configs.recommended,
 
-    // Global settings untuk file JS di src/ dan index.js
+    // Global settings for JS files in src/ and index.js
     {
         files: ['**/*.js'],
         languageOptions: {
@@ -19,8 +19,8 @@ module.exports = [
             }
         },
         rules: {
-            // Formatting (indent, semi, quotes, dll) di-handle Prettier.
-            // ESLint fokus ke code quality rules aja biar gak konflik.
+            // Formatting (indent, semi, quotes, etc.) is handled by Prettier.
+            // ESLint focuses on code-quality rules only, so they don't conflict.
 
             // Best practices
             'no-unused-vars': [
@@ -50,7 +50,7 @@ module.exports = [
         }
     },
 
-    // Ignore patterns (sama kayak .eslintrc.json lama)
+    // Ignore patterns (same as the old .eslintrc.json)
     {
         ignores: ['node_modules/', 'backups/', 'coverage/', 'data/', '*.json', '.env*', 'docs/', 'tests/', 'scripts/']
     }

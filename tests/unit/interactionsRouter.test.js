@@ -1,14 +1,15 @@
 /**
- * Unit tests untuk interactions router (src/interactions/index.js)
+ * Unit tests for the interactions router (src/interactions/index.js)
  *
  * Verify:
- *   - Slash command diabaikan (bukan domain interactions router)
- *   - Button interaction dengan customId known → dispatch ke domain
- *   - Modal submit dengan customId known → dispatch ke domain
- *   - Select menu dengan customId unknown → log warning, no crash
- *   - Dedup: interaction.id yang sama diproses hanya 1x (v3.9.38: mark SETELAH
- *     handler sukses — handler yang throw tidak ditandai, replay bisa retry)
- *   - v3.9.33: User Select Menu (mm_pick_seller) → dispatch ke domain midman
+ *   - Slash commands are ignored (not the interactions router's domain)
+ *   - Button interaction with a known customId → dispatched to the domain
+ *   - Modal submit with a known customId → dispatched to the domain
+ *   - Select menu with an unknown customId → logs a warning, no crash
+ *   - Dedup: the same interaction.id is processed only once (v3.9.38: marked
+ *     AFTER the handler succeeds — a throwing handler is not marked, a replay
+ *     can retry)
+ *   - v3.9.33: User Select Menu (mm_pick_seller) → dispatched to the midman domain
  */
 
 const test = require('node:test');
@@ -25,7 +26,7 @@ function makeMockInteraction({ customId, type = 'button', id = `test-${Date.now(
         isChatInputCommand: () => false,
         isButton: () => type === 'button',
         isStringSelectMenu: () => type === 'select',
-        // v3.9.33: router kini menerima user select menu (dropdown member).
+        // v3.9.33: the router now accepts user select menus (member dropdowns).
         isUserSelectMenu: () => type === 'userselect',
         isModalSubmit: () => type === 'modal',
         reply: async opts => {
@@ -73,12 +74,12 @@ test('interactions router: non-button/select/modal ignored', async () => {
 test('interactions router: v3.9.33 — user select mm_pick_seller dispatched to midman domain', async () => {
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({ customId: 'mm_pick_seller', type: 'userselect' });
-    // midman handler butuh interaction.guild/user/values — akan throw.
-    // Yang penting: dispatch TERJADI ke domain midman (bukan di-ignore).
+    // The midman handler needs interaction.guild/user/values — it will throw.
+    // What matters: the dispatch HAPPENS to the midman domain (not ignored).
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        assert.ok(!/no handler/i.test(err.message), 'harus dispatch, bukan skip');
+        assert.ok(!/no handler/i.test(err.message), 'must dispatch, not skip');
         return;
     }
     assert.ok(true, 'dispatched without error');
@@ -90,7 +91,7 @@ test('interactions router: v3.9.34 — user select mm_pick_buyer dispatched to m
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        assert.ok(!/no handler/i.test(err.message), 'harus dispatch, bukan skip');
+        assert.ok(!/no handler/i.test(err.message), 'must dispatch, not skip');
         return;
     }
     assert.ok(true, 'dispatched without error');
@@ -102,7 +103,7 @@ test('interactions router: v3.9.34 — user select mm_pick_member dispatched to 
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        assert.ok(!/no handler/i.test(err.message), 'harus dispatch, bukan skip');
+        assert.ok(!/no handler/i.test(err.message), 'must dispatch, not skip');
         return;
     }
     assert.ok(true, 'dispatched without error');
@@ -114,7 +115,7 @@ test('interactions router: v3.9.34 — string select mm_remove_pick dispatched t
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        assert.ok(!/no handler/i.test(err.message), 'harus dispatch, bukan skip');
+        assert.ok(!/no handler/i.test(err.message), 'must dispatch, not skip');
         return;
     }
     assert.ok(true, 'dispatched without error');
@@ -123,15 +124,15 @@ test('interactions router: v3.9.34 — string select mm_remove_pick dispatched t
 test('interactions router: btn_verify dispatched to verify domain', async () => {
     const routeInteraction = require('../../src/interactions');
     const interaction = makeMockInteraction({ customId: 'btn_verify', type: 'button' });
-    // verify handler butuh interaction.member dll — akan throw. Yang penting: dispatch terjadi.
+    // The verify handler needs interaction.member etc — it will throw. What matters: the dispatch happens.
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        // Expected — handler butuh member. Verify dispatch terjadi (error bukan "no handler").
+        // Expected — the handler needs member. Verify the dispatch happened (the error is not "no handler").
         assert.ok(!/no handler/i.test(err.message), 'should dispatch, not skip');
         return;
     }
-    // Kalau sukses, dispatch tetap terjadi
+    // If it succeeded, the dispatch still happened
     assert.ok(true, 'dispatched without error');
 });
 
@@ -141,7 +142,7 @@ test('interactions router: gw_join: dispatched to giveaway domain', async () => 
     try {
         await routeInteraction(interaction);
     } catch (err) {
-        // Expected — handler butuh guild, user, dll
+        // Expected — the handler needs guild, user, etc
         assert.ok(!/no handler/i.test(err.message));
         return;
     }
@@ -168,14 +169,14 @@ test('interactions router: unknown customId logs warning (no crash)', async () =
     assert.ok(true, 'no crash on unknown customId');
 });
 
-test('interactions router: dedup — same interaction.id processed only once (v3.9.38: mark SETELAH sukses)', async () => {
+test('interactions router: dedup — same interaction.id processed only once (v3.9.38: mark AFTER success)', async () => {
     const routeInteraction = require('../../src/interactions');
     const id = `dedup-test-${Date.now()}`;
     const replies = [];
-    // v3.9.38 FIX: dedup sekarang check-sebelum + mark-SETELAH-handler-sukses.
-    // Pakai btn_verify dengan mock minimal: handler membalas error ke user
-    // (sukses — tidak throw) → entry ditandai → replay interaksi yang sama
-    // di-skip. (Dulu: checkAndMark menandai SEBELUM handler jalan.)
+    // v3.9.38 FIX: dedup is now check-before + mark-AFTER-handler-success.
+    // Uses btn_verify with a minimal mock: the handler replies with an error to
+    // the user (success — no throw) → the entry is marked → replaying the same
+    // interaction is skipped. (Before: checkAndMark marked BEFORE the handler ran.)
     const makeInteraction = () => ({
         id,
         customId: 'btn_verify',
@@ -197,31 +198,31 @@ test('interactions router: dedup — same interaction.id processed only once (v3
         }
     });
 
-    // First call: dispatches + handler reply (success) → baru ditandai
+    // First call: dispatch + handler reply (success) → only then marked
     await routeInteraction(makeInteraction());
-    assert.strictEqual(replies.length, 1, 'first call: handler jalan (1 reply)');
+    assert.strictEqual(replies.length, 1, 'first call: handler ran (1 reply)');
 
     // Second call (Discord retry / gateway replay): should be deduped (no dispatch)
     const result = await routeInteraction(makeInteraction());
     assert.strictEqual(result, undefined, 'second call should be deduped');
-    assert.strictEqual(replies.length, 1, 'handler tidak boleh jalan 2x');
+    assert.strictEqual(replies.length, 1, 'the handler must not run 2x');
 });
 
-test('interactions router: dedup v3.9.38 — handler THROW → tidak ditandai → replay diproses ulang', async () => {
+test('interactions router: dedup v3.9.38 — handler THROWS → not marked → the replay is reprocessed', async () => {
     const routeInteraction = require('../../src/interactions');
     const { check, processedInteractions } = require('../../src/interactions/_dedup');
     const id = `dedup-throw-test-${Date.now()}`;
-    // mm_pick_seller + mock tanpa deferReply → domain midman THROW (probe
-    // manual: "interaction.deferReply is not a function").
+    // mm_pick_seller + a mock without deferReply → the midman domain THROWS
+    // (manual probe: "interaction.deferReply is not a function").
     const makeInteraction = () => makeMockInteraction({ customId: 'mm_pick_seller', type: 'userselect', id });
 
-    // First call: handler crash → error propagate ke caller, entry TIDAK ditandai
+    // First call: handler crashes → the error propagates to the caller, the entry is NOT marked
     await assert.rejects(() => routeInteraction(makeInteraction()));
-    assert.strictEqual(check(id), false, 'handler throw → entry tidak boleh tertandai');
+    assert.strictEqual(check(id), false, 'handler threw → the entry must not be marked');
 
-    // Replay: interaction yang sama HARUS diproses lagi (tidak di-swallow)
-    await assert.rejects(() => routeInteraction(makeInteraction()), 'replay harus menjalankan handler lagi');
+    // Replay: the same interaction MUST be processed again (not swallowed)
+    await assert.rejects(() => routeInteraction(makeInteraction()), 'the replay must run the handler again');
 
-    // Cleanup supaya tidak bocor ke test lain dalam file yang sama
+    // Cleanup so it doesn't leak into other tests in the same file
     processedInteractions.delete(id);
 });

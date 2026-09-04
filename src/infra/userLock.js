@@ -1,51 +1,53 @@
 /**
  * User-scoped in-process lock.
  *
- * Dipakai untuk mencegah TOCTOU race condition ketika user menekan tombol
- * Discord sangat cepat (double-click / spam click) yang bisa memicu
- * double-add / double-vote sebelum file JSON sempat di-flush.
+ * Used to prevent TOCTOU race conditions when a user presses Discord buttons
+ * very fast (double-click / spam click) which could trigger double-add /
+ * double-vote before the JSON file gets flushed.
  *
- * Lock di-key per (scope, userId). Scope biasanya nama fitur ('gw', 'poll').
- * Resolusi otomatis setelah timeout (defensive — kalau ada bug, lock tidak
- * nge-hang forever).
+ * Locks are keyed per (scope, userId). Scope is usually a feature name ('gw', 'poll').
+ * Auto-resolves after a timeout (defensive — if there's a bug, the lock won't
+ * hang forever).
  *
- * Concurrency model: single-process Node.js, jadi Map + flag boolean cukup.
- * Tidak butuh mutex/atomic primitive.
+ * Concurrency model: single-process Node.js, so a Map + boolean flag is enough.
+ * No mutex/atomic primitives needed.
  *
- * v3.9.24 FIX (owner token): sebelumnya `acquire` boolean + `release` hapus
- * tanpa cek pemilik. Kalau critical section jalan lebih lama dari timeout,
- * lock di-overtake pemegang baru — lalu `finally` pemegang LAMA menghapus
- * lock milik pemegang BARU → pihak ketiga bisa masuk → 2 critical section
- * jalan bersamaan. Lock gagal justru saat paling dibutuhkan (operasi lambat).
- * Sekarang tiap akuisisi punya token unik; release hanya berlaku kalau token
- * cocok (pemanggilan release tanpa token tetap boleh — kompatibel lama).
+ * v3.9.24 FIX (owner token): previously `acquire` returned a boolean + `release`
+ * deleted without checking ownership. If the critical section ran longer than
+ * the timeout, the lock was overtaken by a new holder — then the OLD holder's
+ * `finally` deleted the NEW holder's lock → a third party could get in →
+ * 2 critical sections running together. The lock failed exactly when it was
+ * needed most (slow operations).
+ * Now each acquisition has a unique token; release only applies if the token
+ * matches (calling release without a token is still allowed — backward compatible).
  */
 
 const locks = new Map(); // key: `${scope}:${userId}` -> { acquiredAt, expiresAt, token, timeoutMs }
 
-const DEFAULT_TIMEOUT_MS = 5000; // 5 detik — seharusnya cukup untuk semua flow
+const DEFAULT_TIMEOUT_MS = 5000; // 5 seconds — should be enough for all flows
 
 /**
- * Coba acquire lock untuk (scope, userId).
- * @returns {string|false} token lock (truthy) kalau berhasil, false kalau masih di-pegang.
- *   v3.9.24: sebelumnya mengembalikan `true`; sekarang token unik (tetap truthy,
- *   jadi `if (!acquire(...))` lama tetap valid). Token dipakai releaseLock.
+ * Try to acquire the lock for (scope, userId).
+ * @returns {string|false} lock token (truthy) on success, false if still held.
+ *   v3.9.24: previously returned `true`; now returns a unique token (still truthy,
+ *   so old `if (!acquire(...))` checks remain valid). The token is used by releaseLock.
  */
 function acquire(scope, userId, timeoutMs = DEFAULT_TIMEOUT_MS) {
-    // v3.9.8 FIX: sebelumnya return true (bypass lock) kalau scope/userId invalid.
-    // Ini "defensive" yang hide bug — bisa bikin race condition yang lock seharusnya
-    // cegah. Sekarang throw error supaya bug langsung keliatan di development.
+    // v3.9.8 FIX: previously returned true (bypassing the lock) for invalid scope/userId.
+    // That "defensive" behavior hid bugs — it could enable the very race condition
+    // the lock is supposed to prevent. Now it throws so the bug is immediately
+    // visible in development.
     if (!scope || !userId) {
-        throw new Error(`userLock.acquire: scope dan userId wajib diisi (got scope=${scope}, userId=${userId})`);
+        throw new Error(`userLock.acquire: scope and userId are required (got scope=${scope}, userId=${userId})`);
     }
     const key = `${scope}:${userId}`;
     const now = Date.now();
     const existing = locks.get(key);
     if (existing) {
         if (now < existing.expiresAt) {
-            return false; // masih di-pegang
+            return false; // still held
         }
-        // expired — overtake (holder lama tidak bisa melepas lock baru: token beda)
+        // expired — overtake (the old holder can't release the new lock: different token)
     }
     const token = `${now}-${Math.random().toString(36).slice(2)}`;
     locks.set(key, { acquiredAt: now, expiresAt: now + timeoutMs, token, timeoutMs });
@@ -53,26 +55,26 @@ function acquire(scope, userId, timeoutMs = DEFAULT_TIMEOUT_MS) {
 }
 
 /**
- * Release lock.
- * Aman dipanggil walau lock tidak pernah di-acquire.
- * @param {string} [token] - token dari acquire(). Kalau diisi, lock hanya dihapus
- *   kalau token cocok (owner check — cegah holder basi melepas lock holder baru).
- *   Kalau tidak diisi, hapus tanpa cek (perilaku lama, kompatibel).
+ * Release a lock.
+ * Safe to call even if the lock was never acquired.
+ * @param {string} [token] - token from acquire(). If provided, the lock is only deleted
+ *   if the token matches (owner check — prevents a stale holder from releasing a
+ *   new holder's lock). If omitted, deletes without checking (old behavior, compatible).
  */
 function release(scope, userId, token) {
     if (!scope || !userId) return;
     const key = `${scope}:${userId}`;
     const existing = locks.get(key);
     if (!existing) return;
-    // v3.9.24: owner check — kalau token dioper dan TIDAK cocok, ini release
-    // dari holder basi (lock-nya sudah di-overtake). No-op.
+    // v3.9.24: owner check — if a token is passed and does NOT match, this is a
+    // release from a stale holder (the lock was already overtaken). No-op.
     if (token !== undefined && existing.token !== token) return;
     locks.delete(key);
 }
 
 /**
- * Jalankan fn di bawah lock. Auto-release di akhir (termasuk kalau throw).
- * @returns hasil fn, atau null kalau gagal acquire.
+ * Run fn under the lock. Auto-releases at the end (including on throw).
+ * @returns fn's result, or null if acquiring failed.
  */
 async function withLock(scope, userId, fn, timeoutMs = DEFAULT_TIMEOUT_MS) {
     const token = acquire(scope, userId, timeoutMs);
@@ -80,28 +82,28 @@ async function withLock(scope, userId, fn, timeoutMs = DEFAULT_TIMEOUT_MS) {
     try {
         return await fn();
     } finally {
-        // v3.9.24: release dengan token — kalau fn lambat dan lock sempat di-overtake,
-        // release ini otomatis no-op (tidak menghapus lock milik holder baru).
+        // v3.9.24: release with the token — if fn was slow and the lock was overtaken,
+        // this release is automatically a no-op (it won't delete the new holder's lock).
         release(scope, userId, token);
     }
 }
 
-// Periodic cleanup — hapus lock yang sudah expired (defensive terhadap bug
-// yang lupa release). Run setiap 1 menit.
-// v3.9.24: pakai expiresAt per-entry (bukan DEFAULT_TIMEOUT_MS * 2 global),
-// jadi lock dengan custom timeout lama tidak ter-reap di tengah jalan.
+// Periodic cleanup — remove locks that have already expired (defensive against bugs
+// that forget to release). Runs every 1 minute.
+// v3.9.24: uses per-entry expiresAt (not a global DEFAULT_TIMEOUT_MS * 2),
+// so locks with a long custom timeout aren't reaped mid-flight.
 setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
     for (const [key, val] of locks) {
-        // Grace 1x timeout tambahan setelah expiry sebelum dianggap sampah.
+        // One extra timeout of grace after expiry before it's considered garbage.
         if (now > val.expiresAt + (val.timeoutMs || DEFAULT_TIMEOUT_MS)) {
             locks.delete(key);
             cleaned++;
         }
     }
     if (cleaned > 0) {
-        console.warn(`🧹 userLock: ${cleaned} stale lock dihapus (possible bug).`);
+        console.warn(`🧹 userLock: removed ${cleaned} stale lock(s) (possible bug).`);
     }
 }, 60 * 1000).unref?.();
 

@@ -2,18 +2,18 @@
  * Backup / reset config domain handler — button `reset_config_confirm`,
  * `reset_config_cancel`, `restore_backup_confirm:*`, `restore_backup_cancel:*`.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — just moved to a new file.
  *
- * Helper `handleResetConfigConfirm` dan `handleRestoreBackupConfirm` jadi
- * LOCAL function di file ini.
+ * Helpers `handleResetConfigConfirm` and `handleRestoreBackupConfirm` are
+ * LOCAL functions in this file.
  *
- * Router (src/interactions/index.js) sudah apply:
+ * The router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
  *   - routing by customId prefix (reset_config_ / restore_backup_)
- * Jadi domain handler fokus ke logic-nya saja.
+ * So the domain handler can focus on its logic alone.
  */
 
 const { MessageFlags } = require('discord.js');
@@ -31,18 +31,18 @@ module.exports = async function (interaction) {
         return handleResetConfigConfirm(interaction);
     }
     if (interaction.isButton() && interaction.customId === 'reset_config_cancel') {
-        // v3.9.26: wrap update — kalau ephemeral sudah di-dismiss sebelum tombol
-        // diklik, update() throw 10008 → tanpa catch, user lihat "interaction failed"
-        // tanpa pesan (asimetris dengan tombol confirm yang sudah di-handle).
+        // v3.9.26: wrap update — if the ephemeral was dismissed before the button
+        // was clicked, update() throws 10008 → without a catch, the user sees "interaction failed"
+        // with no message (asymmetric with the confirm button which is already handled).
         try {
             return await interaction.update({
-                content: '✅ Reset config dibatalkan. Tidak ada perubahan yang dilakukan.',
+                content: '✅ Config reset cancelled. No changes were made.',
                 components: []
             });
         } catch (_) {
             return interaction
                 .reply({
-                    content: '✅ Reset config dibatalkan (konfirmasi sudah kedaluwarsa).',
+                    content: '✅ Config reset cancelled (the confirmation has already expired).',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
@@ -60,21 +60,21 @@ module.exports = async function (interaction) {
         const ownerId = parts[1];
         if (interaction.user.id !== ownerId) {
             return interaction.reply({
-                content: '❌ Hanya admin yang memulai konfirmasi ini yang bisa membatalkan.',
+                content: '❌ Only the admin who started this confirmation can cancel it.',
                 flags: MessageFlags.Ephemeral
             });
         }
-        // v3.9.26: wrap update — symetris dengan reset_config_cancel (ephemeral
-        // di-dismiss → update throw 10008).
+        // v3.9.26: wrap update — symmetric with reset_config_cancel (ephemeral
+        // dismissed → update throws 10008).
         try {
             return await interaction.update({
-                content: '✅ Restore backup dibatalkan. Tidak ada perubahan yang dilakukan.',
+                content: '✅ Backup restore cancelled. No changes were made.',
                 components: []
             });
         } catch (_) {
             return interaction
                 .reply({
-                    content: '✅ Restore backup dibatalkan (konfirmasi sudah kedaluwarsa).',
+                    content: '✅ Backup restore cancelled (the confirmation has already expired).',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
@@ -86,16 +86,16 @@ module.exports = async function (interaction) {
 // === v3.9.0: HELPER — Reset Config Confirmation ===
 // ====================================================
 /**
- * Handle tombol "Ya, Reset Total" yang muncul setelah admin jalankan /reset-config.
- * Sebelumnya, /reset-config langsung hapus semua config tanpa konfirmasi.
- * Sekarang, admin harus klik tombol ini untuk benar-benar reset.
+ * Handle the "Yes, Full Reset" button that appears after an admin runs /reset-config.
+ * Previously, /reset-config wiped all config immediately without confirmation.
+ * Now, the admin must click this button for the reset to actually happen.
  */
 async function handleResetConfigConfirm(interaction) {
     try {
         // Verify admin permission (defense-in-depth, even though slash command already gated)
         if (!isAdmin(interaction.member)) {
             return interaction.update({
-                content: '❌ Kamu tidak punya permission admin. Reset dibatalkan.',
+                content: '❌ You don\'t have admin permissions. Reset cancelled.',
                 components: []
             });
         }
@@ -113,14 +113,14 @@ async function handleResetConfigConfirm(interaction) {
             action: 'RESET_CONFIG',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: '⚠️ RESET CONFIG TOTAL — semua setting dihapus (via 2-step confirm)',
+            details: '⚠️ FULL CONFIG RESET — all settings deleted (via 2-step confirm)',
             guildId: interaction.guild.id
         });
 
         return interaction.update({
             content:
-                '⚠️ **SEMUA konfigurasi berhasil direset.**\n\n' +
-                'Sekarang config.json kosong. Silakan set ulang:\n' +
+                '⚠️ **ALL configuration has been reset.**\n\n' +
+                'config.json is now empty. Set it up again:\n' +
                 '• `/set-role verified @role`\n' +
                 '• `/set-role unverified @role`\n' +
                 '• `/set-role admin @role`\n' +
@@ -133,24 +133,24 @@ async function handleResetConfigConfirm(interaction) {
         });
     } catch (err) {
         console.error('Reset config confirm error:', err);
-        // v3.9.8 FIX: kalau error 10008 (Unknown Message — ephemeral di-dismiss admin),
-        // interaction.update() akan throw. Fallback ke interaction.reply() ephemeral
-        // supaya admin tetap dapat konfirmasi bahwa reset sudah sukses (atau gagal).
+        // v3.9.8 FIX: if error 10008 (Unknown Message — the admin dismissed the ephemeral),
+        // interaction.update() throws. Fall back to an ephemeral interaction.reply()
+        // so the admin still gets confirmation that the reset succeeded (or failed).
         const isUnknownMessage = err.code === 10008 || err.code === 10062;
         if (isUnknownMessage && !interaction.replied) {
             await interaction
                 .reply({
                     content:
-                        '✅ Reset config berhasil (pesan konfirmasi sebelumnya sudah tidak bisa di-edit karena di-dismiss).',
+                        '✅ Config reset succeeded (the previous confirmation message could no longer be edited because it was dismissed).',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
             return;
         }
         if (interaction.deferred && !interaction.replied) {
-            await safeEditReply(interaction, { content: `❌ Gagal reset: ${err.message}` }).catch(() => {});
+            await safeEditReply(interaction, { content: `❌ Reset failed: ${err.message}` }).catch(() => {});
         } else if (!interaction.replied) {
-            await interaction.update({ content: `❌ Gagal reset: ${err.message}`, components: [] }).catch(() => {});
+            await interaction.update({ content: `❌ Reset failed: ${err.message}`, components: [] }).catch(() => {});
         }
     }
 }
@@ -163,13 +163,13 @@ async function handleRestoreBackupConfirm(interaction) {
         // customId: restore_backup_confirm:<ownerUserId>:<backupName>
         const parts = interaction.customId.split(':');
         const ownerId = parts[1];
-        // backupName bisa mengandung ":" kalau ada edge case, jadi join sisa parts.
+        // backupName may contain ":" in edge cases, so join the remaining parts.
         const name = parts.slice(2).join(':');
 
-        // Defense-in-depth: hanya admin yang memulai yang bisa konfirmasi.
+        // Defense-in-depth: only the admin who started it can confirm.
         if (interaction.user.id !== ownerId) {
             return interaction.reply({
-                content: '❌ Hanya admin yang memulai konfirmasi ini yang bisa mengeksekusi restore.',
+                content: '❌ Only the admin who started this confirmation can execute the restore.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -177,7 +177,7 @@ async function handleRestoreBackupConfirm(interaction) {
         // Verify admin permission (defense-in-depth, even though slash command already gated)
         if (!isAdmin(interaction.member)) {
             return interaction.update({
-                content: '❌ Kamu tidak punya permission admin. Restore dibatalkan.',
+                content: '❌ You don\'t have admin permissions. Restore cancelled.',
                 components: []
             });
         }
@@ -185,7 +185,7 @@ async function handleRestoreBackupConfirm(interaction) {
         const result = restoreBackup(name);
         if (!result.ok) {
             return interaction.update({
-                content: `❌ Gagal restore: ${result.errors[0]}\n\nPakai \`/backup-list\` untuk lihat daftar backup yang valid.`,
+                content: `❌ Restore failed: ${result.errors[0]}\n\nUse \`/backup-list\` to see the list of valid backups.`,
                 components: []
             });
         }
@@ -200,33 +200,33 @@ async function handleRestoreBackupConfirm(interaction) {
 
         return interaction.update({
             content:
-                `♻️ **Restore berhasil!**\n\n` +
-                `📁 Dari: \`${name}\`\n` +
-                `📦 File dipulihkan: **${result.filesRestored}**\n` +
-                `💾 Backup sebelum restore: \`${result.preRestoreName}\` (safety net)\n\n` +
-                `⚠️ **RESTART bot sekarang** supaya data baru ke-load penuh.\n\`\`\`bash\nnpm start\n\`\`\`\n` +
+                `♻️ **Restore successful!**\n\n` +
+                `📁 From: \`${name}\`\n` +
+                `📦 Files restored: **${result.filesRestored}**\n` +
+                `💾 Backup taken before restore: \`${result.preRestoreName}\` (safety net)\n\n` +
+                `⚠️ **RESTART the bot now** so the new data fully loads.\n\`\`\`bash\nnpm start\n\`\`\`\n` +
                 (result.errors.length > 0 ? `⚠️ Error: \`\`\`\n${result.errors.join('\n')}\n\`\`\`` : ''),
             components: []
         });
     } catch (err) {
         console.error('Restore backup confirm error:', err);
-        // v3.9.8 FIX: sama seperti reset config — kalau 10008 (ephemeral dismissed),
-        // fallback ke reply() supaya admin tetap dapat konfirmasi.
+        // v3.9.8 FIX: same as reset config — if 10008 (ephemeral dismissed),
+        // fall back to reply() so the admin still gets confirmation.
         const isUnknownMessage = err.code === 10008 || err.code === 10062;
         if (isUnknownMessage && !interaction.replied) {
             await interaction
                 .reply({
                     content:
-                        '✅ Restore backup berhasil (pesan konfirmasi sebelumnya sudah tidak bisa di-edit karena di-dismiss). **RESTART bot sekarang** supaya data baru ke-load penuh.',
+                        '✅ Backup restore succeeded (the previous confirmation message could no longer be edited because it was dismissed). **RESTART the bot now** so the new data fully loads.',
                     flags: MessageFlags.Ephemeral
                 })
                 .catch(() => {});
             return;
         }
         if (interaction.deferred && !interaction.replied) {
-            await safeEditReply(interaction, { content: `❌ Gagal restore: ${err.message}` }).catch(() => {});
+            await safeEditReply(interaction, { content: `❌ Restore failed: ${err.message}` }).catch(() => {});
         } else if (!interaction.replied) {
-            await interaction.update({ content: `❌ Gagal restore: ${err.message}`, components: [] }).catch(() => {});
+            await interaction.update({ content: `❌ Restore failed: ${err.message}`, components: [] }).catch(() => {});
         }
     }
 }

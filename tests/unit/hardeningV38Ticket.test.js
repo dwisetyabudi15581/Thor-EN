@@ -1,21 +1,26 @@
 /**
- * Unit tests v3.9.38 — hardening domain tiket (Task 3-b).
+ * Unit tests v3.9.38 — ticket domain hardening (Task 3-b).
  *
- * Bug yang diuji (semua terverifikasi audit task 1-b):
- *   FIX 1 (HIGH)   : findActiveTicketFor hapus meta tiket LIVE saat fetch
- *                    transient (429/5xx/network) — sekarang hanya 10003.
- *   FIX 2 (HIGH)   : flow Set Key tanpa gate isCompleted → invoice + stats +
- *                    key DOBEL — sekarang 3 layer (tombol, re-check modal,
- *                    completionLocks per channel).
- *   FIX 3 (MEDIUM) : meta tiket menyimpan LABEL produk (bukan value) → rename
- *                    produk mematahkan lookup; label duplikat resolve salah —
- *                    sekarang meta menyimpan productValue + resolveProduct().
- *   FIX 5 (LOW)    : key kosong/whitespace lolos tersimpan oleh addKey.
- *   FIX 6 (LOW)    : raw key bocor ke console log via pesan error duplikat.
- *   FIX 7 (LOW)    : transcript hanya mengarsipkan 100 pesan terakhir —
- *                    bukti pembayaran di AWAL tiket hilang (paginated sekarang).
+ * Bugs being tested (all verified by the task 1-b audit):
+ *   FIX 1 (HIGH)   : findActiveTicketFor deleted LIVE ticket meta on a
+ *                    transient fetch (429/5xx/network) — now only 10003.
+ *   FIX 2 (HIGH)   : Set Key flow without an isCompleted gate → invoice +
+ *                    stats + key DOUBLED — now 3 layers (button, modal
+ *                    re-check, per-channel completionLocks).
+ *   FIX 3 (MEDIUM) : ticket meta stored the product LABEL (not value) →
+ *                    renaming a product broke the lookup; duplicate labels
+ *                    resolved wrongly — meta now stores productValue +
+ *                    resolveProduct().
+ *   FIX 5 (LOW)    : empty/whitespace keys passed validation and were saved
+ *                    by addKey.
+ *   FIX 6 (LOW)    : the raw key leaked to the console log via the duplicate
+ *                    error message.
+ *   FIX 7 (LOW)    : the transcript only archived the last 100 messages —
+ *                    payment proof at the START of the ticket was lost
+ *                    (paginated now).
  *
- * Sandbox: file data produksi di-snapshot & restore (pola ticketNonKey.test.js).
+ * Sandbox: production data files are snapshotted & restored
+ * (ticketNonKey.test.js pattern).
  */
 
 const test = require('node:test');
@@ -26,7 +31,7 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 
 // ====================================================
-// === Sandbox: snapshot & restore file data produksi ===
+// === Sandbox: production data files are snapshotted & restored ===
 // ====================================================
 const SANDBOX_FILES = ['tickets.json', 'config.json', 'keys.json', 'scheduledRoles.json', 'stats.json', 'deals.json'];
 const backups = new Map();
@@ -64,7 +69,7 @@ const { findActiveTicketFor, createTicket, getTicketMeta, setTicketMeta, resolve
     require('../../src/data/ticketManager');
 
 // ====================================================
-// === FIX 1: findActiveTicketFor — error transient vs 10003 ===
+// === FIX 1: findActiveTicketFor — transient error vs 10003 ===
 // ====================================================
 
 function makeFetchGuild({ cachedEntries = [], fetchImpl }) {
@@ -77,7 +82,7 @@ function makeFetchGuild({ cachedEntries = [], fetchImpl }) {
     };
 }
 
-test('FIX 1: fetch throw code 429 (transient) → meta tiket LIVE DIPERTAHANKAN, return null', async () => {
+test('FIX 1: fetch throws code 429 (transient) → LIVE ticket meta KEPT, returns null', async () => {
     resetDataFile('tickets.json', {
         'ch-tr-429': { userId: 'user-429', guildId: 'g38', productName: 'VIP 30 Hari', productValue: 'vip30' }
     });
@@ -90,14 +95,15 @@ test('FIX 1: fetch throw code 429 (transient) → meta tiket LIVE DIPERTAHANKAN,
     });
 
     const ch = await findActiveTicketFor(guild, 'user-429');
-    assert.strictEqual(ch, null, 'blip transient → tidak ada channel aktif yang bisa di-return');
-    // Inti fix: metadata JANGAN terhapus — channel masih hidup, cuma fetch-nya
-    // gagal sesaat. Sebelum v3.9.38, meta terhapus → user bisa buka tiket ke-2.
+    assert.strictEqual(ch, null, 'transient blip → no active channel to return');
+    // Core fix: metadata must NOT be deleted — the channel is still alive, only
+    // its fetch failed momentarily. Before v3.9.38, the meta was deleted → the
+    // user could open a 2nd ticket.
     const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'tickets.json'), 'utf8'));
-    assert.ok(raw['ch-tr-429'], 'metadata tiket live tetap ada (retry percobaan berikutnya)');
+    assert.ok(raw['ch-tr-429'], 'live ticket metadata still present (retry on the next attempt)');
 });
 
-test('FIX 1: fetch throw code 10003 (Unknown Channel) → meta zombie dihapus', async () => {
+test('FIX 1: fetch throws code 10003 (Unknown Channel) → zombie meta deleted', async () => {
     resetDataFile('tickets.json', {
         'ch-zombie-10003': { userId: 'user-z', guildId: 'g38', productName: 'VIP 30 Hari' },
         'ch-other': { userId: 'user-lain', guildId: 'g38', productName: 'Lain' }
@@ -113,12 +119,12 @@ test('FIX 1: fetch throw code 10003 (Unknown Channel) → meta zombie dihapus', 
     const ch = await findActiveTicketFor(guild, 'user-z');
     assert.strictEqual(ch, null);
     const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'tickets.json'), 'utf8'));
-    assert.ok(!raw['ch-zombie-10003'], 'metadata zombie terhapus (channel benar-benar sudah tidak ada)');
-    assert.ok(raw['ch-other'], 'metadata user lain tidak ikut terhapus');
+    assert.ok(!raw['ch-zombie-10003'], 'zombie metadata deleted (the channel is truly gone)');
+    assert.ok(raw['ch-other'], 'another user\'s metadata is not deleted too');
 });
 
 // ====================================================
-// === Mock interaction umum (pola ticketCloseButtons.test.js) ===
+// === Common interaction mock (ticketCloseButtons.test.js pattern) ===
 // ====================================================
 
 const ADMIN_MEMBER = { permissions: { has: () => true }, roles: { cache: new Map() } };
@@ -204,7 +210,7 @@ function makeTicketChannel(id) {
 // === FIX 2: gate isCompleted + completionLocks ===
 // ====================================================
 
-test('FIX 2a: tombol ticket_set_key pada tiket isCompleted → modal TIDAK dibuka (ditolak)', async () => {
+test('FIX 2a: the ticket_set_key button on an isCompleted ticket → modal NOT opened (rejected)', async () => {
     seedKeyTicketConfig();
     resetDataFile('tickets.json', {});
     setTicketMeta('ch-done-1', {
@@ -226,12 +232,12 @@ test('FIX 2a: tombol ticket_set_key pada tiket isCompleted → modal TIDAK dibuk
     });
     await routeInteraction(interaction);
 
-    assert.strictEqual(interaction._modals.length, 0, 'modal Set Key tidak boleh dibuka untuk tiket selesai');
-    assert.ok(interaction._replies.length > 0, 'admin dapat jawaban');
-    assert.match(interaction._replies[0].opts.content, /sudah di-set sebelumnya/);
+    assert.strictEqual(interaction._modals.length, 0, 'the Set Key modal must not open for a completed ticket');
+    assert.ok(interaction._replies.length > 0, 'the admin gets an answer');
+    assert.match(interaction._replies[0].opts.content, /already been set/);
 });
 
-test('FIX 2b: modal_set_key submit saat meta isCompleted → aborted SEBELUM side effect (tidak ada key/invoice)', async () => {
+test('FIX 2b: modal_set_key submit while meta isCompleted → aborted BEFORE side effects (no key/invoice)', async () => {
     seedKeyTicketConfig();
     resetDataFile('tickets.json', {});
     resetDataFile('keys.json', []);
@@ -254,7 +260,7 @@ test('FIX 2b: modal_set_key submit saat meta isCompleted → aborted SEBELUM sid
         members: {
             fetch: async () => {
                 memberFetchCalled = true;
-                throw new Error('members.fetch tidak boleh dipanggil — abort harus terjadi sebelum side effect');
+                throw new Error('members.fetch must not be called — the abort must happen before side effects');
             }
         }
     };
@@ -269,15 +275,15 @@ test('FIX 2b: modal_set_key submit saat meta isCompleted → aborted SEBELUM sid
     });
     await routeInteraction(interaction);
 
-    assert.ok(interaction._replies.length > 0, 'admin dapat jawaban');
+    assert.ok(interaction._replies.length > 0, 'the admin gets an answer');
     const msg = interaction._replies[interaction._replies.length - 1].opts.content;
-    assert.match(msg, /sudah selesai diproses admin lain/);
-    assert.strictEqual(memberFetchCalled, false, 'flow berhenti sebelum fetch member (belum ada side effect)');
-    // Tidak ada key tersimpan — invoice juga tidak mungkin terkirim (flow aborted).
-    assert.strictEqual(require('../../src/data/keyManager').getAllKeys().length, 0, 'keys.json tetap kosong');
+    assert.match(msg, /already been processed by another admin/);
+    assert.strictEqual(memberFetchCalled, false, 'the flow stops before the member fetch (no side effects yet)');
+    // No key saved — the invoice can't have been sent either (flow aborted).
+    assert.strictEqual(require('../../src/data/keyManager').getAllKeys().length, 0, 'keys.json stays empty');
 });
 
-test('FIX 2c: channel ter-lock oleh admin lain → submit kedua DITOLAK "⏳", submit pertama tetap selesai', async () => {
+test('FIX 2c: channel locked by another admin → the second submit is REJECTED "⏳", the first still completes', async () => {
     seedKeyTicketConfig();
     resetDataFile('tickets.json', {});
     resetDataFile('keys.json', []);
@@ -294,8 +300,8 @@ test('FIX 2c: channel ter-lock oleh admin lain → submit kedua DITOLAK "⏳", s
         isTransaction: true
     });
 
-    // Admin A: guild.members.fetch digantung (simulasi network lambat) — lock
-    // ch-race-1 dipegang oleh A sampai promise ini di-resolve.
+    // Admin A: guild.members.fetch is suspended (slow-network simulation) —
+    // the ch-race-1 lock is held by A until this promise resolves.
     let resolveMemberFetch;
     const memberFetchPromise = new Promise(res => {
         resolveMemberFetch = res;
@@ -322,9 +328,9 @@ test('FIX 2c: channel ter-lock oleh admin lain → submit kedua DITOLAK "⏳", s
         components: [{ components: [{ value: 'KEY-RACE-1' }] }]
     });
     const promiseA = routeInteraction(interactionA);
-    await new Promise(res => setImmediate(res)); // pastikan prefix sinkron A (lock acquire) jalan
+    await new Promise(res => setImmediate(res)); // make sure A's synchronous prefix (lock acquire) ran
 
-    // Admin B submit untuk channel yang sama saat A masih memproses.
+    // Admin B submits for the same channel while A is still processing.
     const interactionB = makeMockInteraction({
         customId: 'modal_set_key:vip30',
         type: 'modal',
@@ -334,26 +340,26 @@ test('FIX 2c: channel ter-lock oleh admin lain → submit kedua DITOLAK "⏳", s
         components: [{ components: [{ value: 'KEY-RACE-2' }] }]
     });
     await routeInteraction(interactionB);
-    assert.ok(interactionB._replies.length > 0, 'submit B dapat jawaban');
-    assert.match(interactionB._replies[0].opts.content, /sedang diproses admin lain/);
+    assert.ok(interactionB._replies.length > 0, 'submit B gets an answer');
+    assert.match(interactionB._replies[0].opts.content, /being processed by another admin/);
 
-    // Selesaikan flow A → lock lepas, key A tersimpan.
+    // Complete flow A → lock released, A's key saved.
     resolveMemberFetch(buyerMember);
     await promiseA;
 
     const { getAllKeys } = require('../../src/data/keyManager');
     const keys = getAllKeys();
-    assert.strictEqual(keys.length, 1, 'hanya key dari submit A yang tersimpan (B ditolak)');
+    assert.strictEqual(keys.length, 1, 'only the key from submit A is saved (B rejected)');
     assert.strictEqual(keys[0].key, 'KEY-RACE-1');
     const meta = getTicketMeta('ch-race-1', '');
-    assert.strictEqual(meta.isCompleted, true, 'patch isCompleted oleh A jalan normal');
+    assert.strictEqual(meta.isCompleted, true, 'the isCompleted patch by A runs normally');
 });
 
 // ====================================================
-// === FIX 3: productValue di meta + resolveProduct ===
+// === FIX 3: productValue in meta + resolveProduct ===
 // ====================================================
 
-test('FIX 3a: createTicket menyimpan productValue (ID stabil) di samping productName (label)', async () => {
+test('FIX 3a: createTicket stores productValue (stable ID) alongside productName (label)', async () => {
     resetDataFile('tickets.json', {});
     resetDataFile('config.json', { roles: { admin: 'role-admin' } });
     resetDataFile('deals.json', []);
@@ -395,103 +401,103 @@ test('FIX 3a: createTicket menyimpan productValue (ID stabil) di samping product
         requiresKey: true
     });
 
-    // created[0] = kategori, created[1] = channel tiket.
-    assert.strictEqual(created.length, 2, 'kategori + channel tiket dibuat');
+    // created[0] = the category, created[1] = the ticket channel.
+    assert.strictEqual(created.length, 2, 'category + ticket channel created');
     const meta = getTicketMeta(created[1].ch.id, '');
-    assert.ok(meta, 'meta tiket tersimpan');
-    assert.strictEqual(meta.productName, 'VIP 30 Hari', 'label tetap disimpan (display/backward compat)');
-    assert.strictEqual(meta.productValue, 'vip30', 'value stabil ikut disimpan — rename-proof');
+    assert.ok(meta, 'ticket meta saved');
+    assert.strictEqual(meta.productName, 'VIP 30 Hari', 'the label is still stored (display/backward compat)');
+    assert.strictEqual(meta.productValue, 'vip30', 'the stable value is stored too — rename-proof');
 });
 
-test('FIX 3b: resolveProduct — label di-rename, productValue tetap resolve ke produk yang benar', () => {
+test('FIX 3b: resolveProduct — label renamed, productValue still resolves to the right product', () => {
     const config = {
         products: [
-            // Admin me-rename "VIP 30 Hari" → "VIP 1 Bulan" via /update-product.
+            // The admin renamed "VIP 30 Hari" → "VIP 1 Bulan" via /update-product.
             { label: 'VIP 1 Bulan', value: 'vip30', price: 'Rp 30.000', roleId: 'r1' }
         ]
     };
     const meta = { productName: 'VIP 30 Hari', productValue: 'vip30' };
     const product = resolveProduct(config, meta);
-    assert.ok(product, 'produk tetap ketemu lewat value walaupun label sudah berubah');
+    assert.ok(product, 'the product is still found by value even though the label changed');
     assert.strictEqual(product.value, 'vip30');
-    assert.strictEqual(product.label, 'VIP 1 Bulan', 'label TERKINI yang dipakai untuk display');
+    assert.strictEqual(product.label, 'VIP 1 Bulan', 'the CURRENT label is used for display');
 });
 
-test('FIX 3c: resolveProduct — tiket legacy (tanpa productValue) tetap resolve by label', () => {
+test('FIX 3c: resolveProduct — legacy tickets (without productValue) still resolve by label', () => {
     const config = {
         products: [{ label: 'VIP 30 Hari', value: 'vip30', price: 'Rp 30.000', roleId: 'r1' }]
     };
-    // Meta v3.9.1–v3.9.37: hanya punya productName (label beku).
+    // v3.9.1–v3.9.37 meta: only has productName (frozen label).
     const product = resolveProduct(config, { productName: 'VIP 30 Hari' });
-    assert.ok(product, 'tiket legacy tetap resolve (label fallback)');
+    assert.ok(product, 'legacy tickets still resolve (label fallback)');
     assert.strictEqual(product.value, 'vip30');
 });
 
-test('FIX 3d: resolveProduct — label duplikat antar produk → productValue menentukan produk yang benar', () => {
+test('FIX 3d: resolveProduct — duplicate labels across products → productValue decides the right product', () => {
     const config = {
         products: [
             { label: 'Paket VIP', value: 'vip_a', roleId: 'r-a' },
             { label: 'Paket VIP', value: 'vip_b', roleId: 'r-b' }
         ]
     };
-    // Lookup by label saja (perilaku lama) selalu ambil yang pertama → salah.
+    // Lookup by label alone (old behavior) always takes the first one → wrong.
     const product = resolveProduct(config, { productName: 'Paket VIP', productValue: 'vip_b' });
     assert.ok(product);
-    assert.strictEqual(product.value, 'vip_b', 'value di meta menentukan produk yang tepat (bukan urutan label)');
+    assert.strictEqual(product.value, 'vip_b', 'the value in meta decides the right product (not label order)');
     assert.strictEqual(product.roleId, 'r-b');
     // resolveProduct(null) → null (defensive).
     assert.strictEqual(resolveProduct(config, null), null);
 });
 
 // ====================================================
-// === FIX 5: key kosong/whitespace ===
+// === FIX 5: empty/whitespace keys ===
 // ====================================================
 
-test('FIX 5c: addKey menolak key kosong/whitespace; key di-trim sebelum disimpan', () => {
+test('FIX 5c: addKey rejects empty/whitespace keys; the key is trimmed before saving', () => {
     resetDataFile('keys.json', []);
     const { addKey, getAllKeys } = require('../../src/data/keyManager');
     const base = { userId: 'u-v38', roleId: 'r-v38', productName: 'P', days: 0 };
 
-    assert.throws(() => addKey({ ...base, key: '' }), /Key tidak boleh kosong/);
-    assert.throws(() => addKey({ ...base, key: '   ' }), /Key tidak boleh kosong/);
-    assert.throws(() => addKey({ ...base, key: null }), /Key tidak boleh kosong/);
-    assert.throws(() => addKey({ ...base }), /Key tidak boleh kosong/);
-    assert.strictEqual(getAllKeys().length, 0, 'tidak ada key blank yang tersimpan');
+    assert.throws(() => addKey({ ...base, key: '' }), /Key cannot be empty/);
+    assert.throws(() => addKey({ ...base, key: '   ' }), /Key cannot be empty/);
+    assert.throws(() => addKey({ ...base, key: null }), /Key cannot be empty/);
+    assert.throws(() => addKey({ ...base }), /Key cannot be empty/);
+    assert.strictEqual(getAllKeys().length, 0, 'no blank keys saved');
 
-    // Spasi di pinggir dibersihkan — dup-check & penyimpanan pakai versi trim.
+    // Edge spaces are stripped — dup-check & storage use the trimmed version.
     const entry = addKey({ ...base, key: '  ABC-123-XYZ  ' });
-    assert.strictEqual(entry.key, 'ABC-123-XYZ', 'key disimpan versi ter-trim');
+    assert.strictEqual(entry.key, 'ABC-123-XYZ', 'the key is saved trimmed');
 });
 
 // ====================================================
-// === FIX 6: raw key tidak bocor ke log lewat error duplikat ===
+// === FIX 6: raw key must not leak into logs via the duplicate error ===
 // ====================================================
 
-test('FIX 6c: pesan error key duplikat TIDAK menyertakan nilai key', () => {
+test('FIX 6c: the duplicate key error message does NOT contain the key value', () => {
     resetDataFile('keys.json', []);
     const { addKey } = require('../../src/data/keyManager');
     const SECRET = 'SECRET-KEY-XYZ-987';
     addKey({ key: SECRET, userId: 'u1', roleId: 'r', productName: 'P', days: 0 });
 
-    // Error ini mengalir ke console.warn handler → tidak boleh berisi key.
+    // This error flows to the handler's console.warn → it must not contain the key.
     assert.throws(
         () => addKey({ key: SECRET, userId: 'u2', roleId: 'r', productName: 'P', days: 0 }),
         err => {
-            assert.ok(!err.message.includes(SECRET), 'pesan error tidak boleh menyertakan nilai key');
-            assert.match(err.message, /sudah ada/i, 'tetap jelas ini duplikat');
+            assert.ok(!err.message.includes(SECRET), 'the error message must not contain the key value');
+            assert.match(err.message, /already exists/i, 'still clearly a duplicate');
             return true;
         }
     );
 });
 
 // ====================================================
-// === FIX 7: transcript paginated — pesan AWAL ikut terarsip ===
+// === FIX 7: paginated transcript — the FIRST messages are archived too ===
 // ====================================================
 
-test('FIX 7: saveTranscript >100 pesan → bukti pembayaran di AWAL tiket ikut terarsip (paginated)', async () => {
+test('FIX 7: saveTranscript >100 messages → the payment proof at the START of the ticket is archived (paginated)', async () => {
     resetDataFile('config.json', { channels: { transcript: 'ch-trans' } });
 
-    // 150 pesan: id naik seiring waktu (snowflake), konten pesan #1 = bukti bayar.
+    // 150 messages: ids increase with time (snowflake); message #1's content = payment proof.
     const msgs = [];
     for (let i = 0; i < 150; i++) {
         msgs.push({
@@ -510,8 +516,8 @@ test('FIX 7: saveTranscript >100 pesan → bukti pembayaran di AWAL tiket ikut t
             return {};
         }
     };
-    // Mock fetch mengikuti kontrak API Discord: urut terbaru→terlama, page of 100,
-    // `before` = exclusive cursor ke pesan lebih lama.
+    // The fetch mock follows the Discord API contract: newest→oldest order, pages of 100,
+    // `before` = exclusive cursor to older messages.
     const ticketChannel = {
         id: 'ch-t7',
         name: 'ticket-t7',
@@ -532,11 +538,11 @@ test('FIX 7: saveTranscript >100 pesan → bukti pembayaran di AWAL tiket ikut t
         true
     );
 
-    assert.strictEqual(ok, true, 'transcript sukses terkirim');
+    assert.strictEqual(ok, true, 'transcript sent successfully');
     const text = sent
         .map(s => s.content || '')
         .join('\n');
-    assert.match(text, /bukti-transfer-mulai-tiket/, 'pesan PERTAMA (bukti bayar) ikut — dulu hilang karena cap 100');
-    assert.match(text, /isi-pesan-149/, 'pesan TERAKHIR juga ada');
-    assert.match(text, /isi-pesan-50/, 'pesan di tengah ada');
+    assert.match(text, /bukti-transfer-mulai-tiket/, 'the FIRST message (payment proof) is included — previously lost due to the 100 cap');
+    assert.match(text, /isi-pesan-149/, 'the LAST message is there too');
+    assert.match(text, /isi-pesan-50/, 'a middle message is there');
 });

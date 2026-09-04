@@ -7,40 +7,40 @@ const {
     ActionRowBuilder
 } = require('discord.js');
 const { getConfig } = require('./configManager');
-// v3.9.32: cek deal rekber aktif — user yang masih terlibat deal escrow tidak
-// boleh buka tiket reguler (anti-bypass alur rekber lewat tiket biasa).
+// v3.9.32: check for an active escrow deal — a user still involved in an escrow
+// deal may not open a regular ticket (prevents bypassing the escrow flow via a regular ticket).
 const { hasActiveDealFor } = require('./midmanManager');
 const { safeEditReply } = require('../infra/safeReply');
 const fs = require('fs');
 const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
-// P2-2 FIX: per-user lock supaya tidak bisa buka 2 tiket bersamaan (race condition).
-// Sebelumnya: 2 klik tombol <100ms → kedua interaction lolos check existing ticket
-// (channel belum dibuat) → 2 tiket terbuat. Sekarang: lock per userId sampai selesai.
+// P2-2 FIX: per-user lock so a user can't open 2 tickets simultaneously (race condition).
+// Before: 2 button clicks <100ms apart → both interactions passed the existing-ticket
+// check (channel not created yet) → 2 tickets created. Now: lock per userId until done.
 //
-// v3.9.8 FIX: lock di-scope per `${guildId}:${userId}`. Sebelumnya key cuma `userId`,
-// jadi user yang ada di 2 guild bot gak bisa bikin ticket barengan di kedua guild.
+// v3.9.8 FIX: the lock is scoped per `${guildId}:${userId}`. Before, the key was only `userId`,
+// so a user in 2 guilds of the bot couldn't create a ticket in both guilds at the same time.
 const ticketLocks = new Map();
 
-// FIX v3.7.1: per-channel close lock — cegah double-close race condition.
-// Skenario: admin klik "Tutup Tiket" → network lambat → admin klik lagi →
-// 2 closeTicket jalan bersamaan → salah satunya dapat "Unknown Channel".
-// Lock ini memastikan hanya 1 closeTicket per channel pada satu waktu.
+// FIX v3.7.1: per-channel close lock — prevents a double-close race condition.
+// Scenario: admin clicks "Close Ticket" → network is slow → admin clicks again →
+// 2 closeTicket calls run concurrently → one of them gets "Unknown Channel".
+// This lock ensures only 1 closeTicket per channel at a time.
 const closeTicketLocks = new Set();
 
 // === v3.9.1: tickets.json — persistent ticket metadata ===
-// Sebelumnya, metadata tiket (userId, productName, price) disimpan di channel
-// topic dengan format "Ticket UserID: 123 | Product: Foo | Price: Rp 50.000".
-// Masalah:
-//   1. Channel topic bisa di-edit admin → metadata bisa rusak / dispoof.
-//   2. Channel topic dibatasi 1024 char, bisa ter-truncate kalau nama produk panjang.
-//   3. Parsing regex rentan false-positive kalau nama produk mengandung " | ".
+// Previously, ticket metadata (userId, productName, price) was stored in the channel
+// topic with the format "Ticket UserID: 123 | Product: Foo | Price: Rp 50.000".
+// Problems:
+//   1. A channel topic can be edited by admins → metadata could break / be spoofed.
+//   2. Channel topics are limited to 1024 chars — could get truncated with long product names.
+//   3. Regex parsing is prone to false positives if a product name contains " | ".
 //
-// Sekarang: metadata utama ada di tickets.json (keyed by channelId). Channel
-// topic tetap di-set untuk human-readable info, tapi tidak dipakai sebagai
-// sumber kebenaran. Backward compat: kalau channelId tidak ada di tickets.json,
-// fallback ke topic parsing (untuk tiket lama yang dibuat sebelum v3.9.1).
+// Now: primary metadata lives in tickets.json (keyed by channelId). The channel
+// topic is still set for human-readable info, but it is not used as the
+// source of truth. Backward compat: if channelId is not in tickets.json,
+// fall back to topic parsing (for old tickets created before v3.9.1).
 const ticketsPath = path.join(__dirname, '..', '..', 'data', 'tickets.json');
 
 function loadTickets() {
@@ -48,8 +48,8 @@ function loadTickets() {
         if (!fs.existsSync(ticketsPath)) return {};
         return JSON.parse(fs.readFileSync(ticketsPath, 'utf8'));
     } catch (err) {
-        console.warn('⚠️ tickets.json rusak:', err.message);
-        // v3.9.26: karantina file korup sebelum fallback (lihat safeWrite.js).
+        console.warn('⚠️ tickets.json is corrupted:', err.message);
+        // v3.9.26: quarantine the corrupt file before falling back (see safeWrite.js).
         quarantineCorruptFile(ticketsPath);
         return {};
     }
@@ -60,28 +60,28 @@ function saveTickets(data) {
 }
 
 /**
- * v3.9.27: Klasifikasi tipe tiket dari metadata — SATU sumber kebenaran.
+ * v3.9.27: Classify ticket type from metadata — ONE source of truth.
  *
- * SEBELUMNYA (bug v3.9.16–v3.9.26): handler close & invoice memakai
- * `meta.requiresKey` sebagai proxy "ini transaksi?". Akibatnya produk NON-KEY
- * (jual akun ML, jasa, dll — requiresKey=false) dianggap tiket bantuan:
- *   - tombol close pakai gaya help (tidak ada "Pesanan Sukses")
- *   - invoice/testimoni tidak pernah dikirim
- *   - stats pembelian tidak tercatat
+ * BEFORE (bug v3.9.16–v3.9.26): the close & invoice handlers used
+ * `meta.requiresKey` as a proxy for "is this a transaction?". As a result, NON-KEY
+ * products (ML account sales, services, etc — requiresKey=false) were treated as support tickets:
+ *   - the close button used the help style (no "Order Successful")
+ *   - invoice/testimonial was never sent
+ *   - purchase stats were not recorded
  *
- * SEKARANG: `isTransaction` (tiket jual-beli?) dan `requiresKey` (produk
- * pakai key?) adalah dua konsep TERPISAH:
- *   - Transaksi + requiresKey=true  → tombol 🔑 Set Key (key products)
- *   - Transaksi + requiresKey=false → tombol 📦 Kirim Pesanan (akun/jasa)
- *   - Bantuan (help/report/custom tanpa produk) → tanpa tombol khusus
+ * NOW: `isTransaction` (is it a sales ticket?) and `requiresKey` (does the
+ * product use a key?) are two SEPARATE concepts:
+ *   - Transaction + requiresKey=true  → 🔑 Set Key button (key products)
+ *   - Transaction + requiresKey=false → 📦 Deliver Order button (accounts/services)
+ *   - Support (help/report/custom without a product) → no special buttons
  *
- * Prioritas sumber:
- *   1. meta.isTransaction eksplisit (tiket dibuat v3.9.27+)
- *   2. meta.requiresKey (tiket legacy v3.9.16–26 — perilaku lama dipertahankan
- *      supaya tidak ada regresi; tiket lama akan tertutup seiring waktu)
- *   3. Kategori + magic-string (tiket purba pre-v3.9.11, tanpa requiresKey)
+ * Source priority:
+ *   1. explicit meta.isTransaction (tickets created v3.9.27+)
+ *   2. meta.requiresKey (legacy tickets v3.9.16–26 — old behavior kept
+ *      to avoid regressions; old tickets will be closed over time)
+ *   3. Category + magic-string (ancient tickets pre-v3.9.11, without requiresKey)
  *
- * @param {Object|null} meta - metadata tiket dari tickets.json
+ * @param {Object|null} meta - ticket metadata from tickets.json
  * @returns {{isTransaction: boolean, requiresKey: boolean, isCompleted: boolean}}
  */
 function resolveTicketType(meta) {
@@ -91,14 +91,14 @@ function resolveTicketType(meta) {
 
     let isTransaction;
     if (meta.isTransaction !== undefined && meta.isTransaction !== null) {
-        // v3.9.27+: flag eksplisit — sumber kebenaran.
+        // v3.9.27+: explicit flag — the source of truth.
         isTransaction = meta.isTransaction === true;
     } else if (meta.requiresKey !== undefined && meta.requiresKey !== null) {
-        // Legacy v3.9.16–26: requiresKey dipakai sebagai proxy (bug lama
-        // dipertahankan untuk tiket yang masih terbuka — no regression).
+        // Legacy v3.9.16–26: requiresKey used as a proxy (the old bug is kept
+        // for tickets still open — no regression).
         isTransaction = meta.requiresKey === true;
     } else {
-        // Tiket purba (pre-v3.9.11): fallback kategori + magic-string.
+        // Ancient tickets (pre-v3.9.11): fall back to category + magic-string.
         isTransaction = !(
             meta.category === 'help' ||
             meta.category === 'report' ||
@@ -114,7 +114,7 @@ function resolveTicketType(meta) {
 }
 
 /**
- * Simpan metadata tiket baru.
+ * Store new ticket metadata.
  * @param {string} channelId
  * @param {Object} meta - { userId, productName, price, guildId, createdAt, category?, requiresKey?, deliveryFields? }
  */
@@ -123,33 +123,33 @@ function setTicketMeta(channelId, meta) {
     all[channelId] = {
         userId: meta.userId,
         productName: meta.productName,
-        // v3.9.38 FIX (FIX 3): productValue = ID stabil produk (rename-proof).
-        // null untuk tiket lama / produk sintetis kategori tanpa produk.
+        // v3.9.38 FIX (FIX 3): productValue = the product's stable ID (rename-proof).
+        // null for old tickets / synthetic products from a category without products.
         productValue: meta.productValue || null,
         price: meta.price,
         guildId: meta.guildId,
         createdAt: meta.createdAt || Date.now(),
-        // v3.9.11 Phase 2: simpan category untuk dispatch di interaction handler.
+        // v3.9.11 Phase 2: store category for dispatch in the interaction handler.
         category: meta.category || null,
-        // v3.9.11 Phase 2: requiresKey flag (kalau true, ticket tampilkan tombol Set Key).
+        // v3.9.11 Phase 2: requiresKey flag (if true, the ticket shows a Set Key button).
         requiresKey: meta.requiresKey !== undefined ? meta.requiresKey : null,
-        // v3.9.11 Phase 3: deliveryFields — data yang user isi di modal form.
+        // v3.9.11 Phase 3: deliveryFields — the data the user filled in the modal form.
         deliveryFields: meta.deliveryFields || null,
-        // v3.9.20: flag bahwa Set Key sudah dilakukan. Dipakai di ticket_close
-        // untuk menampilkan tombol "Selesai" (bukan "Tidak Jadi Beli") karena
-        // transaksi sudah sukses. Juga dipakai supaya transcript mencatat
-        // status sukses saat admin close tiket yang sudah Set Key.
+        // v3.9.20: flag that Set Key has been performed. Used by ticket_close
+        // to show the "Done" button (instead of "No Longer Buying") because
+        // the transaction already succeeded. Also used so the transcript records
+        // the success status when an admin closes a ticket that already had Set Key.
         isCompleted: meta.isCompleted || false,
         keySetAt: meta.keySetAt || null,
         keySetBy: meta.keySetBy || null,
-        // v3.9.27: isTransaction EKSPLISIT — dipisah dari requiresKey.
-        // true  = tiket jual-beli (produk key ATAU non-key: akun, jasa, dll)
-        // false = tiket bantuan (help/report/kategori tanpa produk)
+        // v3.9.27: EXPLICIT isTransaction — separated from requiresKey.
+        // true  = sales ticket (key OR non-key product: accounts, services, etc)
+        // false = support ticket (help/report/category without a product)
         isTransaction: meta.isTransaction !== undefined ? meta.isTransaction : null,
-        // v3.9.27: invoice anti-dobel — dicentang saat close supaya transaksi
-        // key (invoice dikirim saat Set Key) tidak dikirim LAGI saat close.
+        // v3.9.27: anti-double invoice — checked at close so a key
+        // transaction (invoice sent at Set Key) isn't sent AGAIN at close.
         isInvoiceSent: meta.isInvoiceSent || false,
-        // v3.9.27: jejak "Kirim Pesanan" (produk non-key) — mirror keySetAt/By.
+        // v3.9.27: trail of "Deliver Order" (non-key product) — mirrors keySetAt/By.
         deliveredAt: meta.deliveredAt || null,
         deliveredBy: meta.deliveredBy || null
     };
@@ -157,14 +157,14 @@ function setTicketMeta(channelId, meta) {
 }
 
 /**
- * Ambil metadata tiket by channelId. Fallback ke topic parsing kalau tidak ada
- * (untuk tiket lama yang dibuat sebelum v3.9.1).
+ * Get ticket metadata by channelId. Falls back to topic parsing if absent
+ * (for old tickets created before v3.9.1).
  */
 function getTicketMeta(channelId, topicFallback) {
     const all = loadTickets();
     if (all[channelId]) return all[channelId];
 
-    // Backward compat: parse dari channel topic (tiket lama).
+    // Backward compat: parse from the channel topic (old tickets).
     if (topicFallback) {
         const userIdMatch = topicFallback.match(/UserID: (\d+)/);
         const productMatch = topicFallback.match(/Product:\s*([^|]+?)\s*\|/);
@@ -184,7 +184,7 @@ function getTicketMeta(channelId, topicFallback) {
 }
 
 /**
- * Hapus metadata tiket (dipanggil saat tiket ditutup).
+ * Delete ticket metadata (called when the ticket is closed).
  */
 function removeTicketMeta(channelId) {
     const all = loadTickets();
@@ -195,9 +195,9 @@ function removeTicketMeta(channelId) {
 }
 
 /**
- * v3.9.20: Patch (partial update) metadata tiket — gak overwrite field lain.
- * Dipakai saat Set Key sukses: update isCompleted=true, keySetAt, keySetBy
- * tanpa harus re-set semua field (userId, productName, dll).
+ * v3.9.20: Patch (partial update) ticket metadata — doesn't overwrite other fields.
+ * Used on successful Set Key: updates isCompleted=true, keySetAt, keySetBy
+ * without having to re-set every field (userId, productName, etc).
  */
 function patchTicketMeta(channelId, patch) {
     const all = loadTickets();
@@ -208,23 +208,23 @@ function patchTicketMeta(channelId, patch) {
 }
 
 /**
- * v3.9.28: Klasifikasi produk → tipe tiket (pure function, di-ekstrak dari
- * createTicket supaya bisa di-unit-test — menjawab "apakah aman nambah
- * kategori baru seperti akun_ml / lisensi_key?").
+ * v3.9.28: Classify a product → ticket type (pure function, extracted from
+ * createTicket so it can be unit-tested — answers "is it safe to add a new
+ * category like akun_ml / lisensi_key?").
  *
- * Rule klasifikasi (BACKWARD-COMPATIBLE — perilaku createTicket lama):
- *   - isTransaction = FALSE hanya kalau produk eksplisit help/report:
- *       product.isHelp === true, ATAU category === 'help' / 'report'
- *   - SEMUA kategori lain (transaction, akun_ml, lisensi_key, jasa, custom
- *     apa pun) → isTransaction = true → masuk 🎫 TRANSAKSI, bukan Bantuan.
- *   - requiresKey: pakai flag produk kalau ada; kalau tidak, default =
- *     isTransaction (produk transaksi tanpa flag dianggap pakai key).
+ * Classification rules (BACKWARD-COMPATIBLE — old createTicket behavior):
+ *   - isTransaction = FALSE only for an explicit help/report product:
+ *       product.isHelp === true, OR category === 'help' / 'report'
+ *   - ALL other categories (transaction, akun_ml, lisensi_key, jasa, any
+ *     custom) → isTransaction = true → goes to 🎫 TRANSACTIONS, not Support.
+ *   - requiresKey: use the product flag if present; otherwise default =
+ *     isTransaction (a transaction product without a flag is assumed to use a key).
  *
- * Artinya: menambah kategori BARU tidak perlu ubah code sama sekali —
- * klasifikasi otomatis benar selama id kategorinya bukan 'help'/'report'.
+ * Meaning: adding a NEW category requires no code changes at all —
+ * classification is automatically correct as long as the category id isn't 'help'/'report'.
  *
- * @param {Object} product - objek produk dari config.products (atau objek
- *   sintetis dari kategori tanpa produk: { label, isHelp: true, category })
+ * @param {Object} product - product object from config.products (or a
+ *   synthetic object from a category without products: { label, isHelp: true, category })
  * @returns {{isTransaction: boolean, requiresKey: boolean}}
  */
 function classifyProduct(product) {
@@ -235,16 +235,16 @@ function classifyProduct(product) {
 }
 
 /**
- * v3.9.32: cari tiket aktif milik user (dari tickets.json — sumber kebenaran).
- * Di-ekstrak dari createTicket supaya bisa dipakai juga oleh deal rekber
- * (interactions/midman.js: buyer tidak boleh punya tiket & deal aktif
- * bersamaan — kebijakan 1 channel aktif per user).
+ * v3.9.32: find a user's active ticket (from tickets.json — the source of truth).
+ * Extracted from createTicket so escrow deals can use it too
+ * (interactions/midman.js: a buyer must not have an active ticket & deal
+ * at the same time — one active channel per user policy).
  *
- * Termasuk self-healing: metadata zombie (channel sudah tidak ada) dihapus.
+ * Includes self-healing: zombie metadata (channel no longer exists) is removed.
  *
  * @param {Guild} guild
  * @param {string} userId
- * @returns {Promise<GuildChannel|null>} channel tiket aktif, atau null.
+ * @returns {Promise<GuildChannel|null>} the active ticket channel, or null.
  */
 async function findActiveTicketFor(guild, userId) {
     const ticketsData = loadTickets();
@@ -252,26 +252,26 @@ async function findActiveTicketFor(guild, userId) {
         if (meta.userId === userId && meta.guildId === guild.id) {
             const ch = guild.channels.cache.get(chId);
             if (ch) return ch;
-            // v3.9.8: channel gak ter-cache, tapi metadata ada. Fetch dari API —
-            // kalau benar-benar hilang, cleanup metadata zombie.
-            // v3.9.38 FIX: guild.channels.fetch THROW pada Unknown Channel
-            // (10003), tidak return null. Pola lama `.catch(() => null)` membawa
-            // SEMUA error (429 rate-limit, 5xx, network blip) ke null → meta tiket
-            // yang masih LIVE ikut terhapus → user bisa buka tiket ke-2 dan guard
-            // invoice/completion hilang. Sekarang mirror pola reconcileZombieDeals
-            // (services/schedulerTasks.js): hanya 10003 yang dianggap channel
-            // benar-benar dihapus; error lain = transient, meta dipertahankan.
+            // v3.9.8: channel not cached, but metadata exists. Fetch from the API —
+            // if it's really gone, clean up the zombie metadata.
+            // v3.9.38 FIX: guild.channels.fetch THROWS on Unknown Channel
+            // (10003), it doesn't return null. The old `.catch(() => null)` pattern turned
+            // ALL errors (429 rate-limit, 5xx, network blip) into null → still-LIVE ticket
+            // metadata got deleted too → the user could open a 2nd ticket and the
+            // invoice/completion guards were lost. Now it mirrors the reconcileZombieDeals
+            // pattern (services/schedulerTasks.js): only 10003 counts as a channel
+            // truly deleted; other errors = transient, metadata is kept.
             try {
                 const fetched = await guild.channels.fetch(chId);
                 if (fetched) return fetched;
             } catch (err) {
-                // v3.9.38 FIX: 10003 = Unknown Channel — channel benar-benar dihapus.
-                // Error lain (5xx/network/rate-limit) = TRANSIENT — jangan hapus meta,
-                // biarkan percobaan berikutnya retry.
+                // v3.9.38 FIX: 10003 = Unknown Channel — the channel is truly deleted.
+                // Other errors (5xx/network/rate-limit) = TRANSIENT — don't delete meta,
+                // let the next attempt retry.
                 if (err?.code === 10003) {
                     removeTicketMeta(chId);
                 } else {
-                    console.warn(`⚠️ Gagal fetch channel tiket ${chId} (transient): ${err?.message ?? err}`);
+                    console.warn(`⚠️ Failed to fetch ticket channel ${chId} (transient): ${err?.message ?? err}`);
                 }
             }
         }
@@ -280,89 +280,89 @@ async function findActiveTicketFor(guild, userId) {
 }
 
 /**
- * Buat channel tiket baru.
- * Tiket transaksi menampilkan tombol "Set Key" + "Tutup Tiket".
- * Tiket help/report menampilkan tombol "Tutup Tiket" saja.
+ * Create a new ticket channel.
+ * Transaction tickets show "Set Key" + "Close Ticket" buttons.
+ * Help/report tickets show only a "Close Ticket" button.
  */
 async function createTicket(interaction, product) {
     const guild = interaction.guild;
     const user = interaction.user;
     const config = getConfig();
 
-    // P2-2 FIX: cek lock dulu — kalau sedang diproses, reject.
-    // v3.9.8: lock di-scope per guild supaya user di multi-guild bot gak saling block.
+    // P2-2 FIX: check the lock first — if creation is already in progress, reject.
+    // v3.9.8: the lock is scoped per guild so users in a multi-guild bot don't block each other.
     const lockKey = `${guild.id}:${user.id}`;
     if (ticketLocks.has(lockKey)) {
-        return interaction.editReply({ content: '⏳ Tiket kamu sedang dibuat, tunggu sebentar...' }).catch(() => {});
+        return interaction.editReply({ content: '⏳ Your ticket is already being created, please wait a moment...' }).catch(() => {});
     }
     ticketLocks.set(lockKey, true);
 
     try {
-        // Cek apakah user punya tiket aktif.
-        // v3.9.1: cek dari tickets.json (sumber kebenaran), fallback ke topic scan
-        // untuk tiket lama yang dibuat sebelum v3.9.1.
+        // Check whether the user already has an active ticket.
+        // v3.9.1: check tickets.json (source of truth), fall back to a topic scan
+        // for old tickets created before v3.9.1.
         //
         // v3.9.8 FIX:
-        //   1. Pakai tickets.json metadata sebagai sumber kebenaran — bahkan kalau
-        //      channel tidak ter-cache (bot baru start), tetap dianggap aktif.
-        //      Sebelumnya `cache.get(chId)` miss → duplicate ticket untuk user yang sama.
-        //   2. Fix false-positive `startsWith` — tambah separator ` |` supaya
-        //      user ID yang merupakan prefix dari user ID lain tidak false-match.
-        // v3.9.32: loop tickets.json di bawah diekstrak ke findActiveTicketFor()
-        //      (dipakai ulang oleh deal rekber) — perilaku identik.
+        //   1. Use tickets.json metadata as the source of truth — even if the
+        //      channel isn't cached (bot just started), it still counts as active.
+        //      Before, a `cache.get(chId)` miss → duplicate ticket for the same user.
+        //   2. Fix the `startsWith` false-positive — added a ` |` separator so a
+        //      user ID that is a prefix of another user ID can't false-match.
+        // v3.9.32: the tickets.json loop below is extracted into findActiveTicketFor()
+        //      (reused by escrow deals) — identical behavior.
         let existingTicket = await findActiveTicketFor(guild, user.id);
-        // Fallback: scan channel topic (tiket lama)
+        // Fallback: scan channel topics (old tickets)
         if (!existingTicket) {
-            // v3.9.8: tambah ` |` supaya ID yang prefix dari ID lain tidak false-match.
+            // v3.9.8: added ` |` so an ID that is a prefix of another ID can't false-match.
             existingTicket = guild.channels.cache.find(
                 c => c.topic && c.topic.startsWith(`Ticket UserID: ${user.id} |`)
             );
         }
         if (existingTicket) {
-            return safeEditReply(interaction, { content: `❌ Kamu sudah punya tiket aktif di ${existingTicket}!` });
+            return safeEditReply(interaction, { content: `❌ You already have an active ticket in ${existingTicket}!` });
         }
 
-        // v3.9.32: user yang masih terlibat deal rekber aktif (sebagai buyer ATAU
-        // seller) tidak boleh buka tiket reguler — cegah bypass alur escrow
-        // lewat tiket biasa (deal harus diselesaikan dulu).
+        // v3.9.32: a user still involved in an active escrow deal (as buyer OR
+        // seller) may not open a regular ticket — prevents bypassing the escrow
+        // flow via a regular ticket (the deal must be resolved first).
         if (hasActiveDealFor(guild.id, user.id)) {
             return safeEditReply(interaction, {
-                content: '❌ Kamu masih punya **deal rekber aktif**. Selesaikan deal-mu dulu sebelum buka tiket baru.'
+                content: '❌ You still have an **active escrow deal**. Finish your deal first before opening a new ticket.'
             });
         }
 
-        // Admin role wajib sudah di-set
+        // The admin role must be set first
         if (!config.roles.admin) {
             return safeEditReply(interaction, {
-                content: '❌ Role Admin belum di-set. Pakai `/set-role admin @role` dulu.'
+                content: '❌ The Admin role is not set yet. Use `/set-role admin @role` first.'
             });
         }
 
-        // v3.9.11 Phase 1: hapus magic string 'Bantuan/Lapor'.
-        // Pakai field `category` di product (Phase 2) atau fallback `isHelp: true` flag.
-        // v3.9.28: logic di-ekstrak ke classifyProduct() (pure, testable) — perilaku
-        // identik. Semua kategori selain help/report (termasuk kategori BARU apa
-        // pun: akun_ml, lisensi_key, jasa, ...) otomatis dianggap transaksi.
+        // v3.9.11 Phase 1: removed the 'Bantuan/Lapor' magic string.
+        // Uses the `category` field on the product (Phase 2) or the `isHelp: true` flag fallback.
+        // v3.9.28: logic extracted into classifyProduct() (pure, testable) —
+        // identical behavior. Every category other than help/report (including any
+        // NEW category: akun_ml, lisensi_key, jasa, ...) is automatically treated as a transaction.
         const { isTransaction, requiresKey } = classifyProduct(product);
 
-        // v3.9.16: Kategori channel dipisah berdasarkan TIPE TIKET (transaksi vs bantuan),
-        // BUKAN berdasarkan pakai key atau tidak. Jadi:
-        // - isTransaction=true  → "🎫 TRANSAKSI" (baik pakai key atau tidak — sama-sama transaksi)
-        // - isTransaction=false → "🎫 BANTUAN"   (help/report)
+        // v3.9.16: Channel categories are split by TICKET TYPE (transaction vs support),
+        // NOT by whether a key is used. So:
+        // - isTransaction=true  → "🎫 TRANSACTIONS" (key or not — both are transactions)
+        // - isTransaction=false → "🎫 SUPPORT"      (help/report)
         //
-        // Tombol Set Key di-cek terpisah berdasarkan requiresKey:
-        // - requiresKey=true  → tombol Set Key muncul
-        // - requiresKey=false → tombol Set Key tidak muncul (cuma Tutup Tiket)
+        // The Set Key button is checked separately via requiresKey:
+        // - requiresKey=true  → the Set Key button appears
+        // - requiresKey=false → no Set Key button (only Close Ticket)
         //
-        // Contoh kasus:
-        //   - Produk "VIP 30 Hari" (requiresKey=true) → 🎫 TRANSAKSI + tombol Set Key
-        //   - Produk "Jasa Joki" (requiresKey=false)  → 🎫 TRANSAKSI + tanpa Set Key (cuma Tutup)
-        //   - Help / Report                          → 🎫 BANTUAN + tanpa Set Key
-        const transactionCategoryName = config.ticketCategoryKey || '🎫 TRANSAKSI';
-        const helpCategoryName = config.ticketCategoryNoKey || '🎫 BANTUAN';
+        // Example cases:
+        //   - Product "VIP 30 Hari" (requiresKey=true) → 🎫 TRANSACTIONS + Set Key button
+        //   - Product "Jasa Joki" (requiresKey=false)  → 🎫 TRANSACTIONS + no Set Key (Close only)
+        //   - Help / Report                          → 🎫 SUPPORT + no Set Key
+        const transactionCategoryName = config.ticketCategoryKey || '🎫 TRANSACTIONS';
+        const helpCategoryName = config.ticketCategoryNoKey || '🎫 SUPPORT';
         const targetCategoryName = isTransaction ? transactionCategoryName : helpCategoryName;
 
-        // Cari kategori target. Kalau gak ada, buat baru.
+        // Find the target category. If it doesn't exist, create it.
         let category = guild.channels.cache.find(
             c => c.name === targetCategoryName && c.type === ChannelType.GuildCategory
         );
@@ -372,16 +372,16 @@ async function createTicket(interaction, product) {
                     name: targetCategoryName,
                     type: ChannelType.GuildCategory
                 });
-                console.log(`📁 Kategori tiket baru dibuat: ${targetCategoryName}`);
+                console.log(`📁 New ticket category created: ${targetCategoryName}`);
             } catch (catErr) {
-                console.error(`Gagal buat kategori ${targetCategoryName}:`, catErr.message);
-                // Fallback: pakai kategori "🎫 TICKETS" lama kalau ada (backward compat)
+                console.error(`Failed to create category ${targetCategoryName}:`, catErr.message);
+                // Fallback: use the old "🎫 TICKETS" category if it exists (backward compat)
                 category = guild.channels.cache.find(
                     c => c.name === '🎫 TICKETS' && c.type === ChannelType.GuildCategory
                 );
                 if (!category) {
                     throw new Error(
-                        `Gagal buat kategori tiket "${targetCategoryName}". Cek permission Manage Channels.`
+                        `Failed to create ticket category "${targetCategoryName}". Check the Manage Channels permission.`
                     );
                 }
             }
@@ -393,7 +393,7 @@ async function createTicket(interaction, product) {
             name: channelName,
             type: ChannelType.GuildText,
             parent: category.id,
-            // Topic tetap di-set untuk human-readable info, tapi bukan sumber kebenaran.
+            // The topic is still set for human-readable info, but it's not the source of truth.
             topic: `Ticket UserID: ${user.id} | Product: ${product.label} | Price: ${product.price}`,
             permissionOverwrites: [
                 { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
@@ -428,15 +428,15 @@ async function createTicket(interaction, product) {
             ]
         });
 
-        // v3.9.1: simpan metadata tiket ke tickets.json (sumber kebenaran).
-        // v3.9.11 Phase 2: simpan category & requiresKey juga.
-        // v3.9.27: simpan isTransaction EKSPLISIT — close flow & invoice tidak
-        // lagi salah menganggap produk non-key (akun/jasa) sebagai tiket bantuan.
-        // v3.9.38 FIX (FIX 3): simpan productValue (ID stabil) DI SAMPING
-        // productName (label — tetap disimpan untuk display & backward compat).
-        // Sebelumnya meta hanya menyimpan label → admin rename produk via
-        // /update-product membuat lookup produk di semua tiket aktif miss
-        // ("Produk tidak ditemukan"), dan label duplikat resolve ke produk salah.
+        // v3.9.1: save ticket metadata to tickets.json (source of truth).
+        // v3.9.11 Phase 2: save category & requiresKey too.
+        // v3.9.27: save EXPLICIT isTransaction — the close flow & invoice no
+        // longer misclassify non-key products (accounts/services) as support tickets.
+        // v3.9.38 FIX (FIX 3): save productValue (stable ID) ALONGSIDE
+        // productName (label — still stored for display & backward compat).
+        // Before, meta only stored the label → an admin renaming a product via
+        // /update-product made the product lookup miss for all active tickets
+        // ("Product not found"), and duplicate labels resolved to the wrong product.
         setTicketMeta(ticketChannel.id, {
             userId: user.id,
             productName: product.label,
@@ -449,38 +449,38 @@ async function createTicket(interaction, product) {
             isTransaction
         });
 
-        // v3.9.16: Pesan embed pakai isTransaction (transaksi vs bantuan).
-        // Tombol Set Key pakai requiresKey (pakai key atau tidak).
-        // Jadi 3 skenario:
-        //   1. Transaksi + requiresKey=true  → "TIKET TRANSAKSI" + tombol Set Key + Tutup
-        //   2. Transaksi + requiresKey=false → "TIKET TRANSAKSI" + tombol Tutup saja (jasa, dll)
-        //   3. Help / Report                 → "TIKET BANTUAN" + tombol Tutup saja
+        // v3.9.16: The embed message uses isTransaction (transaction vs support).
+        // The Set Key button uses requiresKey (uses a key or not).
+        // So, 3 scenarios:
+        //   1. Transaction + requiresKey=true  → "TRANSACTION TICKET" + Set Key + Close buttons
+        //   2. Transaction + requiresKey=false → "TRANSACTION TICKET" + Close button only (services, etc)
+        //   3. Help / Report                   → "SUPPORT TICKET" + Close button only
         const ticketEmbed = new EmbedBuilder()
-            .setTitle(isTransaction ? '🛒 TIKET TRANSAKSI' : '🎫 TIKET BANTUAN')
+            .setTitle(isTransaction ? '🛒 TRANSACTION TICKET' : '🎫 SUPPORT TICKET')
             .setDescription(
-                `Halo <@${user.id}>!\n\n` +
+                `Hello <@${user.id}>!\n\n` +
                     (isTransaction
-                        ? `Kamu memesan paket **${product.label}** dengan harga **${product.price}**.\n\n` +
-                          `Silakan lakukan pembayaran dan kirim bukti pembayaran di sini.\n` +
-                          `Admin <@&${config.roles.admin}> akan memproses pesananmu.\n\n` +
+                        ? `You ordered the **${product.label}** package for **${product.price}**.\n\n` +
+                          `Please make the payment and send your payment proof here.\n` +
+                          `An admin <@&${config.roles.admin}> will process your order.\n\n` +
                           (requiresKey
-                              ? `💡 Setelah pembayaran dikonfirmasi, admin klik tombol **🔑 Set Key** untuk memberikan key + role.`
-                              : `💡 Setelah pembayaran dikonfirmasi, admin klik tombol **📦 Kirim Pesanan** — detail pesanan akan dikirim ke kamu via DM.`)
-                        : `Silakan jelaskan kebutuhanmu di channel ini.\n` +
-                          `Admin <@&${config.roles.admin}> akan segera membantu.`)
+                              ? `💡 Once your payment is confirmed, an admin clicks the **🔑 Set Key** button to give you the key + role.`
+                              : `💡 Once your payment is confirmed, an admin clicks the **📦 Deliver Order** button — the order details will be sent to you via DM.`)
+                        : `Please describe what you need in this channel.\n` +
+                          `An admin <@&${config.roles.admin}> will assist you shortly.`)
             )
             .setColor(isTransaction ? 0x3498db : 0xe67e22)
             .addFields(
                 isTransaction
                     ? [
                           {
-                              name: '📦 Produk',
+                              name: '📦 Product',
                               value: `${product.label}${product.duration ? ` (${product.duration})` : ''}`,
                               inline: true
                           },
-                          { name: '💰 Harga', value: product.price, inline: true }
+                          { name: '💰 Price', value: product.price, inline: true }
                       ]
-                    : [{ name: '📋 Jenis', value: product.label, inline: false }]
+                    : [{ name: '📋 Type', value: product.label, inline: false }]
             )
             .setFooter({
                 text: interaction.client.user.username,
@@ -488,12 +488,12 @@ async function createTicket(interaction, product) {
             })
             .setTimestamp();
 
-        // Tombol: Set Key (key) / Kirim Pesanan (non-key) + Tutup Tiket.
-        // v3.9.27: produk transaksi NON-KEY (akun, jasa, dll) dapat tombol
-        // "Kirim Pesanan" — mirror dari Set Key: admin isi detail pesanan di
-        // modal, bot DM ke pembeli + auto-role + stats + invoice. Sebelumnya
-        // produk non-key cuma punya Tutup Tiket, jadi detail pesanan hanya ada
-        // di chat tiket yang TERHAPUS saat close — pembeli kehilangan datanya.
+        // Buttons: Set Key (key) / Deliver Order (non-key) + Close Ticket.
+        // v3.9.27: NON-KEY transaction products (accounts, services, etc) get a
+        // "Deliver Order" button — mirror of Set Key: the admin fills in the order
+        // details in a modal, the bot DMs the buyer + auto-role + stats + invoice. Before,
+        // non-key products only had Close Ticket, so the order details only lived
+        // in the ticket chat which gets DELETED at close — the buyer lost their data.
         const components = [];
         if (requiresKey) {
             components.push(
@@ -507,7 +507,7 @@ async function createTicket(interaction, product) {
             components.push(
                 new ButtonBuilder()
                     .setCustomId('ticket_deliver')
-                    .setLabel('Kirim Pesanan')
+                    .setLabel('Deliver Order')
                     .setEmoji('📦')
                     .setStyle(ButtonStyle.Success)
             );
@@ -515,7 +515,7 @@ async function createTicket(interaction, product) {
         components.push(
             new ButtonBuilder()
                 .setCustomId('ticket_close')
-                .setLabel('Tutup Tiket')
+                .setLabel('Close Ticket')
                 .setEmoji('🔒')
                 .setStyle(ButtonStyle.Danger)
         );
@@ -526,27 +526,27 @@ async function createTicket(interaction, product) {
             embeds: [ticketEmbed],
             components: [closeRow]
         });
-        await safeEditReply(interaction, { content: `✅ Tiket berhasil dibuat: ${ticketChannel}` });
+        await safeEditReply(interaction, { content: `✅ Ticket created successfully: ${ticketChannel}` });
     } catch (err) {
         console.error('Error creating ticket:', err);
-        await interaction.editReply({ content: '❌ Terjadi error saat membuat tiket. Cek izin bot!' }).catch(() => {});
+        await interaction.editReply({ content: '❌ An error occurred while creating the ticket. Check the bot permissions!' }).catch(() => {});
     } finally {
-        // P2-2 FIX: pastikan lock dilepas walau ada error.
-        // v3.9.8: gunakan lockKey scoped per guild.
+        // P2-2 FIX: make sure the lock is released even on error.
+        // v3.9.8: use the guild-scoped lockKey.
         ticketLocks.delete(`${guild.id}:${user.id}`);
     }
 }
 
 /**
- * Kirim invoice ke channel invoice (testimoni).
- * Dipakai oleh Set Key flow & closeTicket.
+ * Send an invoice to the invoice channel (testimonial).
+ * Used by the Set Key flow & closeTicket.
  */
 async function sendInvoice(channel, userId, productName, price, closer) {
     const config = getConfig();
     if (!config.channels.invoice) return false;
-    // v3.9.11 Phase 1: hapus magic string 'Bantuan/Lapor'.
-    // Sekarang: kirim invoice untuk semua produk transaksi (bukan help/report).
-    // Caller bertanggung jawab skip sendInvoice untuk non-transaction ticket.
+    // v3.9.11 Phase 1: removed the 'Bantuan/Lapor' magic string.
+    // Now: send an invoice for all transaction products (not help/report).
+    // The caller is responsible for skipping sendInvoice for non-transaction tickets.
     if (!productName || productName === 'Unknown') return false;
 
     const invoiceChannel = channel.guild.channels.cache.get(config.channels.invoice);
@@ -554,37 +554,37 @@ async function sendInvoice(channel, userId, productName, price, closer) {
 
     const orderId = `INV-${Date.now().toString().slice(-6)}`;
     const invoiceEmbed = new EmbedBuilder()
-        .setTitle('🧾 BUKTI TRANSAKSI / TESTIMONI')
+        .setTitle('🧾 TRANSACTION PROOF / TESTIMONIAL')
         .setColor(0x2ecc71)
         .addFields(
             { name: '🆔 Order ID', value: orderId, inline: false },
-            { name: '👤 Pembeli', value: `<@${userId}>`, inline: false },
-            { name: '📦 Produk', value: productName, inline: true },
-            { name: '💰 Harga', value: price, inline: true },
-            { name: '🕒 Tanggal', value: new Date().toLocaleString('id-ID'), inline: false }
+            { name: '👤 Buyer', value: `<@${userId}>`, inline: false },
+            { name: '📦 Product', value: productName, inline: true },
+            { name: '💰 Price', value: price, inline: true },
+            { name: '🕒 Date', value: new Date().toLocaleString('en-US'), inline: false }
         )
-        .setFooter({ text: `Diproses oleh ${closer.tag}`, iconURL: closer.displayAvatarURL({ dynamic: true }) })
+        .setFooter({ text: `Processed by ${closer.tag}`, iconURL: closer.displayAvatarURL({ dynamic: true }) })
         .setTimestamp();
 
-    await invoiceChannel.send({ content: `✅ Transaksi sukses oleh <@${userId}>!`, embeds: [invoiceEmbed] });
+    await invoiceChannel.send({ content: `✅ Successful transaction by <@${userId}>!`, embeds: [invoiceEmbed] });
     return true;
 }
 
 /**
- * v3.9.38 FIX (FIX 3): SATU helper lookup produk dari meta tiket.
+ * v3.9.38 FIX (FIX 3): ONE product lookup helper from ticket meta.
  *
- * Meta menyimpan label (productName) sejak v3.9.1 — label bisa di-rename
- * admin ("VIP 30 Hari" → "VIP 1 Bulan") → lookup by label miss. Mulai
- * v3.9.38 meta juga menyimpan productValue (ID stabil). Prioritas:
+ * Meta has stored the label (productName) since v3.9.1 — a label can be renamed
+ * by an admin ("VIP 30 Hari" → "VIP 1 Bulan") → lookup by label misses. Since
+ * v3.9.38 meta also stores productValue (stable ID). Priority:
  *   1. by value: p.value === (meta.productValue || meta.productName)
- *      (meta.productName dipakai sebagai value-query dulu supaya tiket
- *      legacy yang kebetulan menyimpan value tetap match — pola v3.9.26)
- *   2. by label: p.label === meta.productName (tiket legacy, fallback)
- *   3. null (produk dihapus → caller pakai meta.productName untuk display)
+ *      (meta.productName is used as the value-query first so legacy tickets
+ *      that happen to store a value still match — v3.9.26 pattern)
+ *   2. by label: p.label === meta.productName (legacy tickets, fallback)
+ *   3. null (product deleted → the caller uses meta.productName for display)
  *
- * @param {Object} config - config bot (config.products)
- * @param {Object|null} meta - metadata tiket dari tickets.json
- * @returns {Object|null} objek produk dari config, atau null
+ * @param {Object} config - bot config (config.products)
+ * @param {Object|null} meta - ticket metadata from tickets.json
+ * @returns {Object|null} the product object from config, or null
  */
 function resolveProduct(config, meta) {
     if (!meta) return null;
@@ -597,19 +597,19 @@ function resolveProduct(config, meta) {
 }
 
 /**
- * v3.9.11 Phase 3: Save transcript tiket ke channel transcript.
+ * v3.9.11 Phase 3: Save the ticket transcript to the transcript channel.
  *
- * Fetch semua messages di channel tiket, format jadi text, kirim ke channel
- * transcript yang sudah di-set via /set-channel tipe:transcript (v3.9.30,
- * dulu command terpisah /set-transcript-channel).
+ * Fetches all messages in the ticket channel, formats them as text, and sends them
+ * to the transcript channel set via /set-channel type:transcript (v3.9.30,
+ * previously a separate command /set-transcript-channel).
  *
- * Limit Discord: 1 message = 2000 char. Kalau transcript > 2000 char,
- * bagi jadi multiple messages.
+ * Discord limit: 1 message = 2000 chars. If the transcript is > 2000 chars,
+ * split it into multiple messages.
  *
- * @param {Channel} ticketChannel - channel tiket yang akan di-close
- * @param {Object} meta - metadata tiket dari tickets.json
- * @param {User} closer - admin yang close
- * @param {boolean} isSuccess - true kalau transaksi sukses
+ * @param {Channel} ticketChannel - the ticket channel being closed
+ * @param {Object} meta - ticket metadata from tickets.json
+ * @param {User} closer - the admin closing the ticket
+ * @param {boolean} isSuccess - true if the transaction succeeded
  */
 async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
     const config = getConfig();
@@ -619,13 +619,13 @@ async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
     const transcriptChannel = ticketChannel.guild?.channels?.cache?.get(transcriptChannelId);
     if (!transcriptChannel) return false;
 
-    // v3.9.38 FIX (FIX 7): fetch SEMUA pesan secara paginated, bukan cuma 100
-    // terakhir. Bukti pembayaran dikirim di AWAL tiket — dengan limit 100,
-    // transcript tiket panjang kehilangan pesan-pesan awal persis yang paling
-    // penting. Loop pakai `before: <idTerlama>` sampai halaman kosong/parsial,
-    // dengan hard cap MAX_TRANSCRIPT_MESSAGES untuk melindungi rate limit.
-    // (API mengembalikan batch urut terbaru→terlama; ID snowflake naik seiring
-    // waktu, jadi id TERKECIL di batch = pesan terlama = cursor `before`.)
+    // v3.9.38 FIX (FIX 7): fetch ALL messages paginated, not just the last 100.
+    // Payment proof is sent at the START of a ticket — with a 100-message limit,
+    // long-ticket transcripts lost the early messages, precisely the most
+    // important ones. Loop using `before: <oldestId>` until an empty/partial page,
+    // with a hard cap MAX_TRANSCRIPT_MESSAGES to protect the rate limit.
+    // (The API returns batches newest→oldest; snowflake IDs increase over
+    // time, so the SMALLEST id in a batch = the oldest message = the `before` cursor.)
     const MAX_TRANSCRIPT_MESSAGES = 1000;
     const collected = [];
     let capped = false;
@@ -641,87 +641,87 @@ async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
             for (const id of batch.keys()) {
                 if (oldestId === null || BigInt(id) < BigInt(oldestId)) oldestId = id;
             }
-            if (batch.size < 100) break; // halaman terakhir — tidak ada pesan lebih lama
+            if (batch.size < 100) break; // last page — no older messages
             if (collected.length >= MAX_TRANSCRIPT_MESSAGES) {
-                capped = true; // masih ada pesan lebih lama, tapi cap tercapai
+                capped = true; // older messages remain, but the cap is reached
                 break;
             }
         }
         messages = collected;
     } catch (err) {
-        console.warn(`⚠️ Gagal fetch messages untuk transcript: ${err.message}`);
+        console.warn(`⚠️ Failed to fetch messages for transcript: ${err.message}`);
         return false;
     }
 
-    // Sort oldest-first supaya transcript terbaca kronologis
+    // Sort oldest-first so the transcript reads chronologically
     const sorted = [...messages].sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
     // Build transcript text
     const lines = [];
     lines.push(`╔═══════════════════════════════════════════`);
-    lines.push(`║ 🎫 TIKET TRANSCRIPT`);
+    lines.push(`║ 🎫 TICKET TRANSCRIPT`);
     lines.push(`╠═══════════════════════════════════════════`);
     lines.push(`║ 📌 Channel: #${ticketChannel.name} (\`${ticketChannel.id}\`)`);
     lines.push(`║ 👤 User: <@${meta?.userId || 'unknown'}> (${meta?.userId || 'unknown'})`);
-    lines.push(`║ 📦 Produk: ${meta?.productName || 'unknown'}`);
-    lines.push(`║ 💰 Harga: ${meta?.price || 'unknown'}`);
-    lines.push(`║ 🏷️ Kategori: ${meta?.category || 'unknown'}`);
-    lines.push(`║ ✅ Status: ${isSuccess ? 'Sukses' : 'Dibatalkan'}`);
-    lines.push(`║ 🔒 Ditutup oleh: ${closer?.tag || 'unknown'} (\`${closer?.id || 'unknown'}\`)`);
-    lines.push(`║ 📅 Dibuat: ${meta?.createdAt ? new Date(meta.createdAt).toLocaleString('id-ID') : 'unknown'}`);
-    lines.push(`║ 📅 Ditutup: ${new Date().toLocaleString('id-ID')}`);
+    lines.push(`║ 📦 Product: ${meta?.productName || 'unknown'}`);
+    lines.push(`║ 💰 Price: ${meta?.price || 'unknown'}`);
+    lines.push(`║ 🏷️ Category: ${meta?.category || 'unknown'}`);
+    lines.push(`║ ✅ Status: ${isSuccess ? 'Success' : 'Cancelled'}`);
+    lines.push(`║ 🔒 Closed by: ${closer?.tag || 'unknown'} (\`${closer?.id || 'unknown'}\`)`);
+    lines.push(`║ 📅 Created: ${meta?.createdAt ? new Date(meta.createdAt).toLocaleString('en-US') : 'unknown'}`);
+    lines.push(`║ 📅 Closed: ${new Date().toLocaleString('en-US')}`);
     lines.push(`╚═══════════════════════════════════════════`);
-    // v3.9.38 FIX (FIX 7): tanda kalau transcript di-truncate oleh hard cap.
+    // v3.9.38 FIX (FIX 7): marker that the transcript was truncated by the hard cap.
     if (capped) {
-        lines.push(`║ ⚠️ NOTE: channel punya lebih dari ${MAX_TRANSCRIPT_MESSAGES} pesan — hanya ${MAX_TRANSCRIPT_MESSAGES} pesan TERBARU yang diarsipkan (proteksi rate-limit).`);
+        lines.push(`║ ⚠️ NOTE: this channel has more than ${MAX_TRANSCRIPT_MESSAGES} messages — only the ${MAX_TRANSCRIPT_MESSAGES} NEWEST messages were archived (rate-limit protection).`);
     }
     lines.push('');
     lines.push('--- CHAT HISTORY ---');
 
     for (const msg of sorted) {
-        // Skip message dari bot yang cuma embed panel (panjang & gak relevan)
+        // Skip bot messages that are only panel embeds (long & not relevant)
         if (msg.author.bot && msg.embeds.length > 0 && msg.content === '') continue;
 
-        const time = new Date(msg.createdTimestamp).toLocaleString('id-ID');
+        const time = new Date(msg.createdTimestamp).toLocaleString('en-US');
         const author = msg.author?.tag || 'unknown';
-        const content = msg.content || '_(embed/attachment — tidak ditampilkan)_';
+        const content = msg.content || '_(embed/attachment — not shown)_';
         lines.push(`[${time}] ${author}: ${content}`);
     }
 
     lines.push('--- END OF TRANSCRIPT ---');
 
-    // Kirim sebagai embed summary + multiple text chunks kalau perlu
+    // Send as an embed summary + multiple text chunks if needed
     const transcriptText = lines.join('\n');
-    const CHUNK_SIZE = 1900; // sedikit di bawah 2000 untuk safety
+    const CHUNK_SIZE = 1900; // slightly below 2000 for safety
 
     const embed = new EmbedBuilder()
         .setTitle(`🎫 Ticket Transcript — ${meta?.productName || 'Unknown'}`)
         .setColor(isSuccess ? 0x57f287 : 0xed4245)
         .addFields(
             { name: '👤 User', value: `<@${meta?.userId || 'unknown'}>`, inline: true },
-            { name: '📦 Produk', value: meta?.productName || 'unknown', inline: true },
-            { name: '💰 Harga', value: meta?.price || 'unknown', inline: true },
-            { name: '🏷️ Kategori', value: meta?.category || 'unknown', inline: true },
-            { name: '🔒 Ditutup oleh', value: closer?.tag || 'unknown', inline: true },
-            { name: '✅ Status', value: isSuccess ? 'Sukses' : 'Dibatalkan', inline: true }
+            { name: '📦 Product', value: meta?.productName || 'unknown', inline: true },
+            { name: '💰 Price', value: meta?.price || 'unknown', inline: true },
+            { name: '🏷️ Category', value: meta?.category || 'unknown', inline: true },
+            { name: '🔒 Closed by', value: closer?.tag || 'unknown', inline: true },
+            { name: '✅ Status', value: isSuccess ? 'Success' : 'Cancelled', inline: true }
         )
-        .setFooter({ text: `Channel: ${ticketChannel.name} | ${new Date().toLocaleString('id-ID')}` })
+        .setFooter({ text: `Channel: ${ticketChannel.name} | ${new Date().toLocaleString('en-US')}` })
         .setTimestamp();
 
     await transcriptChannel.send({ embeds: [embed] });
 
-    // Kirim transcript text dalam code blocks (chunked kalau perlu)
+    // Send the transcript text in code blocks (chunked if needed)
     const chunks = [];
     if (transcriptText.length <= CHUNK_SIZE) {
         chunks.push(transcriptText);
     } else {
-        // Pecah per baris, gabung sampai mendekati CHUNK_SIZE
+        // Split per line, join until close to CHUNK_SIZE
         let current = '';
         for (const line of lines) {
-            // v3.9.26 FIX: hard-split baris yang sendirinya > CHUNK_SIZE. Satu
-            // pesan user bisa 2000 char → satu "line" > 1900 → chunk jadi
-            // > limit → send throw → SELURUH text transcript hilang (catch
-            // di closeTicket menelan). Sekarang baris panjang dipecah paksa.
+            // v3.9.26 FIX: hard-split lines that are by themselves > CHUNK_SIZE. A
+            // single user message can be 2000 chars → a single "line" > 1900 → a chunk
+            // over the limit → send throws → the ENTIRE transcript text is lost (the
+            // catch in closeTicket swallows it). Now long lines are force-split.
             let l = line;
             while (l.length > CHUNK_SIZE) {
                 if (current) {
@@ -731,9 +731,9 @@ async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
                 chunks.push(l.slice(0, CHUNK_SIZE));
                 l = l.slice(CHUNK_SIZE);
             }
-            // v3.9.37 FIX: `current` bisa kosong saat baris hard-split tepat
-            // sepanjang CHUNK_SIZE → chunk kosong terkirim sebagai code block
-            // blank. Push hanya kalau ada isinya.
+            // v3.9.37 FIX: `current` can be empty when a hard-split line is exactly
+            // CHUNK_SIZE long → an empty chunk would be sent as a blank code
+            // block. Only push when it has content.
             if ((current + '\n' + l).length > CHUNK_SIZE) {
                 if (current) chunks.push(current);
                 current = l;
@@ -755,155 +755,155 @@ async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
 }
 
 /**
- * Tutup tiket — HANYA hapus channel + kirim invoice (kalau sukses).
- * Role granting & key delivery sekarang ditangani oleh Set Key button.
+ * Close a ticket — ONLY deletes the channel + sends the invoice (if successful).
+ * Role granting & key delivery are now handled by the Set Key button.
  *
  * FIX v3.7.1:
- *   - Per-channel lock mencegah double-close race condition
- *   - Handle DiscordAPIError 10003 (Unknown Channel) sebagai sukses —
- *     channel sudah tidak ada, yang artinya tujuan close sudah tercapai
- *     (mungkin dihapus admin lain atau close sebelumnya berhasil tapi
- *     reply-nya timeout).
- *   - Invoice failure tidak block close (log warning saja)
+ *   - Per-channel lock prevents a double-close race condition
+ *   - Treat DiscordAPIError 10003 (Unknown Channel) as success —
+ *     the channel is already gone, which means the close goal is already met
+ *     (maybe deleted by another admin, or a previous close succeeded but its
+ *     reply timed out).
+ *   - Invoice failure doesn't block the close (just log a warning)
  *
- * @param {Channel} channel - channel tiket
- * @param {User} closer - admin yang menutup
- * @param {boolean} isSuccess - true kalau transaksi sukses (kirim invoice), false kalau batal
+ * @param {Channel} channel - ticket channel
+ * @param {User} closer - the admin closing the ticket
+ * @param {boolean} isSuccess - true if the transaction succeeded (send invoice), false if cancelled
  */
 async function closeTicket(channel, closer, isSuccess) {
     const channelId = channel?.id;
 
-    // FIX v3.7.1: skip kalau channel sudah tidak ada (partial/deleted)
+    // FIX v3.7.1: skip if the channel is already gone (partial/deleted)
     if (!channelId) {
-        console.log('ℹ️ closeTicket dipanggil tanpa channel valid — skip.');
+        console.log('ℹ️ closeTicket called without a valid channel — skipping.');
         return;
     }
 
-    // FIX v3.7.1: cegah double-close — kalau channel ini sedang di-close, skip.
+    // FIX v3.7.1: prevent double-close — if this channel is already being closed, skip.
     if (closeTicketLocks.has(channelId)) {
-        console.log(`⏭️ Channel ${channelId} sedang di-close, skip double-close.`);
+        console.log(`⏭️ Channel ${channelId} is already being closed, skipping double-close.`);
         return;
     }
     closeTicketLocks.add(channelId);
 
     try {
-        // v3.9.1: baca metadata dari tickets.json (sumber kebenaran), fallback ke
-        // topic parsing untuk tiket lama yang dibuat sebelum v3.9.1.
+        // v3.9.1: read metadata from tickets.json (source of truth), fall back to
+        // topic parsing for old tickets created before v3.9.1.
         const topic = channel.topic || '';
         const meta = getTicketMeta(channelId, topic);
         const userId = meta?.userId || null;
         const productName = meta?.productName || 'Unknown';
         const price = meta?.price || 'Unknown';
 
-        // v3.9.20: kalau Set Key sudah dilakukan (meta.isCompleted=true),
-        // anggap isSuccess=true supaya transcript & invoice mencatat status sukses.
-        // Admin bisa close tanpa harus klik "Selesai" — meta yang penting.
+        // v3.9.20: if Set Key was already performed (meta.isCompleted=true),
+        // treat isSuccess=true so the transcript & invoice record the success status.
+        // The admin can close without clicking "Done" — the meta is what matters.
         if (meta?.isCompleted === true) {
             isSuccess = true;
         }
 
-        // v3.9.11 Phase 3: auto-save transcript ke channel transcript (kalau di-set).
-        // Dilakukan SEBELUM delete channel supaya messages masih bisa di-fetch.
-        // Failure tidak block close — log warning saja.
+        // v3.9.11 Phase 3: auto-save the transcript to the transcript channel (if set).
+        // Done BEFORE deleting the channel so messages can still be fetched.
+        // Failure doesn't block the close — just log a warning.
         const config = getConfig();
         const transcriptChannelId = config.channels?.transcript;
         if (transcriptChannelId) {
             try {
                 await saveTranscript(channel, meta, closer, isSuccess);
             } catch (transcriptErr) {
-                console.warn(`⚠️ Gagal save transcript untuk ticket ${channelId}:`, transcriptErr.message);
+                console.warn(`⚠️ Failed to save transcript for ticket ${channelId}:`, transcriptErr.message);
             }
         }
 
-        // Kirim invoice untuk tiket TRANSAKSI yang sukses (bukan help/report).
-        // v3.9.16: fix bug — sebelumnya help/report yang diklik "Selesai" juga kekirim invoice
-        // padahal bukan transaksi jualan. Sekarang cek category dulu.
-        // v3.9.18: generalize — pakai meta.requiresKey sebagai sumber kebenaran.
-        //   - meta.requiresKey === false            → skip invoice (kategori non-transaksi)
-        //   - meta.requiresKey === true             → kirim invoice kalau sukses
-        //   - meta.requiresKey undefined (tiket lama) → fallback ke cek category & magic-string
-        //     untuk backward compat dengan tiket yang dibuat sebelum v3.9.16.
-        // v3.9.27 FIX (bug user-reported): produk non-key adalah TRANSAKSI SUNGGUHAN
-        // (jual akun ML, jasa, dll). requiresKey===false tidak lagi dianggap
-        // "bantuan" — sekarang pakai resolveTicketType() yang baca flag
-        // isTransaction eksplisit. Invoice/testimoni akhirnya terkirim untuk
-        // produk non-key yang di-close sebagai "Pesanan Sukses".
+        // Send an invoice for a successful TRANSACTION ticket (not help/report).
+        // v3.9.16: bug fix — before, help/report tickets closed via "Done" also got an invoice
+        // even though they weren't sales. Now the category is checked first.
+        // v3.9.18: generalized — uses meta.requiresKey as the source of truth.
+        //   - meta.requiresKey === false            → skip invoice (non-transaction category)
+        //   - meta.requiresKey === true             → send invoice if successful
+        //   - meta.requiresKey undefined (old ticket) → fall back to the category & magic-string check
+        //     for backward compat with tickets created before v3.9.16.
+        // v3.9.27 FIX (user-reported bug): non-key products are REAL TRANSACTIONS
+        // (ML account sales, services, etc). requiresKey===false is no longer treated as
+        // "support" — resolveTicketType() now reads the explicit
+        // isTransaction flag. The invoice/testimonial is finally sent for
+        // non-key products closed as "Order Successful".
         //
-        // v3.9.27 FIX #2 (dobel invoice): transaksi key yang sudah Set Key
-        // dulunya kekirim invoice DUA KALI (saat Set Key + saat close "Selesai").
-        // Sekarang: flag isInvoiceSent dicentang — kalau invoice sudah pernah
-        // dikirim (Set Key / Kirim Pesanan), close tidak mengirim lagi.
+        // v3.9.27 FIX #2 (double invoice): a key transaction that already had Set Key
+        // used to get the invoice TWICE (at Set Key + at close via "Done").
+        // Now: the isInvoiceSent flag is checked — if the invoice was already
+        // sent (Set Key / Deliver Order), close doesn't send it again.
         const ticketType = resolveTicketType(meta);
         const invoiceAlreadySent =
             meta?.isInvoiceSent === true ||
-            // Legacy: tiket key (v3.9.20–26) yang isCompleted berarti Set Key sudah
-            // dilakukan — invoice pasti sudah terkirim saat itu (flow lama selalu kirim).
+            // Legacy: a key ticket (v3.9.20–26) with isCompleted means Set Key was
+            // already performed — the invoice was surely sent then (the old flow always sent it).
             (meta?.isInvoiceSent === undefined && meta?.isCompleted === true && ticketType.requiresKey === true);
 
         if (isSuccess && userId && ticketType.isTransaction && !invoiceAlreadySent) {
             try {
-                // v3.9.38 FIX (FIX 3e): tampilkan label produk TERKINI di invoice —
-                // meta menyimpan label beku saat tiket dibuat; resolve by
-                // productValue (stabil) dulu, fallback ke label meta kalau produk
-                // sudah dihapus.
+                // v3.9.38 FIX (FIX 3e): show the LATEST product label on the invoice —
+                // meta stores the frozen label from when the ticket was created; resolve by
+                // productValue (stable) first, fall back to the meta label if the product
+                // was deleted.
                 const invoiceLabel = resolveProduct(config, meta)?.label || productName;
                 await sendInvoice(channel, userId, invoiceLabel, price, closer);
             } catch (invoiceErr) {
-                console.warn(`⚠️ Gagal kirim invoice saat close ticket ${channelId}:`, invoiceErr.message);
+                console.warn(`⚠️ Failed to send invoice while closing ticket ${channelId}:`, invoiceErr.message);
             }
         }
 
-        // Hapus channel
-        // FIX v3.7.1: handle 10003 (Unknown Channel) sebagai sukses.
-        // v3.9.31 FIX: track apakah channel BENAR-BENAR sudah tidak ada.
+        // Delete the channel
+        // FIX v3.7.1: treat 10003 (Unknown Channel) as success.
+        // v3.9.31 FIX: track whether the channel is REALLY gone.
         let channelGone = false;
         try {
             await channel.delete();
             channelGone = true;
         } catch (deleteErr) {
-            // DiscordAPIError code 10003 = Unknown Channel — sudah dihapus.
-            // Anggap sukses karena tujuan close sudah tercapai.
+            // DiscordAPIError code 10003 = Unknown Channel — already deleted.
+            // Treat as success because the close goal is already met.
             if (deleteErr.code === 10003) {
                 console.log(
-                    `ℹ️ Channel ${channelId} sudah tidak ada (kemungkinan dihapus admin lain atau close sebelumnya). Anggap sukses.`
+                    `ℹ️ Channel ${channelId} no longer exists (likely deleted by another admin or a previous close). Treating as success.`
                 );
                 channelGone = true;
             } else {
-                // Error lain (permission, network) — log tapi jangan crash
-                console.warn(`⚠️ Gagal hapus channel ${channelId}:`, deleteErr.message);
-                // Channel MASIH ADA — JANGAN hapus metadata (lihat guard di bawah).
+                // Other errors (permission, network) — log but don't crash
+                console.warn(`⚠️ Failed to delete channel ${channelId}:`, deleteErr.message);
+                // The channel STILL EXISTS — DO NOT delete the metadata (see guard below).
             }
         }
 
-        // v3.9.1: hapus metadata tiket dari tickets.json (cleanup).
-        // Dilakukan setelah channel berhasil/anggap-sukses dihapus supaya
-        // tidak ada zombie metadata untuk channel yang masih ada.
+        // v3.9.1: remove ticket metadata from tickets.json (cleanup).
+        // Done after the channel is successfully/assumed-successfully deleted so
+        // there's no zombie metadata for a channel that still exists.
         //
-        // v3.9.31 FIX (orphan meta): sebelumnya removeTicketMeta JALAN TERUS
-        // walau channel.delete() gagal karena alasan non-10003 (Missing
-        // Permissions, network). Akibatnya channel masih hidup tapi meta sudah
-        // hilang → close berikutnya jatuh ke fallback topic-parsing yang
-        // KEHILANGAN flag isCompleted/isInvoiceSent/isTransaction → invoice
-        // terkirim dobel + skenario tombol close salah. Sekarang: meta hanya
-        // dihapus kalau channel benar-benar sudah tidak ada. Trade-off: meta
-        // bisa "zombie" sementara kalau delete gagal — itu aman & self-healing
-        // (admin tinggal klik close lagi setelah masalah permission beres).
+        // v3.9.31 FIX (orphan meta): before, removeTicketMeta ALWAYS RAN
+        // even when channel.delete() failed for non-10003 reasons (Missing
+        // Permissions, network). Result: the channel was still alive but its meta
+        // was already gone → the next close fell into the topic-parsing fallback
+        // which LOSES the isCompleted/isInvoiceSent/isTransaction flags → the invoice
+        // was sent twice + wrong close-button scenarios. Now: meta is only
+        // deleted if the channel is truly gone. Trade-off: meta can be a
+        // temporary "zombie" if delete fails — that's safe & self-healing
+        // (the admin just clicks close again once the permission issue is resolved).
         if (channelGone) {
             try {
                 removeTicketMeta(channelId);
             } catch (cleanupErr) {
-                console.warn(`⚠️ Gagal hapus ticket meta ${channelId}:`, cleanupErr.message);
+                console.warn(`⚠️ Failed to delete ticket meta ${channelId}:`, cleanupErr.message);
             }
         } else {
             console.warn(
-                `⚠️ Metadata tiket ${channelId} TIDAK dihapus (channel masih ada — delete gagal). Klik close lagi setelah masalahnya dibereskan.`
+                `⚠️ Ticket metadata ${channelId} NOT deleted (channel still exists — delete failed). Click close again after the issue is resolved.`
             );
         }
     } catch (err) {
-        // Error saat parse topic atau operasi lain — log tapi jangan crash
+        // Error while parsing the topic or during another operation — log but don't crash
         console.error('Error closing ticket:', err.message);
     } finally {
-        // FIX v3.7.1: pastikan lock dilepas walau ada error.
+        // FIX v3.7.1: make sure the lock is released even on error.
         closeTicketLocks.delete(channelId);
     }
 }
@@ -920,7 +920,7 @@ module.exports = {
     removeTicketMeta,
     resolveTicketType,
     classifyProduct,
-    // v3.9.38 FIX (FIX 3): helper lookup produk by meta (dipakai ticket.js
-    // + closeTicket, dan unit test hardeningV38Ticket).
+    // v3.9.38 FIX (FIX 3): product lookup helper by meta (used by ticket.js
+    // + closeTicket, and the hardeningV38Ticket unit test).
     resolveProduct
 };

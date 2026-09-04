@@ -1,10 +1,10 @@
 /**
- * Shared helpers untuk semua domain command handlers.
+ * Shared helpers for all domain command handlers.
  *
- * Setiap domain file (src/commands/<domain>.js) menerima `interaction` dari router
- * lalu pakai helper di sini untuk dapat config, embeds, safeEditReply, dll.
+ * Each domain file (src/commands/<domain>.js) receives `interaction` from the router
+ * then uses the helpers here for config, embeds, safeEditReply, etc.
  *
- * Tujuan: hilangkan duplikasi require statements di setiap domain file.
+ * Purpose: remove duplicated require statements in every domain file.
  */
 
 const {
@@ -94,7 +94,7 @@ const {
     createPollSession
 } = require('../data/pollManager');
 const { createBackup, listBackups, restoreBackup, formatSize: formatBackupSize } = require('../data/backupManager');
-// v3.9.9 refactor: sendInvoice dipakai /set-key untuk kirim invoice ke channel invoice.
+// v3.9.9 refactor: sendInvoice is used by /set-key to send an invoice to the invoice channel.
 const { sendInvoice } = require('../data/ticketManager');
 
 // === UI builders ===
@@ -108,7 +108,7 @@ const {
     deleteSessionByOwner,
     parseColor
 } = require('../ui/embedBuilderSessions');
-// v3.9.9 refactor: temp voice UI + data layer dipakai /setup-tempvoice & /tempvoice-remove.
+// v3.9.9 refactor: temp voice UI + data layer used by /setup-tempvoice & /tempvoice-remove.
 const { buildGlobalControlPanel } = require('../ui/tempVoiceControlPanel');
 const tempVoiceManager = require('../data/tempVoiceManager');
 
@@ -117,7 +117,7 @@ const { isAdmin: checkIsAdmin, invalidateAdminRoleCache } = require('../infra/pe
 const { logAudit } = require('../infra/auditLog');
 const { safeEditReply } = require('../infra/safeReply');
 const { DISCORD_LIMITS, EMBED_LIMITS } = require('../infra/constants');
-// v3.9.9 refactor: withLock dipakai /giveaway reroll supaya double-click tidak double-announce.
+// v3.9.9 refactor: withLock is used by /giveaway reroll so a double-click doesn't double-announce.
 const { withLock: withUserLock } = require('../infra/userLock');
 
 module.exports = {

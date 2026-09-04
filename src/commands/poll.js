@@ -2,15 +2,15 @@
  * Domain: poll
  * Slash commands: /poll (subcommands: create, list, close)
  *
- * Dipisah dari handlers/commandHandler.js (v3.9.9 refactor).
- * Behavior: bikin poll (modal → options), list poll, close poll + update message.
+ * Split off from handlers/commandHandler.js (v3.9.9 refactor).
+ * Behavior: create polls (modal → options), list polls, close polls + update messages.
  *
- * v3.9.1: simpan data poll di in-memory session (bukan di customId) supaya
- *         question panjang tidak overflow 100-char Discord limit.
+ * v3.9.1: store poll data in an in-memory session (not in the customId) so
+ *         long questions don't overflow Discord's 100-char limit.
  *
- * Catatan: helper `updatePollMessage` dipisah dari commandHandler.js dan
- *          dideklarasikan sebagai local function di file ini (sebelumnya
- *          ada di bottom-of-file commandHandler.js).
+ * Note: the `updatePollMessage` helper was split from commandHandler.js and
+ *          declared as a local function in this file (previously it lived
+ *          at the bottom of commandHandler.js).
  */
 
 const {
@@ -37,14 +37,14 @@ module.exports = async function (interaction) {
     // ====================================================
     if (interaction.commandName !== 'poll') return;
 
-    // v3.9.26 FIX: getSubcommand(false). Registry menandai semua subcommand
-    // required:false → Discord BOLEH kirim /poll tanpa subcommand → getSubcommand()
-    // throw CommandInteractionOptionNoSubcommand (unhandled, stack penuh di log,
-    // user lihat error generik). Sekarang: hint penggunaan yang jelas.
+    // v3.9.26 FIX: getSubcommand(false). The registry marks all subcommands
+    // required:false → Discord MAY send /poll without a subcommand → getSubcommand()
+    // throws CommandInteractionOptionNoSubcommand (unhandled, full stack in the log,
+    // user sees a generic error). Now: a clear usage hint.
     const sub = interaction.options.getSubcommand(false);
     if (!sub) {
         return interaction.reply({
-            content: '❌ Pakai subcommand: `/poll create`, `/poll list`, atau `/poll close`.',
+            content: '❌ Use a subcommand: `/poll create`, `/poll list`, or `/poll close`.',
             flags: MessageFlags.Ephemeral
         });
     }
@@ -55,30 +55,30 @@ module.exports = async function (interaction) {
         const question = interaction.options.getString('question');
         const multiple = interaction.options.getBoolean('multiple') || false;
 
-        // v3.9.26 FIX: validasi SEBELUM session/modal. Question > ~250 char membuat
-        // `setTitle(\`📊 ${question}\`)` throw (>256) NANTI di modal handler —
-        // setelah poll PERSIST ke polls.json (zombie) dan setelah deferReply
-        // (error reply ditelan → user stuck "Bot is thinking..."). Cek di sini
-        // = murah + pesan jelas.
+        // v3.9.26 FIX: validate BEFORE the session/modal. A question > ~250 chars makes
+        // `setTitle(\`📊 ${question}\`)` throw (>256) LATER in the modal handler —
+        // after the poll PERSISTS to polls.json (zombie) and after deferReply
+        // (the error reply gets swallowed → user stuck at "Bot is thinking..."). Checking here
+        // = cheap + a clear message.
         if (!question || question.length > 250) {
             return interaction.reply({
-                content: `❌ Pertanyaan poll wajib diisi dan maksimal 250 karakter (dapat: ${question ? question.length : 0}).`,
+                content: `❌ The poll question is required and max 250 characters (got: ${question ? question.length : 0}).`,
                 flags: MessageFlags.Ephemeral
             });
         }
-        // v3.9.26: poll cuma masuk akal di text channel (voice/category bikin
-        // channel.send gagal di modal handler dengan pesan menyesatkan).
+        // v3.9.26: polls only make sense in a text channel (voice/category makes
+        // channel.send fail in the modal handler with a misleading message).
         if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement)) {
             return interaction.reply({
-                content: '❌ Channel harus berupa text channel (atau announcement).',
+                content: '❌ Channel must be a text channel (or announcement).',
                 flags: MessageFlags.Ephemeral
             });
         }
-        // v3.9.1 FIX: simpan data poll di in-memory session, bukan di customId.
-        // Sebelumnya customId = `poll_modal_create:${channel.id}:${multiple}:${encodeURIComponent(question)}`
-        // yang bisa overflow 100-char Discord limit kalau question panjang
-        // (esp. setelah encodeURIComponent — spasi jadi %20, dll).
-        // Sekarang customId = `poll_modal_create:${sessionId}` (~50 char, aman).
+        // v3.9.1 FIX: store poll data in an in-memory session, not in the customId.
+        // Previously customId = `poll_modal_create:${channel.id}:${multiple}:${encodeURIComponent(question)}`
+        // which could overflow Discord's 100-char limit for long questions
+        // (esp. after encodeURIComponent — spaces become %20, etc).
+        // Now customId = `poll_modal_create:${sessionId}` (~50 chars, safe).
         const sessionId = createPollSession({
             userId: interaction.user.id,
             channelId: channel.id,
@@ -86,18 +86,18 @@ module.exports = async function (interaction) {
             question
         });
 
-        // Open modal untuk input options (satu field, dipisah newline)
+        // Open a modal to input options (one field, split by newlines)
         const modal = new ModalBuilder()
             .setCustomId(`poll_modal_create:${sessionId}`)
-            .setTitle('Buat Poll — Input Options');
+            .setTitle('Create Poll — Enter Options');
         modal.addComponents(
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder()
                     .setCustomId('options')
-                    .setLabel('Options (1 per baris, min 2, maks 10)')
+                    .setLabel('Options (1 per line, min 2, max 10)')
                     .setStyle(TextInputStyle.Paragraph)
                     .setRequired(true)
-                    .setPlaceholder('Rank Push\nCustom Room\nTurnamen\nOff')
+                    .setPlaceholder('Rank Push\nCustom Room\nTournament\nOff')
                     .setMaxLength(500)
             )
         );
@@ -109,12 +109,12 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const polls = getPollsByGuild(interaction.guild.id);
         if (polls.length === 0) {
-            return safeEditReply(interaction, { content: '📭 Belum ada poll di guild ini.' });
+            return safeEditReply(interaction, { content: '📭 No polls in this guild yet.' });
         }
-        // v3.9.26 FIX: bound description. Poll closed tidak pernah dihapus dari
-        // polls.json — di ~25-30 poll, total lines > 4096 → setDescription THROW
-        // → /poll list (dan satu-satunya cara lihat ID untuk /poll close) mati
-        // permanen. Sekarang: tampilkan 15 terbaru + ringkas sisanya.
+        // v3.9.26 FIX: bound description. Closed polls are never removed from
+        // polls.json — at ~25-30 polls, total lines > 4096 → setDescription THROWS
+        // → /poll list (and the only way to see IDs for /poll close) goes
+        // permanently dead. Now: show the latest 15 + summarize the rest.
         const MAX_SHOWN = 15;
         const shown = polls.slice(-MAX_SHOWN);
         const hidden = polls.length - shown.length;
@@ -125,9 +125,9 @@ module.exports = async function (interaction) {
                 return `• ❓ **${p.question}** — ${status}\n  🆔 \`${p.id}\` | 👥 ${p.options.length} options | 🗳️ ${total} votes\n  📍 <#${p.channelId}> | ⏰ <t:${Math.floor(p.createdAt / 1000)}:R>`;
             })
             .join('\n\n');
-        const header = `Total **${polls.length}** poll${hidden > 0 ? ` (menampilkan ${shown.length} terbaru — ${hidden} lama disembunyikan)` : ''}.`;
+        const header = `Total **${polls.length}** polls${hidden > 0 ? ` (showing the ${shown.length} latest — ${hidden} older hidden)` : ''}.`;
         const embed = new EmbedBuilder()
-            .setTitle('📊 DAFTAR POLL')
+            .setTitle('📊 POLL LIST')
             .setDescription(`${header}\n\n${lines.slice(0, 3900)}`)
             .setColor(0x5865f2)
             .setFooter({
@@ -143,16 +143,16 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const id = interaction.options.getString('id');
         const poll = getPoll(id);
-        if (!poll) return safeEditReply(interaction, { content: `❌ Poll \`${id}\` tidak ditemukan.` });
+        if (!poll) return safeEditReply(interaction, { content: `❌ Poll \`${id}\` not found.` });
         if (poll.guildId !== interaction.guild.id)
-            return safeEditReply(interaction, { content: '❌ Poll ini bukan dari guild ini.' });
-        if (poll.closed) return safeEditReply(interaction, { content: `❌ Poll sudah closed.` });
+            return safeEditReply(interaction, { content: '❌ This poll doesn\'t belong to this guild.' });
+        if (poll.closed) return safeEditReply(interaction, { content: `❌ This poll is already closed.` });
         const updated = closePoll(id);
-        // v3.9.26 FIX: guard null — poll bisa kehapus (rollback/refresh) di antara
-        // getPoll dan closePoll; tanpa guard, updatePollMessage(interaction, null)
-        // TypeError di poll.channelId.
+        // v3.9.26 FIX: null guard — the poll can be deleted (rollback/refresh) between
+        // getPoll and closePoll; without the guard, updatePollMessage(interaction, null)
+        // throws a TypeError on poll.channelId.
         if (!updated) {
-            return safeEditReply(interaction, { content: `❌ Poll \`${id}\` sudah tidak ada (barusan dihapus?).` });
+            return safeEditReply(interaction, { content: `❌ Poll \`${id}\` no longer exists (just deleted?).` });
         }
         await updatePollMessage(interaction, updated);
         await logAudit(interaction.client, {
@@ -162,15 +162,15 @@ module.exports = async function (interaction) {
             details: `Close poll \`${id}\` ("${poll.question}")`,
             guildId: interaction.guild.id
         });
-        return safeEditReply(interaction, { content: `✅ Poll **${poll.question}** ditutup! Lihat hasil di channel.` });
+        return safeEditReply(interaction, { content: `✅ Poll **${poll.question}** closed! Check the results in the channel.` });
     }
 };
 
 // ====================================================
-// === HELPER: UPDATE POLL MESSAGE (untuk close) ===
+// === HELPER: UPDATE POLL MESSAGE (for close) ===
 // ====================================================
-// Dipisah dari handlers/commandHandler.js (v3.9.9 refactor). Function declaration
-// di-hoist, jadi bisa dipanggil dari `module.exports` di atas.
+// Split off from handlers/commandHandler.js (v3.9.9 refactor). The function declaration
+// is hoisted, so it can be called from `module.exports` above.
 async function updatePollMessage(interaction, poll) {
     try {
         const channel = interaction.guild.channels.cache.get(poll.channelId);
@@ -209,6 +209,6 @@ async function updatePollMessage(interaction, poll) {
 
         await msg.edit({ embeds: [embed], components: disabledRows });
     } catch (err) {
-        console.warn('Gagal update poll message:', err.message);
+        console.warn('Failed to update poll message:', err.message);
     }
 }

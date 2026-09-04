@@ -1,24 +1,25 @@
 /**
- * Interaction dedup helper — mencegah double-processing interaction yang sama.
+ * Interaction dedup helper — prevents double-processing of the same interaction.
  *
- * P1-6 FIX: track interaction yang sudah diproses untuk hindari double-processing.
- * Sebelumnya modal submit lewat guard `replied/deferred` → bisa double-reply.
+ * P1-6 FIX: track processed interactions to avoid double-processing.
+ * Previously modal submits slipped past the `replied/deferred` guard → could double-reply.
  *
- * v3.9.8 FIX: ganti bulk-clear dengan per-entry TTL. Sebelumnya Set di-clear
- * semua tiap 5 menit, jadi window 5-15 menit (Discord interaction token valid
- * 15 menit) bisa proses ulang interaction yang sama (race duplicate key/DM).
- * Sekarang: simpan { id, ts }, prune entry yang lebih tua dari 15 menit.
+ * v3.9.8 FIX: replace the bulk-clear with a per-entry TTL. Previously the Set was
+ * fully cleared every 5 minutes, so the 5-15 minute window (Discord interaction
+ * tokens are valid for 15 minutes) could re-process the same interaction
+ * (duplicate key/DM race).
+ * Now: store { id, ts }, prune entries older than 15 minutes.
  *
- * v3.9.9 refactor: dipindah dari handlers/interactionHandler.js ke sini supaya
- * dipakai bersama oleh router (src/interactions/index.js) dan semua domain
- * handler. Sebelumnya dedup Map hidup di dalam module lama, sekarang jadi
- * singleton shared lintas domain.
+ * v3.9.9 refactor: moved from handlers/interactionHandler.js to here so it is
+ * shared by the router (src/interactions/index.js) and all domain handlers.
+ * Previously the dedup Map lived inside the old module; it is now a singleton
+ * shared across domains.
  */
 
 const processedInteractions = new Map();
-const PROCESSED_TTL_MS = 15 * 60 * 1000; // 15 menit — match Discord interaction token lifetime
+const PROCESSED_TTL_MS = 15 * 60 * 1000; // 15 minutes — matches the Discord interaction token lifetime
 
-// Periodic cleanup supaya Map tidak bengkak
+// Periodic cleanup so the Map doesn't bloat
 setInterval(() => {
     const now = Date.now();
     let cleaned = 0;
@@ -29,21 +30,21 @@ setInterval(() => {
         }
     }
     if (cleaned > 0 && processedInteractions.size > 100) {
-        // Log hanya kalau cleanup menghapus banyak (defensive)
-        console.log(`🧹 processedInteractions: ${cleaned} entry di-prune.`);
+        // Only log when cleanup removed a lot (defensive)
+        console.log(`🧹 processedInteractions: ${cleaned} entries pruned.`);
     }
 }, 60 * 1000).unref?.();
 
 /**
- * Cek apakah interaction ID sudah diproses dalam window TTL.
+ * Check whether an interaction ID was processed within the TTL window.
  *
- * v3.9.38 FIX: split jadi `check` + `mark` (mark sekarang dipanggil router
- * SETELAH handler sukses — sebelumnya checkAndMark menandai SEBELUM handler
- * jalan, jadi kalau handler crash/error, replay gateway dari Discord untuk
- * interaction yang sama di-swallow → action user hilang diam-diam).
+ * v3.9.38 FIX: split into `check` + `mark` (mark is now called by the router
+ * AFTER handler success — previously checkAndMark marked BEFORE the handler
+ * ran, so if the handler crashed/errored, the gateway replay from Discord for
+ * the same interaction got swallowed → the user's action silently vanished).
  *
- * @param {string} interactionId - interaction.id dari Discord
- * @returns {boolean} true kalau SUDAH diproses dalam TTL (pemanggil harus skip).
+ * @param {string} interactionId - interaction.id from Discord
+ * @returns {boolean} true if ALREADY processed within the TTL (the caller must skip).
  */
 function check(interactionId) {
     if (!interactionId) return false;
@@ -53,9 +54,9 @@ function check(interactionId) {
 }
 
 /**
- * Tandai interaction ID sebagai sudah diproses (sekarang, timestamp fresh).
- * Idempotent — mark 2x untuk id sama hanya refresh timestamp.
- * @param {string} interactionId - interaction.id dari Discord
+ * Mark an interaction ID as processed (with a fresh timestamp now).
+ * Idempotent — marking the same id twice only refreshes the timestamp.
+ * @param {string} interactionId - interaction.id from Discord
  */
 function mark(interactionId) {
     if (!interactionId) return;
@@ -63,19 +64,19 @@ function mark(interactionId) {
 }
 
 /**
- * Cek + tandai sekaligus (kombinasi check() lalu mark()).
- * Backward compat — dipertahankan untuk pemanggil luar router.
+ * Check + mark in one go (combination of check() then mark()).
+ * Backward compat — kept for callers outside the router.
  *
- * @param {string} interactionId - interaction.id dari Discord
- * @returns {boolean} true kalau SUDAH diproses (pemanggil harus skip),
- *                    false kalau BELUM (dan sekarang ditandai).
+ * @param {string} interactionId - interaction.id from Discord
+ * @returns {boolean} true if ALREADY processed (the caller must skip),
+ *                    false if NOT YET (and now marked).
  *
- * v3.9.8: kalau entry ada tapi udah lebih dari TTL, anggap belum diproses
- * (return false) dan overwrite timestamp-nya dengan `now`.
+ * v3.9.8: if an entry exists but is older than the TTL, treat it as unprocessed
+ * (return false) and overwrite its timestamp with `now`.
  */
 function checkAndMark(interactionId) {
     if (check(interactionId)) {
-        return true; // sudah diproses — skip
+        return true; // already processed — skip
     }
     mark(interactionId);
     return false;
@@ -83,9 +84,9 @@ function checkAndMark(interactionId) {
 
 module.exports = {
     checkAndMark,
-    // v3.9.38: granular — check tanpa mark, mark tanpa check
+    // v3.9.38: granular — check without mark, mark without check
     check,
     mark,
-    processedInteractions, // exposed untuk testing/debug
+    processedInteractions, // exposed for testing/debug
     PROCESSED_TTL_MS
 };

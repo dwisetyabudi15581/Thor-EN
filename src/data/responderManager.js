@@ -6,7 +6,7 @@
  *   "<guildId>": [
  *     {
  *       "id": "resp_<timestamp>_<rand>",
- *       "trigger": "!sosmed",           // case-insensitive, exact match di awal pesan
+ *       "trigger": "!sosmed",           // case-insensitive, exact match at the start of the message
  *       "reply": "Instagram: @chronos\nTikTok: @chronos",
  *       "replyType": "text",            // "text" | "embed"
  *       "createdBy": "userId",
@@ -14,9 +14,9 @@
  *       "createdAt": 1735689600000,
  *       "useCount": 0,
  *       "lastUsedAt": null,
- *       "cooldownMs": 3000,             // jeda antar trigger yang sama per user (3 detik default)
- *       "lastFiredAt": null,            // legacy: timestamp global terakhir dipakai (udah gak dipake, tapi tetap disimpen untuk jaga-jaga)
- *       "userCooldowns": {}             // daftar timestamp per-user: { "userId": timestamp }
+ *       "cooldownMs": 3000,             // delay between the same trigger per user (3 second default)
+ *       "lastFiredAt": null,            // legacy: last global timestamp used (no longer used, but kept just in case)
+ *       "userCooldowns": {}             // per-user timestamps: { "userId": timestamp }
  *     }
  *   ]
  * }
@@ -30,9 +30,9 @@ const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'responders.json');
 
-// v3.9.26: read-through cache (pola panelManager). findMatch dibaca di
-// messageCreate PER PESAN — sebelumnya 1 readFileSync sync per pesan walau
-// tidak ada responder sama sekali. Cache 15s TTL + update-on-save.
+// v3.9.26: read-through cache (panelManager pattern). findMatch is called in
+// messageCreate PER MESSAGE — previously 1 sync readFileSync per message even
+// with no responders at all. 15s TTL cache + update-on-save.
 const CACHE_TTL_MS = 15 * 1000;
 let _cache = null; // { data, at }
 
@@ -47,7 +47,7 @@ function load() {
         _cache = { data, at: Date.now() };
         return data;
     } catch (_err) {
-        // v3.9.26: karantina file korup SEBELUM fallback (lihat safeWrite.js).
+        // v3.9.26: quarantine the corrupt file BEFORE falling back (see safeWrite.js).
         quarantineCorruptFile(filePath);
         _cache = { data: {}, at: Date.now() };
         return _cache.data;
@@ -56,11 +56,11 @@ function load() {
 
 function save(data) {
     safeWriteJSON(filePath, data);
-    // v3.9.26: update cache supaya read berikutnya konsisten dengan yang baru di-write
+    // v3.9.26: update the cache so the next read is consistent with what was just written
     _cache = { data, at: Date.now() };
 }
 
-/** v3.9.26: paksa read fresh berikutnya (restore backup / test). */
+/** v3.9.26: force the next read to be fresh (backup restore / tests). */
 function invalidateCache() {
     _cache = null;
 }
@@ -78,18 +78,18 @@ function addResponder(guildId, data) {
     const all = load();
     if (!all[guildId]) all[guildId] = [];
 
-    // Validate trigger: tidak boleh kosong, maks 50 char, tidak duplicate
+    // Validate trigger: must not be empty, max 50 chars, no duplicates
     const trigger = data.trigger.trim();
     if (!trigger || trigger.length > 50) {
-        return { ok: false, error: 'Trigger tidak valid (1-50 char).' };
+        return { ok: false, error: 'Invalid trigger (1-50 chars).' };
     }
     if (all[guildId].some(r => r.trigger.toLowerCase() === trigger.toLowerCase())) {
-        return { ok: false, error: `Trigger "${trigger}" sudah ada. Pakai /remove-responder dulu.` };
+        return { ok: false, error: `Trigger "${trigger}" already exists. Use /remove-responder first.` };
     }
 
     // Max 50 responders per guild
     if (all[guildId].length >= 50) {
-        return { ok: false, error: 'Maksimal 50 responder per guild.' };
+        return { ok: false, error: 'Maximum 50 responders per guild.' };
     }
 
     const entry = {
@@ -102,11 +102,11 @@ function addResponder(guildId, data) {
         createdAt: Date.now(),
         useCount: 0,
         lastUsedAt: null,
-        // v3.9.38 FIX: cooldownMs 0 = cooldown MATI (sesuai dok registry). `||`
-        // menelan 0 → diam-diam jadi 3000; nullish coalescing menjaga 0 tetap 0.
+        // v3.9.38 FIX: cooldownMs 0 = cooldown OFF (per the registry docs). `||`
+        // swallowed 0 → silently became 3000; nullish coalescing keeps 0 as 0.
         cooldownMs: data.cooldownMs ?? 3000,
-        lastFiredAt: null, // legacy — gak dipake lagi, disimpen untuk backward compat
-        userCooldowns: {} // map cooldown per-user
+        lastFiredAt: null, // legacy — no longer used, kept for backward compat
+        userCooldowns: {} // per-user cooldown map
     };
     all[guildId].push(entry);
     save(all);
@@ -115,27 +115,28 @@ function addResponder(guildId, data) {
 
 function removeResponder(guildId, trigger) {
     const all = load();
-    if (!all[guildId]) return { ok: false, error: 'Trigger tidak ditemukan.' };
+    if (!all[guildId]) return { ok: false, error: 'Trigger not found.' };
 
     const before = all[guildId].length;
     all[guildId] = all[guildId].filter(r => r.trigger.toLowerCase() !== trigger.toLowerCase());
     if (all[guildId].length === before) {
-        return { ok: false, error: `Trigger "${trigger}" tidak ditemukan.` };
+        return { ok: false, error: `Trigger "${trigger}" not found.` };
     }
     save(all);
     return { ok: true };
 }
 
 /**
- * Cari responder yang match sama pesan.
- * Match kalau pesan dimulai dengan trigger (case-insensitive).
+ * Find the responder that matches a message.
+ * Matches when the message starts with the trigger (case-insensitive).
  *
- * Cooldown per-user: user A yang baru trigger gak bakal ngelarang user B dapet reply.
+ * Per-user cooldown: user A who just triggered doesn't block user B from
+ * getting a reply.
  *
  * @param {string} guildId
  * @param {string} messageContent
- * @param {string} [userId]  kirim userId biar cooldown per-user (recommended)
- * @returns {Object|null} responder entry, atau null kalau gak match / lagi cooldown
+ * @param {string} [userId]  pass userId for a per-user cooldown (recommended)
+ * @returns {Object|null} responder entry, or null if no match / on cooldown
  */
 function findMatch(guildId, messageContent, userId) {
     const responders = getGuildResponders(guildId);
@@ -146,19 +147,20 @@ function findMatch(guildId, messageContent, userId) {
 
     for (const r of responders) {
         const trig = r.trigger.toLowerCase();
-        // Match kalau pesan == trigger, ATAU pesan diikuti spasi/newline (mis. "!sosmed" match "!sosmed halo")
+        // Match when the message == trigger, OR the trigger is followed by a
+        // space/newline (e.g. "!sosmed" matches "!sosmed hello")
         if (lower === trig || lower.startsWith(trig + ' ') || lower.startsWith(trig + '\n')) {
-            // Cek cooldown per-user. cooldownMs = 0 artinya cooldown dimatikan.
-            // v3.9.38 FIX: `??` (bukan `||`) supaya 0 tetap 0 — sebelumnya
-            // 0 diam-diam jadi 3000, opsi "matiin cooldown" gak pernah bisa.
+            // Check the per-user cooldown. cooldownMs = 0 means the cooldown is off.
+            // v3.9.38 FIX: `??` (not `||`) so 0 stays 0 — previously 0 silently
+            // became 3000, so the "disable cooldown" option never worked.
             const cooldownMs = r.cooldownMs ?? 3000;
             if (cooldownMs > 0 && userId && r.userCooldowns && r.userCooldowns[userId]) {
                 const lastFired = r.userCooldowns[userId];
                 if (now - lastFired < cooldownMs) {
-                    return null; // user ini masih cooldown, skip
+                    return null; // this user is still on cooldown, skip
                 }
             } else if (cooldownMs > 0 && !userId && r.lastFiredAt) {
-                // Fallback: kalau caller gak kirim userId, pakai cooldown global lama
+                // Fallback: if the caller doesn't pass userId, use the old global cooldown
                 if (now - r.lastFiredAt < cooldownMs) {
                     return null;
                 }
@@ -170,8 +172,8 @@ function findMatch(guildId, messageContent, userId) {
 }
 
 /**
- * Tandai responder sudah dipakai (update useCount + catat timestamp cooldown).
- * Kirim userId biar cooldown-nya per-user.
+ * Mark a responder as used (updates useCount + records the cooldown timestamp).
+ * Pass userId for a per-user cooldown.
  */
 function markUsed(guildId, responderId, userId) {
     const all = load();
@@ -180,12 +182,12 @@ function markUsed(guildId, responderId, userId) {
     if (!r) return;
     r.useCount = (r.useCount || 0) + 1;
     r.lastUsedAt = Date.now();
-    r.lastFiredAt = Date.now(); // legacy — tetap diisi untuk jaga-jaga
-    // Catat cooldown per-user
+    r.lastFiredAt = Date.now(); // legacy — still filled in just in case
+    // Record the per-user cooldown
     if (userId) {
         if (!r.userCooldowns || typeof r.userCooldowns !== 'object') r.userCooldowns = {};
         r.userCooldowns[userId] = Date.now();
-        // Cleanup: simpan maksimal 100 user terakhir biar file gak bengkak
+        // Cleanup: keep only the last 100 users so the file doesn't bloat
         const entries = Object.entries(r.userCooldowns);
         if (entries.length > 100) {
             entries.sort((a, b) => b[1] - a[1]);

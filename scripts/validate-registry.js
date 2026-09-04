@@ -1,6 +1,6 @@
 /**
- * Validate semua command option description di registry.
- * Discord API require: 1-100 char per option description.
+ * Validate every command option description in the registry.
+ * Discord API requires: 1-100 chars per option description.
  */
 const { getCommands } = require('../src/commands/registry');
 
@@ -8,7 +8,7 @@ const commands = getCommands();
 const problems = [];
 
 commands.forEach((cmd, cmdIdx) => {
-    // v3.9.17: cek root command description juga (Discord max 1-100 char).
+    // v3.9.17: check the root command description too (Discord max 1-100 chars).
     if (!cmd.description) {
         problems.push({
             cmdIdx,
@@ -78,9 +78,9 @@ commands.forEach((cmd, cmdIdx) => {
 });
 
 if (problems.length === 0) {
-    console.log('✅ Semua option description valid (1-100 char)');
+    console.log('✅ All option descriptions valid (1-100 chars)');
 } else {
-    console.log(`❌ Ditemukan ${problems.length} problem:\n`);
+    console.log(`❌ Found ${problems.length} problem(s):\n`);
     problems.forEach((p, i) => {
         console.log(`${i + 1}. Command #${p.cmdIdx} "${p.cmdName}" option[${p.optIdx}] "${p.optName}"`);
         console.log(`   Issue: ${p.issue}`);
@@ -89,7 +89,7 @@ if (problems.length === 0) {
     });
 }
 
-// Bonus: print semua command index dengan nama, supaya gampang cari #10
+// Bonus: print every command index with its name, so #10 is easy to look up
 console.log('=== Command index → name mapping ===');
 commands.forEach((c, i) => {
     console.log(`${i}: ${c.name} (${c.options ? c.options.length : 0} options)`);

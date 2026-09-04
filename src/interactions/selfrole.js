@@ -1,18 +1,18 @@
 /**
  * Self-role domain handler — button `sr_btn:*` & select menu `sr_sel:*`.
  *
- * Di-ekstrak dari handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior dipertahankan apa adanya — hanya pindah file.
+ * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
+ * Behavior preserved as-is — just moved to a new file.
  *
- * Helper `handleSelfRoleButton` dan `handleSelfRoleSelect` jadi LOCAL function
- * di file ini (sebelumnya function-level di module lama).
+ * Helpers `handleSelfRoleButton` and `handleSelfRoleSelect` are LOCAL functions
+ * in this file (previously function-level in the old module).
  *
- * Router (src/interactions/index.js) sudah apply:
+ * The router (src/interactions/index.js) already applies:
  *   - dedup (checkAndMark)
- *   - guard `replied/deferred`
- *   - cek tipe interaction (button/select/modal)
+ *   - `replied/deferred` guard
+ *   - interaction type check (button/select/modal)
  *   - routing by customId prefix (sr_btn: / sr_sel:)
- * Jadi domain handler fokus ke logic-nya saja.
+ * So the domain handler can focus on its logic alone.
  */
 
 const { MessageFlags } = require('discord.js');
@@ -43,26 +43,26 @@ async function handleSelfRoleButton(interaction) {
     const roleId = parts[2];
     const panel = getPanel(panelId);
     if (!panel) {
-        return interaction.reply({ content: '❌ Panel self-role sudah tidak ada.', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ This self-role panel no longer exists.', flags: MessageFlags.Ephemeral });
     }
     const role = interaction.guild.roles.cache.get(roleId);
     if (!role) {
-        return interaction.reply({ content: '❌ Role tidak ditemukan di server.', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ Role not found in this server.', flags: MessageFlags.Ephemeral });
     }
 
-    // v3.9.24 FIX: pastikan roleId benar-benar anggota panel ini. Sebelumnya
-    // customId forged/legacy (sr_btn:<panel>:<roleLain>) bisa toggle role guild
-    // apa pun selama role-nya ada — padahal role itu tidak pernah ditawarkan
-    // panel (bot butuh role hierarchy, tapi tetap lubang yang tidak perlu).
+    // v3.9.24 FIX: make sure roleId is actually a member of this panel. Previously
+    // a forged/legacy customId (sr_btn:<panel>:<otherRole>) could toggle any guild
+    // role as long as it existed — even though that role was never offered by the
+    // panel (the bot needs role hierarchy, but it was still an unnecessary hole).
     if (!panel.roles.some(r => r.roleId === roleId)) {
         return interaction.reply({
-            content: '❌ Role ini tidak terdaftar di panel self-role tersebut.',
+            content: '❌ That role is not registered on this self-role panel.',
             flags: MessageFlags.Ephemeral
         });
     }
 
     // v3.9.11 Phase 3: conditional role check.
-    // Kalau role punya requiresRoleId, user harus sudah punya role itu untuk bisa ambil.
+    // If the role has a requiresRoleId, the user must already have that role to claim it.
     const roleConfig = panel.roles.find(r => r.roleId === roleId);
     if (roleConfig?.requiresRoleId) {
         const member = interaction.member;
@@ -71,8 +71,8 @@ async function handleSelfRoleButton(interaction) {
             const reqName = reqRole ? reqRole.name : `<@&${roleConfig.requiresRoleId}>`;
             return interaction.reply({
                 content:
-                    `❌ Kamu butuh role **${reqName}** untuk bisa mengambil role ini.\n\n` +
-                    `💡 Ambil role ${reqName} dulu lewat panel self-role yang sesuai.`,
+                    `❌ You need the **${reqName}** role to claim this role.\n\n` +
+                    `💡 Get the ${reqName} role first via the matching self-role panel.`,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -83,7 +83,7 @@ async function handleSelfRoleButton(interaction) {
 
     try {
         if (panel.exclusive && !hasRole) {
-            // Mode exclusive: hapus semua role panel lain dulu, lalu tambahkan yang ini
+            // Exclusive mode: remove all other panel roles first, then add this one
             const toRemove = panel.roles
                 .map(r => r.roleId)
                 .filter(rid => rid !== roleId && member.roles.cache.has(rid));
@@ -93,26 +93,26 @@ async function handleSelfRoleButton(interaction) {
             await member.roles.add(roleId);
             const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ');
             return interaction.reply({
-                content: `✅ Role ${role} ditambahkan.${toRemove.length > 0 ? `\n↳ Role lain dihapus: ${removedMentions}` : ''}`,
+                content: `✅ Role ${role} added.${toRemove.length > 0 ? `\n↳ Other roles removed: ${removedMentions}` : ''}`,
                 flags: MessageFlags.Ephemeral
             });
         } else if (panel.exclusive && hasRole) {
-            // Exclusive + sudah punya → lepas
+            // Exclusive + already has it → remove
             await member.roles.remove(roleId);
-            return interaction.reply({ content: `✅ Role ${role} dilepas.`, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
         } else if (!panel.exclusive && !hasRole) {
-            // Multi + belum punya → tambah
+            // Multi + doesn't have it → add
             await member.roles.add(roleId);
-            return interaction.reply({ content: `✅ Role ${role} ditambahkan.`, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: `✅ Role ${role} added.`, flags: MessageFlags.Ephemeral });
         } else {
-            // Multi + sudah punya → lepas (toggle)
+            // Multi + already has it → remove (toggle)
             await member.roles.remove(roleId);
-            return interaction.reply({ content: `✅ Role ${role} dilepas.`, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
         }
     } catch (err) {
         console.error('Self-role button error:', err.message);
         return interaction.reply({
-            content: `❌ Gagal mengubah role. Pastikan role bot ada di ATAS role ${role}.`,
+            content: `❌ Failed to change the role. Make sure the bot's role is ABOVE the ${role} role.`,
             flags: MessageFlags.Ephemeral
         });
     }
@@ -126,26 +126,26 @@ async function handleSelfRoleSelect(interaction) {
     const panelId = parts[1];
     const panel = getPanel(panelId);
     if (!panel) {
-        return interaction.reply({ content: '❌ Panel self-role sudah tidak ada.', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ This self-role panel no longer exists.', flags: MessageFlags.Ephemeral });
     }
 
     const member = interaction.member;
-    const selectedIds = new Set(interaction.values); // role IDs yang dipilih user
+    const selectedIds = new Set(interaction.values); // role IDs the user selected
     const panelRoleIds = panel.roles.map(r => r.roleId);
 
-    // === v3.9.0 FIX: Implementasi mode EXCLUSIVE yang sebelumnya missing ===
-    // Mode exclusive: user hanya boleh punya 1 role dari panel pada satu waktu.
+    // === v3.9.0 FIX: implement the previously missing EXCLUSIVE mode ===
+    // Exclusive mode: the user may only have 1 role from the panel at a time.
     // Behavior:
-    //   - Kalau user pilih 1 role (atau lebih — Discord memungkinkan multi-select):
-    //     * Ambil role pertama yang dipilih sebagai "role aktif".
-    //     * Remove semua role panel lain yang sudah dimiliki user.
-    //     * Add role yang dipilih.
-    //   - Kalau user pilih 0 role (clear selection):
-    //     * Remove semua role panel yang dimiliki.
+    //   - If the user selects 1 (or more — Discord allows multi-select):
+    //     * Take the first selected role as the "active role".
+    //     * Remove all other panel roles the user already has.
+    //     * Add the selected role.
+    //   - If the user selects 0 roles (cleared selection):
+    //     * Remove all panel roles the user has.
     if (panel.exclusive) {
         const targetRoleId =
             selectedIds.size > 0
-                ? interaction.values[0] // role pertama yang dipilih
+                ? interaction.values[0] // first selected role
                 : null;
 
         const toRemoveExclusive = panelRoleIds.filter(rid => rid !== targetRoleId && member.roles.cache.has(rid));
@@ -157,35 +157,35 @@ async function handleSelfRoleSelect(interaction) {
         } catch (err) {
             console.error('Self-role select (exclusive) error:', err.message);
             return interaction.reply({
-                content: `❌ Gagal mengubah role. Pastikan role bot ada di ATAS role yang dipilih.`,
+                content: `❌ Failed to change the roles. Make sure the bot's role is ABOVE the selected roles.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
         const action = targetRoleId
-            ? `**Ditambahkan:** <@&${targetRoleId}>${toRemoveExclusive.length > 0 ? `\n**Dilepas (karena mode exclusive):** ${toRemoveExclusive.map(rid => `<@&${rid}>`).join(', ')}` : ''}`
-            : `**Dilepas:** ${toRemoveExclusive.length > 0 ? toRemoveExclusive.map(rid => `<@&${rid}>`).join(', ') : '(tidak ada)'}`;
+            ? `**Added:** <@&${targetRoleId}>${toRemoveExclusive.length > 0 ? `\n**Removed (exclusive mode):** ${toRemoveExclusive.map(rid => `<@&${rid}>`).join(', ')}` : ''}`
+            : `**Removed:** ${toRemoveExclusive.length > 0 ? toRemoveExclusive.map(rid => `<@&${rid}>`).join(', ') : '(none)'}`;
 
         await interaction.reply({
-            content: `✅ Role diperbarui (mode exclusive).\n${action}`,
+            content: `✅ Roles updated (exclusive mode).\n${action}`,
             flags: MessageFlags.Ephemeral
         });
 
-        // Update select menu supaya pilihan ter-sync dengan role yang sekarang dimiliki
+        // Update the select menu so the selection stays in sync with the roles now owned
         try {
             const newComponents = buildPanelComponents(panel);
             if (newComponents.length > 0) {
                 await interaction.message.edit({ components: newComponents });
             }
         } catch (err) {
-            console.warn('Gagal update select menu setelah pilih (exclusive):', err.message);
+            console.warn('Failed to update the select menu after selecting (exclusive):', err.message);
         }
         return;
     }
 
-    // === Mode MULTI (default) — logic lama ===
-    // v3.9.11 Phase 3: filter out roles yang user gak qualified (requiresRoleId).
-    // Kalau user pilih role yang butuh prerequisite tapi belum punya, skip & warn.
+    // === MULTI mode (default) — original logic ===
+    // v3.9.11 Phase 3: filter out roles the user doesn't qualify for (requiresRoleId).
+    // If the user picks a role that needs a prerequisite they don't have, skip & warn.
     const skippedForPrereq = [];
     const qualifiedSelectedIds = new Set();
     for (const selId of selectedIds) {
@@ -206,26 +206,26 @@ async function handleSelfRoleSelect(interaction) {
     } catch (err) {
         console.error('Self-role select error:', err.message);
         return interaction.reply({
-            content: `❌ Gagal mengubah role. Pastikan role bot ada di ATAS role yang dipilih.`,
+            content: `❌ Failed to change the roles. Make sure the bot's role is ABOVE the selected roles.`,
             flags: MessageFlags.Ephemeral
         });
     }
 
-    const addedMentions = toAdd.map(rid => `<@&${rid}>`).join(', ') || '(tidak ada)';
-    const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ') || '(tidak ada)';
+    const addedMentions = toAdd.map(rid => `<@&${rid}>`).join(', ') || '(none)';
+    const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ') || '(none)';
 
     await interaction.reply({
-        content: `✅ Role diperbarui.\n**Ditambahkan:** ${addedMentions}\n**Dilepas:** ${removedMentions}`,
+        content: `✅ Roles updated.\n**Added:** ${addedMentions}\n**Removed:** ${removedMentions}`,
         flags: MessageFlags.Ephemeral
     });
 
-    // Update select menu supaya pilihan ter-sync dengan role yang sekarang dimiliki
+    // Update the select menu so the selection stays in sync with the roles now owned
     try {
         const newComponents = buildPanelComponents(panel);
         if (newComponents.length > 0) {
             await interaction.message.edit({ components: newComponents });
         }
     } catch (err) {
-        console.warn('Gagal update select menu setelah pilih:', err.message);
+        console.warn('Failed to update the select menu after selecting:', err.message);
     }
 }

@@ -1,8 +1,8 @@
 /**
- * Command Definitions — semua slash command bot (P3-6 refactor).
+ * Command Definitions — all bot slash commands (P3-6 refactor).
  *
- * Dipakai oleh index.js saat bot ready untuk register ke Discord.
- * Tujuan: pisahkan definisi command dari logic bot supaya index.js lebih lean.
+ * Used by index.js when the bot is ready to register them with Discord.
+ * Purpose: separate command definitions from bot logic so index.js stays lean.
  */
 
 const { PermissionFlagsBits } = require('discord.js');
@@ -12,80 +12,80 @@ function getCommands() {
         // === HELP ===
         {
             name: 'help',
-            description: 'Lihat semua command & cara pakai bot',
+            description: 'View all commands & how to use the bot',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
         // === PANEL SETUP ===
         {
             name: 'setup-verify',
-            description: 'Pasang panel verifikasi',
+            description: 'Set up the verification panel',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'setup-ticket',
-            description: 'Pasang panel tiket & price list',
+            description: 'Set up the ticket panel & price list',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Atur role (verified / unverified / admin / midman)',
+            description: 'Set roles (verified / unverified / admin / midman)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih tipe role',
+                    description: 'Choose the role type',
                     required: true,
                     choices: [
                         { name: 'Verified', value: 'verified' },
                         { name: 'Unverified', value: 'unverified' },
                         { name: 'Admin', value: 'admin' },
-                        // v3.9.32: role midman/rekber — pegang deal escrow 3-pihak.
-                        { name: 'Midman (Rekber)', value: 'midman' }
+                        // v3.9.32: midman/escrow role — handles 3-party escrow deals.
+                        { name: 'Midman (Escrow)', value: 'midman' }
                     ]
                 },
-                { type: 8, name: 'role', description: 'Role yang akan dipakai', required: true }
+                { type: 8, name: 'role', description: 'The role to use', required: true }
             ]
         },
 
         // === SET CHANNEL ===
-        // v3.9.30: /set-transcript-channel digabung ke sini (tipe: transcript)
-        // supaya admin cuma hafal SATU command channel.
+        // v3.9.30: /set-transcript-channel merged into here (tipe: transcript)
+        // so admins only have to remember ONE channel command.
         {
             name: 'set-channel',
-            description: 'Atur channel (invoice / welcome / goodbye / audit-log / transcript)',
+            description: 'Set channels (invoice / welcome / goodbye / audit-log / transcript)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih tipe channel',
+                    description: 'Choose the channel type',
                     required: true,
                     choices: [
                         { name: 'Invoice', value: 'invoice' },
                         { name: 'Welcome', value: 'welcome' },
                         { name: 'Goodbye', value: 'goodbye' },
-                        { name: 'Audit Log (catat admin action)', value: 'audit-log' },
-                        { name: 'Transcript Tiket (auto-save saat close)', value: 'transcript' }
+                        { name: 'Audit Log (logs admin actions)', value: 'audit-log' },
+                        { name: 'Ticket Transcript (auto-saved on close)', value: 'transcript' }
                     ]
                 },
-                { type: 7, name: 'channel', description: 'Channel text yang dipakai', required: true }
+                { type: 7, name: 'channel', description: 'The text channel to use', required: true }
             ]
         },
 
-        // === SET PESAN ===
+        // === SET MESSAGE ===
         {
             name: 'set-message',
-            description: 'Ubah teks embed welcome / goodbye / verify / ticket',
+            description: 'Edit the welcome / goodbye / verify / ticket embed text',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih pesan yang diubah',
+                    description: 'Choose which message to edit',
                     required: true,
                     choices: [
                         { name: 'Welcome Title', value: 'welcomeTitle' },
@@ -103,7 +103,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'teks',
-                    description: 'Teks baru (support \\n newline). Pakai {user} {username} {server} {count} {action}',
+                    description: 'New text (supports \\n newline). Use {user} {username} {server} {count} {action}',
                     required: true
                 }
             ]
@@ -112,13 +112,13 @@ function getCommands() {
         // v3.9.11 Phase 1: verify button configurable
         {
             name: 'set-verify-button',
-            description: 'Kustomisasi tombol verifikasi (label, emoji, style)',
+            description: 'Customize the verification button (label, emoji, style)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'label',
-                    description: 'Teks tombol (maks 80 char)',
+                    description: 'Button text (max 80 chars)',
                     required: true,
                     min_length: 1,
                     max_length: 80
@@ -126,13 +126,13 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'emoji',
-                    description: 'Emoji tombol (unicode atau custom <:name:id>)',
+                    description: 'Button emoji (unicode or custom <:name:id>)',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'style',
-                    description: 'Warna tombol',
+                    description: 'Button color',
                     required: false,
                     choices: [
                         { name: '🔵 Primary (Blurple)', value: 'Primary' },
@@ -147,13 +147,13 @@ function getCommands() {
         // v3.9.11 Phase 2: ticket category management
         {
             name: 'add-category',
-            description: 'Tambah kategori tiket baru (untuk panel tiket dinamis)',
+            description: 'Add a new ticket category (for dynamic ticket panels)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'id',
-                    description: 'ID unik kategori (huruf/angka/_/-, maks 30 char)',
+                    description: 'Unique category ID (letters/numbers/_/-, max 30 chars)',
                     required: true,
                     min_length: 1,
                     max_length: 30
@@ -161,7 +161,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'label',
-                    description: 'Label tombol (maks 80 char)',
+                    description: 'Button label (max 80 chars)',
                     required: true,
                     min_length: 1,
                     max_length: 80
@@ -169,13 +169,13 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'emoji',
-                    description: 'Emoji tombol (unicode atau custom <:name:id>)',
+                    description: 'Button emoji (unicode or custom <:name:id>)',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'style',
-                    description: 'Warna tombol',
+                    description: 'Button color',
                     required: false,
                     choices: [
                         { name: '🔵 Primary (Blurple)', value: 'Primary' },
@@ -187,7 +187,7 @@ function getCommands() {
                 {
                     type: 5,
                     name: 'requires_key',
-                    description: 'Apakah kategori ini butuh tombol Set Key? (default: true)',
+                    description: 'Does this category need the Set Key button? (default: true)',
                     required: false
                 }
             ]
@@ -195,27 +195,27 @@ function getCommands() {
 
         {
             name: 'list-categories',
-            description: 'Lihat semua kategori tiket yang terdaftar',
+            description: 'View all registered ticket categories',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
         {
             name: 'remove-category',
-            description: 'Hapus kategori tiket dari config',
+            description: 'Remove a ticket category from the config',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'id', description: 'ID kategori yang akan dihapus', required: true }]
+            options: [{ type: 3, name: 'id', description: 'The category ID to delete', required: true }]
         },
 
-        // v3.9.19: update kategori existing (label/emoji/style/requires_key) tanpa hapus+add
+        // v3.9.19: update an existing category (label/emoji/style/requires_key) without delete+add
         {
             name: 'update-category',
-            description: 'Edit kategori tiket existing (label/emoji/style/requires_key) tanpa hapus+add ulang',
+            description: 'Edit an existing ticket category (label/emoji/style/requires_key) without delete+re-add',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'id',
-                    description: 'ID kategori yang akan diupdate',
+                    description: 'The category ID to update',
                     required: true,
                     min_length: 1,
                     max_length: 30
@@ -223,7 +223,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'label',
-                    description: 'Label tombol baru (maks 80 char)',
+                    description: 'New button label (max 80 chars)',
                     required: false,
                     min_length: 1,
                     max_length: 80
@@ -231,13 +231,13 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'emoji',
-                    description: 'Emoji tombol baru (unicode atau custom <:name:id>)',
+                    description: 'New button emoji (unicode or custom <:name:id>)',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'style',
-                    description: 'Warna tombol baru',
+                    description: 'New button color',
                     required: false,
                     choices: [
                         { name: '🔵 Primary (Blurple)', value: 'Primary' },
@@ -249,7 +249,7 @@ function getCommands() {
                 {
                     type: 5,
                     name: 'requires_key',
-                    description: 'Apakah kategori ini butuh tombol Set Key?',
+                    description: 'Does this category need the Set Key button?',
                     required: false
                 }
             ]
@@ -258,62 +258,63 @@ function getCommands() {
         // v3.9.11 Phase 3: multi-panel ticket (v3.9.14: full customization)
         {
             name: 'setup-ticket-panel',
-            description: 'Pasang panel tiket dengan kustomisasi penuh (multi-panel support)',
+            description: 'Set up a ticket panel with full customization (multi-panel support)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'title',
-                    description: 'Judul embed (override global). Kosongkan = pakai config default',
+                    description: 'Embed title (overrides global). Leave empty = use config default',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'categories',
-                    description: 'Koma-separated category IDs yang mau ditampilkan (kosongkan = semua)',
+                    description: 'Comma-separated category IDs to display (leave empty = all)',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'body',
-                    description:
-                        'Body custom (override global). Support \\n newline & template {server} {price_list} {categories_list}',
+                    // v3.9.38 FIX: description was 103 chars — Discord max is 100
+                    // (found by scripts/validate-registry.js). Shortened.
+                    description: 'Custom body. Supports \\n & {server} {price_list} {categories_list}',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'color',
-                    description: 'Warna hex (mis. #ff5733 atau #fff). Kosongkan = default orange',
+                    description: 'Hex color (e.g. #ff5733 or #fff). Leave empty = default orange',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'image',
-                    description: 'URL gambar besar (https://...). Kosongkan = no image',
+                    description: 'Large image URL (https://...). Leave empty = no image',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'thumbnail',
-                    description: 'URL thumbnail kecil (https://...). Kosongkan = no thumbnail',
+                    description: 'Small thumbnail URL (https://...). Leave empty = no thumbnail',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'footer',
-                    description: 'Teks footer. Kosongkan = pakai nama bot',
+                    description: 'Footer text. Leave empty = use the bot name',
                     required: false
                 },
                 {
                     type: 7,
                     name: 'channel',
-                    description: 'Channel target (default: channel saat ini). Harus text channel',
+                    description: 'Target channel (default: current channel). Must be a text channel',
                     required: false
                 },
                 {
                     type: 5,
                     name: 'use_dropdown',
-                    description: 'TRUE = pakai dropdown select menu (default: FALSE = buttons)',
+                    description: 'TRUE = use a dropdown select menu (default: FALSE = buttons)',
                     required: false
                 }
             ]
@@ -322,54 +323,54 @@ function getCommands() {
         // v3.9.14: panel management commands
         {
             name: 'list-panels',
-            description: 'Lihat semua panel tiket persistent di server ini',
+            description: 'View all persistent ticket panels on this server',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'delete-panel',
-            description: 'Hapus panel tiket by ID (auto delete message + metadata)',
+            description: 'Delete a ticket panel by ID (auto-deletes message + metadata)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'id', description: 'Panel ID (lihat /list-panels)', required: true }]
+            options: [{ type: 3, name: 'id', description: 'Panel ID (see /list-panels)', required: true }]
         },
         {
             name: 'refresh-panel',
-            description: 'Re-render panel dengan kategori/produk terbaru (tanpa setup ulang)',
+            description: 'Re-render a panel with the latest categories/products (no re-setup needed)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'id', description: 'Panel ID (lihat /list-panels)', required: true }]
+            options: [{ type: 3, name: 'id', description: 'Panel ID (see /list-panels)', required: true }]
         },
         {
             name: 'update-panel',
-            description: 'Edit field panel (title/body/color/image/thumbnail/footer) via modal',
+            description: 'Edit a panel field (title/body/color/image/thumbnail/footer) via modal',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'id', description: 'Panel ID (lihat /list-panels)', required: true },
+                { type: 3, name: 'id', description: 'Panel ID (see /list-panels)', required: true },
                 {
                     type: 3,
                     name: 'field',
-                    description: 'Field yang mau diedit',
+                    description: 'Which field to edit',
                     required: true,
                     choices: [
-                        { name: 'Title (judul)', value: 'title' },
-                        { name: 'Body (isi, dukung template)', value: 'body' },
-                        { name: 'Color (warna hex)', value: 'color' },
-                        { name: 'Image (URL gambar besar)', value: 'image' },
-                        { name: 'Thumbnail (URL gambar kecil)', value: 'thumbnail' },
-                        { name: 'Footer (teks footer)', value: 'footer' }
+                        { name: 'Title (heading)', value: 'title' },
+                        { name: 'Body (content, supports templates)', value: 'body' },
+                        { name: 'Color (hex color)', value: 'color' },
+                        { name: 'Image (large image URL)', value: 'image' },
+                        { name: 'Thumbnail (small image URL)', value: 'thumbnail' },
+                        { name: 'Footer (footer text)', value: 'footer' }
                     ]
                 }
             ]
         },
 
-        // v3.9.12: /edit-message — modal editor untuk message config (multi-line, lebih flexible)
+        // v3.9.12: /edit-message — modal editor for message config (multi-line, more flexible)
         {
             name: 'edit-message',
-            description: 'Edit teks pesan embed via modal (multi-line, lebih flexible dari /set-message)',
+            description: 'Edit embed message text via modal (multi-line, more flexible than /set-message)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih pesan yang akan diedit',
+                    description: 'Choose which message to edit',
                     required: true,
                     choices: [
                         { name: 'Welcome Title', value: 'welcomeTitle' },
@@ -386,73 +387,73 @@ function getCommands() {
             ]
         },
 
-        // === MANAJEMEN PRODUK ===
+        // === PRODUCT MANAGEMENT ===
         {
             name: 'add-product',
-            description: 'Tambah produk baru ke price list',
+            description: 'Add a new product to the price list',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'label',
-                    description: 'Nama produk (mis. 7 Days, maks 80 char)',
+                    description: 'Product name (e.g. 7 Days, max 80 chars)',
                     required: true,
                     max_length: 80
                 },
-                { type: 3, name: 'value', description: 'ID unik (mis. 7d)', required: true },
+                { type: 3, name: 'value', description: 'Unique ID (e.g. 7d)', required: true },
                 {
                     type: 3,
                     name: 'price',
-                    description: 'Harga (mis. Rp. 50.000, maks 100 char)',
+                    description: 'Price (e.g. Rp. 50.000, max 100 chars)',
                     required: true,
                     max_length: 100
                 },
                 {
                     type: 3,
                     name: 'duration',
-                    description: 'Opsional. Keterangan durasi (mis. 7 Hari). Kosong = pakai label.',
+                    description: 'Optional. Duration label (e.g. 7 Days). Leave empty = use the label.',
                     required: false
                 },
                 // v3.9.11 Phase 2: category & requires_key
                 {
                     type: 3,
                     name: 'category',
-                    description: 'Kategori produk (default: transaction). Lihat /list-categories untuk daftar.',
+                    description: 'Product category (default: transaction). See /list-categories for the list.',
                     required: false
                 },
                 {
                     type: 5,
                     name: 'requires_key',
-                    description: 'Apakah produk ini butuh Set Key? (default: true untuk kategori key)',
+                    description: 'Does this product need Set Key? (default: true for key categories)',
                     required: false
                 }
             ]
         },
         {
             name: 'remove-product',
-            description: 'Hapus produk dari price list',
+            description: 'Remove a product from the price list',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'value', description: 'Value produk yang ingin dihapus (mis. 7d)', required: true }
+                { type: 3, name: 'value', description: 'The product value to delete (e.g. 7d)', required: true }
             ]
         },
         {
             name: 'list-products',
-            description: 'Lihat semua produk saat ini',
+            description: 'View all current products',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // v3.9.19: update produk existing tanpa hapus+add ulang
-        // value TIDAK bisa diubah (dipakai sebagai customId di modal_set_key).
+        // v3.9.19: update an existing product without delete+re-add
+        // value can NOT be changed (used as the customId in modal_set_key).
         {
             name: 'update-product',
-            description: 'Edit produk existing (label/price/duration/category/requires_key) tanpa hapus+add ulang',
+            description: 'Edit an existing product (label/price/duration/category/requires_key) without delete+re-add',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'value',
-                    description: 'Value produk yang akan diupdate (identifier — tidak berubah)',
+                    description: 'The product value to update (identifier — cannot be changed)',
                     required: true,
                     min_length: 1,
                     max_length: 50
@@ -460,7 +461,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'label',
-                    description: 'Label produk baru (maks 80 char)',
+                    description: 'New product label (max 80 chars)',
                     required: false,
                     min_length: 1,
                     max_length: 80
@@ -468,7 +469,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'price',
-                    description: 'Harga baru (mis. "Rp 25.000")',
+                    description: 'New price (e.g. "Rp 25.000")',
                     required: false,
                     min_length: 1,
                     max_length: 100
@@ -476,14 +477,14 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'duration',
-                    description: 'Durasi baru (kosongkan string untuk hapus duration)',
+                    description: 'New duration (submit an empty string to remove the duration)',
                     required: false,
                     max_length: 100
                 },
                 {
                     type: 3,
                     name: 'category',
-                    description: 'Kategori baru (lihat /list-categories)',
+                    description: 'New category (see /list-categories)',
                     required: false,
                     min_length: 1,
                     max_length: 30
@@ -491,7 +492,7 @@ function getCommands() {
                 {
                     type: 5,
                     name: 'requires_key',
-                    description: 'Apakah produk ini butuh Set Key? (true=key, false=jasa/non-key)',
+                    description: 'Does this product need Set Key? (true=key, false=service/non-key)',
                     required: false
                 }
             ]
@@ -500,52 +501,52 @@ function getCommands() {
         // === CONFIG SHOW ===
         {
             name: 'config-show',
-            description: 'Lihat semua konfigurasi bot saat ini',
+            description: 'View all current bot configuration',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === REMOVE ROLE (hapus role dari config) ===
+        // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Hapus role dari config (verified / unverified / admin)',
+            description: 'Remove a role from the config (verified / unverified / admin)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih tipe role yang dihapus',
+                    description: 'Choose the role type to remove',
                     required: true,
                     choices: [
                         { name: 'Verified', value: 'verified' },
                         { name: 'Unverified', value: 'unverified' },
                         { name: 'Admin', value: 'admin' },
-                        // v3.9.32: hapus role midman dari config.
-                        { name: 'Midman (Rekber)', value: 'midman' }
+                        // v3.9.32: remove the midman role from the config.
+                        { name: 'Midman (Escrow)', value: 'midman' }
                     ]
                 }
             ]
         },
 
-        // === MIDMAN / REKBER (v3.9.32) ===
+        // === MIDMAN / ESCROW (v3.9.32) ===
         {
             name: 'set-midman-fee',
-            description: 'Atur fee rekber (persen harga deal atau nominal flat)',
+            description: 'Set the escrow fee (percent of the deal price or a flat amount)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'mode',
-                    description: 'Mode perhitungan fee',
+                    description: 'Fee calculation mode',
                     required: true,
                     choices: [
-                        { name: 'Persen (%) dari harga deal', value: 'percent' },
-                        { name: 'Nominal flat (Rp per deal)', value: 'flat' }
+                        { name: 'Percent (%) of the deal price', value: 'percent' },
+                        { name: 'Flat amount (Rp per deal)', value: 'flat' }
                     ]
                 },
                 {
                     type: 10,
                     name: 'value',
-                    description: 'Nilai fee (persen: 0-90, flat: nominal Rp). 0 = gratis',
+                    description: 'Fee value (percent: 0-90, flat: Rp amount). 0 = free',
                     required: true,
                     minValue: 0
                 }
@@ -553,49 +554,49 @@ function getCommands() {
         },
         {
             name: 'midman-deals',
-            description: 'Lihat semua deal rekber aktif di server',
+            description: 'View all active escrow deals on this server',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === REMOVE CHANNEL (hapus channel dari config) ===
+        // === REMOVE CHANNEL (remove a channel from the config) ===
         {
             name: 'remove-channel',
-            description: 'Hapus channel dari config (invoice / welcome / goodbye / audit-log / transcript)',
+            description: 'Remove a channel from the config (invoice / welcome / goodbye / audit-log / transcript)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih tipe channel yang dihapus',
+                    description: 'Choose the channel type to remove',
                     required: true,
                     choices: [
                         { name: 'Invoice', value: 'invoice' },
                         { name: 'Welcome', value: 'welcome' },
                         { name: 'Goodbye', value: 'goodbye' },
                         { name: 'Audit Log', value: 'audit-log' },
-                        { name: 'Transcript Tiket', value: 'transcript' }
+                        { name: 'Ticket Transcript', value: 'transcript' }
                     ]
                 }
             ]
         },
 
-        // === LIST MESSAGES (lihat semua teks pesan) ===
+        // === LIST MESSAGES (view all message texts) ===
         {
             name: 'list-messages',
-            description: 'Lihat semua teks pesan embed saat ini',
+            description: 'View all current embed message texts',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === RESET MESSAGE (kembalikan pesan ke default) ===
+        // === RESET MESSAGE (restore messages to default) ===
         {
             name: 'reset-message',
-            description: 'Reset teks pesan embed kembali ke default',
+            description: 'Reset embed message text back to default',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Pilih pesan yang direset (atau ALL untuk semua)',
+                    description: 'Choose which message to reset (or ALL for all of them)',
                     required: true,
                     choices: [
                         { name: 'Welcome Title', value: 'welcomeTitle' },
@@ -606,59 +607,59 @@ function getCommands() {
                         { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
-                        { name: '⚡ Reset SEMUA', value: 'ALL' }
+                        { name: '⚡ Reset ALL', value: 'ALL' }
                     ]
                 }
             ]
         },
 
-        // === RESET CONFIG (reset semua setting ke kondisi kosong) ===
+        // === RESET CONFIG (reset all settings to a blank state) ===
         {
             name: 'reset-config',
-            description: '⚠️ Hapus SEMUA setting (role, channel, pesan) - tidak bisa di-undo!',
+            description: '⚠️ Delete ALL settings (roles, channels, messages) - cannot be undone!',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === AUTO-ROLE PRODUCT (VIP role per produk) ===
+        // === AUTO-ROLE PRODUCT (VIP role per product) ===
         {
             name: 'set-product-role',
-            description: 'Set role & durasi auto-expire untuk produk tertentu',
+            description: 'Set a role & auto-expire duration for a specific product',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'value', description: 'Value produk (mis. 30d)', required: true },
-                { type: 8, name: 'role', description: 'Role yang akan diberikan saat pembeli sukses', required: true },
+                { type: 3, name: 'value', description: 'Product value (e.g. 30d)', required: true },
+                { type: 8, name: 'role', description: 'The role granted when a purchase succeeds', required: true },
                 {
                     type: 4,
                     name: 'days',
-                    description: 'Durasi hari sebelum role otomatis dihapus (0 = permanen)',
+                    description: 'Days before the role is automatically removed (0 = permanent)',
                     required: true
                 }
             ]
         },
         {
             name: 'remove-product-role',
-            description: 'Hapus auto-role dari produk tertentu',
+            description: 'Remove the auto-role from a specific product',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'value', description: 'Value produk (mis. 30d)', required: true }]
+            options: [{ type: 3, name: 'value', description: 'Product value (e.g. 30d)', required: true }]
         },
         {
             name: 'list-product-roles',
-            description: 'Lihat semua mapping produk → role + durasi',
+            description: 'View all product → role mappings + durations',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
         // === KEY MANAGER (model key-driven) ===
         {
             name: 'set-key',
-            description: 'Beri key ke user + grant role + extend schedule (MAX EXTEND)',
+            description: 'Give a key to a user + grant role + extend schedule (MAX EXTEND)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 6, name: 'user', description: 'User penerima key', required: true },
-                { type: 3, name: 'value', description: 'Value produk (mis. 30d)', required: true },
+                { type: 6, name: 'user', description: 'The user receiving the key', required: true },
+                { type: 3, name: 'value', description: 'Product value (e.g. 30d)', required: true },
                 {
                     type: 3,
                     name: 'key',
-                    description: 'Key yang akan dikirim ke user (maks 200 char)',
+                    description: 'The key to send to the user (max 200 chars)',
                     required: true,
                     max_length: 200
                 }
@@ -666,76 +667,76 @@ function getCommands() {
         },
         {
             name: 'list-keys',
-            description: 'Lihat semua key (aktif & expired) milik user',
+            description: 'View all keys (active & expired) owned by the user',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 6, name: 'user', description: 'User yang ingin dilihat key-nya', required: true }]
+            options: [{ type: 6, name: 'user', description: 'The user whose keys to view', required: true }]
         },
         {
             name: 'clear-schedule',
-            description: 'Hapus semua schedule role user (+ opsional hapus semua key & lepas role VIP)',
+            description: 'Clear all scheduled roles for a user (+ optionally delete all keys & remove the VIP role)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 6, name: 'user', description: 'User yang di-clear', required: true },
+                { type: 6, name: 'user', description: 'The user to clear', required: true },
                 {
                     type: 5,
                     name: 'clear_keys',
-                    description: 'True = hapus SEMUA key user + lepas role VIP (full reset). Default: false.',
+                    description: 'True = delete ALL user keys + remove the VIP role (full reset). Default: false.',
                     required: false
                 }
             ]
         },
 
-        // === SELF-ROLE FLEKSIBEL ===
+        // === FLEXIBLE SELF-ROLE ===
         {
             name: 'setup-selfrole',
-            description: 'Buat panel self-role baru (member bisa ambil/lepas role sendiri)',
+            description: 'Create a new self-role panel (members can take/drop roles themselves)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'title', description: 'Judul panel (mis. Pilih Role Notif)', required: true },
-                { type: 3, name: 'description', description: 'Deskripsi panel (support \\n newline)', required: true },
+                { type: 3, name: 'title', description: 'Panel title (e.g. Pick a Notif Role)', required: true },
+                { type: 3, name: 'description', description: 'Panel description (supports \\n newline)', required: true },
                 {
                     type: 3,
                     name: 'type',
-                    description: 'Tipe UI panel',
+                    description: 'Panel UI type',
                     required: true,
                     choices: [
-                        { name: 'Button (≤25 role, klik toggle)', value: 'button' },
-                        { name: 'Select Menu (dropdown, ≤25 role)', value: 'select' }
+                        { name: 'Button (≤25 roles, click to toggle)', value: 'button' },
+                        { name: 'Select Menu (dropdown, ≤25 roles)', value: 'select' }
                     ]
                 },
                 {
                     type: 5,
                     name: 'exclusive',
-                    description: 'True = hanya boleh 1 role pada satu waktu (mis. color role). Default false.',
+                    description: 'True = only 1 role allowed at a time (e.g. color roles). Default false.',
                     required: false
                 }
             ]
         },
         {
             name: 'selfrole-add',
-            description: 'Tambah role ke panel self-role yang sudah ada',
+            description: 'Add a role to an existing self-role panel',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'panel_id',
-                    description: 'Panel ID (lihat di /selfrole-list atau footer panel)',
+                    description: 'Panel ID (see /selfrole-list or the panel footer)',
                     required: true
                 },
-                { type: 8, name: 'role', description: 'Role yang akan ditambahkan ke panel', required: true },
-                { type: 3, name: 'label', description: 'Label tombol / option (maks 80 char)', required: true },
-                { type: 3, name: 'emoji', description: 'Emoji (opsional, mis. 🔔)', required: false },
+                { type: 8, name: 'role', description: 'The role to add to the panel', required: true },
+                { type: 3, name: 'label', description: 'Button / option label (max 80 chars)', required: true },
+                { type: 3, name: 'emoji', description: 'Emoji (optional, e.g. 🔔)', required: false },
                 {
                     type: 3,
                     name: 'description',
-                    description: 'Deskripsi (opsional, select menu, support \\n newline)',
+                    description: 'Description (optional, select menu, supports \\n newline)',
                     required: false
                 },
                 // v3.9.11 Phase 3: per-role button style
                 {
                     type: 3,
                     name: 'style',
-                    description: 'Warna tombol (default: Secondary)',
+                    description: 'Button color (default: Secondary)',
                     required: false,
                     choices: [
                         { name: '🔵 Primary (Blurple)', value: 'Primary' },
@@ -748,89 +749,89 @@ function getCommands() {
                 {
                     type: 8,
                     name: 'requires_role',
-                    description: 'Role yang harus dimiliki user sebelum bisa ambil role ini (opsional)',
+                    description: 'A role the user must have before taking this role (optional)',
                     required: false
                 }
             ]
         },
         {
             name: 'selfrole-remove',
-            description: 'Hapus role dari panel self-role',
+            description: 'Remove a role from a self-role panel',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 { type: 3, name: 'panel_id', description: 'Panel ID', required: true },
-                { type: 8, name: 'role', description: 'Role yang akan dihapus dari panel', required: true }
+                { type: 8, name: 'role', description: 'The role to remove from the panel', required: true }
             ]
         },
         {
             name: 'selfrole-list',
-            description: 'Lihat semua panel self-role di guild ini',
+            description: 'View all self-role panels in this guild',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'selfrole-delete',
-            description: 'Hapus panel self-role (hapus pesan + config)',
+            description: 'Delete a self-role panel (deletes the message + config)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'panel_id', description: 'Panel ID yang akan dihapus', required: true }]
+            options: [{ type: 3, name: 'panel_id', description: 'The Panel ID to delete', required: true }]
         },
 
         // === ANNOUNCE & EMBED BUILDER ===
         {
             name: 'announce',
-            description: 'Quick announce — kirim embed ke channel (1 command, 1 embed)',
+            description: 'Quick announce — send an embed to a channel (1 command, 1 embed)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 7, name: 'channel', description: 'Channel tujuan announce', required: true },
-                { type: 3, name: 'title', description: 'Judul announce', required: true },
-                { type: 3, name: 'description', description: 'Isi announce (support newline \\n)', required: true },
-                { type: 3, name: 'color', description: 'Warna hex (mis. #FF0000). Default: blurple', required: false },
-                { type: 3, name: 'image', description: 'URL gambar besar (opsional)', required: false },
-                { type: 3, name: 'thumbnail', description: 'URL gambar kecil pojok (opsional)', required: false },
+                { type: 7, name: 'channel', description: 'Announcement target channel', required: true },
+                { type: 3, name: 'title', description: 'Announcement title', required: true },
+                { type: 3, name: 'description', description: 'Announcement content (supports newline \\n)', required: true },
+                { type: 3, name: 'color', description: 'Hex color (e.g. #FF0000). Default: blurple', required: false },
+                { type: 3, name: 'image', description: 'Large image URL (optional)', required: false },
+                { type: 3, name: 'thumbnail', description: 'Small corner thumbnail URL (optional)', required: false },
                 {
                     type: 3,
                     name: 'mention',
-                    description: 'Mention: @everyone, @here, atau <@&role_id>',
+                    description: 'Mention: @everyone, @here, or <@&role_id>',
                     required: false
                 }
             ]
         },
         {
             name: 'embed-builder',
-            description: 'Interactive embed builder dengan live preview (untuk embed kompleks)',
+            description: 'Interactive embed builder with live preview (for complex embeds)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'embed-list',
-            description: 'Lihat semua session embed builder aktif kamu (+ link ke draft message)',
+            description: 'View all your active embed builder sessions (+ link to the draft message)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'embed-cancel',
-            description: 'Batalkan session embed builder berdasarkan ID (jika draft kehapus/bug)',
+            description: 'Cancel an embed builder session by ID (if the draft got deleted/bugged)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'session_id', description: 'Session ID (lihat di /embed-list)', required: true }]
+            options: [{ type: 3, name: 'session_id', description: 'Session ID (see /embed-list)', required: true }]
         },
 
         // === BACKUP SYSTEM ===
         {
             name: 'backup-now',
-            description: 'Buat backup manual sekarang (config, keys, scheduledRoles, selfRoles, dll)',
+            description: 'Create a manual backup now (config, keys, scheduledRoles, selfRoles, etc.)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'backup-list',
-            description: 'Lihat semua backup yang tersimpan (maks 7 terbaru)',
+            description: 'View all saved backups (max 7 most recent)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'restore-backup',
-            description: 'Restore backup berdasarkan nama (auto-buat safety backup sebelum restore)',
+            description: 'Restore a backup by name (auto-creates a safety backup before restoring)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'name',
-                    description: 'Nama folder backup (lihat /backup-list, format: YYYY-MM-DD_HH-mm-ss)',
+                    description: 'Backup folder name (see /backup-list, format: YYYY-MM-DD_HH-mm-ss)',
                     required: true
                 }
             ]
@@ -839,29 +840,29 @@ function getCommands() {
         // === GIVEAWAY SYSTEM ===
         {
             name: 'giveaway',
-            description: 'Kelola giveaway komunitas (create, list, end, reroll)',
+            description: 'Manage community giveaways (create, list, end, reroll)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 1,
                     name: 'create',
-                    description: 'Buat giveaway baru',
+                    description: 'Create a new giveaway',
                     required: false,
                     options: [
-                        { type: 7, name: 'channel', description: 'Channel untuk giveaway', required: true },
+                        { type: 7, name: 'channel', description: 'Channel for the giveaway', required: true },
                         {
                             type: 3,
                             name: 'prize',
-                            description: 'Hadiah (mis. VIP 30 Hari, maks 200 char)',
+                            description: 'Prize (e.g. VIP 30 Days, max 200 chars)',
                             required: true,
                             max_length: 200
                         },
-                        { type: 4, name: 'duration', description: 'Durasi dalam menit (min 1)', required: true },
-                        { type: 4, name: 'winners', description: 'Jumlah pemenang (1-20, default 1)', required: false },
+                        { type: 4, name: 'duration', description: 'Duration in minutes (min 1)', required: true },
+                        { type: 4, name: 'winners', description: 'Number of winners (1-20, default 1)', required: false },
                         {
                             type: 8,
                             name: 'required_role',
-                            description: 'Role yang wajib dimiliki peserta (opsional)',
+                            description: 'A role participants must have (optional)',
                             required: false
                         }
                     ]
@@ -869,25 +870,25 @@ function getCommands() {
                 {
                     type: 1,
                     name: 'list',
-                    description: 'Lihat semua giveaway di guild ini',
+                    description: 'View all giveaways in this guild',
                     required: false
                 },
                 {
                     type: 1,
                     name: 'end',
-                    description: 'Akhiri giveaway lebih awal + pick winners',
+                    description: 'End a giveaway early + pick winners',
                     required: false,
                     options: [
-                        { type: 3, name: 'id', description: 'Giveaway ID (lihat /giveaway list)', required: true }
+                        { type: 3, name: 'id', description: 'Giveaway ID (see /giveaway list)', required: true }
                     ]
                 },
                 {
                     type: 1,
                     name: 'reroll',
-                    description: 'Reroll winner giveaway yang sudah berakhir',
+                    description: 'Reroll the winner of an ended giveaway',
                     required: false,
                     options: [
-                        { type: 3, name: 'id', description: 'Giveaway ID (lihat /giveaway list)', required: true }
+                        { type: 3, name: 'id', description: 'Giveaway ID (see /giveaway list)', required: true }
                     ]
                 }
             ]
@@ -896,153 +897,153 @@ function getCommands() {
         // === SCHEDULED ANNOUNCEMENTS ===
         {
             name: 'announce-schedule',
-            description: 'Jadwalkan announce ke channel pada waktu tertentu (one-shot atau recurring)',
+            description: 'Schedule an announcement to a channel at a specific time (one-shot or recurring)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 7, name: 'channel', description: 'Channel tujuan', required: true },
-                { type: 3, name: 'title', description: 'Judul announce', required: true },
+                { type: 7, name: 'channel', description: 'Target channel', required: true },
+                { type: 3, name: 'title', description: 'Announcement title', required: true },
                 {
                     type: 3,
                     name: 'description',
-                    description: 'Isi announce (support \\n untuk newline)',
+                    description: 'Announcement content (supports \\n for newline)',
                     required: true
                 },
                 {
                     type: 3,
                     name: 'at',
-                    description: 'Waktu kirim. Format: "30m", "2h", "1d", atau "2026-01-15 20:00"',
+                    description: 'Send time. Format: "30m", "2h", "1d", or "2026-01-15 20:00"',
                     required: true
                 },
-                { type: 3, name: 'color', description: 'Warna hex (mis. #FF0000). Default: blurple', required: false },
-                { type: 3, name: 'image', description: 'URL gambar besar (opsional)', required: false },
-                { type: 3, name: 'thumbnail', description: 'URL gambar kecil pojok (opsional)', required: false },
+                { type: 3, name: 'color', description: 'Hex color (e.g. #FF0000). Default: blurple', required: false },
+                { type: 3, name: 'image', description: 'Large image URL (optional)', required: false },
+                { type: 3, name: 'thumbnail', description: 'Small corner thumbnail URL (optional)', required: false },
                 {
                     type: 3,
                     name: 'mention',
-                    description: 'Mention: @everyone, @here, atau <@&role_id>',
+                    description: 'Mention: @everyone, @here, or <@&role_id>',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'recurring',
-                    description: 'Ulangi (opsional)',
+                    description: 'Repeat (optional)',
                     required: false,
                     choices: [
-                        { name: 'Daily (tiap hari)', value: 'daily' },
-                        { name: 'Weekly (tiap minggu)', value: 'weekly' },
-                        { name: 'Monthly (tiap bulan)', value: 'monthly' }
+                        { name: 'Daily (every day)', value: 'daily' },
+                        { name: 'Weekly (every week)', value: 'weekly' },
+                        { name: 'Monthly (every month)', value: 'monthly' }
                     ]
                 }
             ]
         },
         {
             name: 'announce-list',
-            description: 'Lihat semua announce terjadwal yang pending',
+            description: 'View all pending scheduled announcements',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'announce-cancel',
-            description: 'Batalkan announce terjadwal berdasarkan ID',
+            description: 'Cancel a scheduled announcement by ID',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'id', description: 'Announce ID (lihat di /announce-list)', required: true }]
+            options: [{ type: 3, name: 'id', description: 'Announce ID (see /announce-list)', required: true }]
         },
 
         // === WARN SYSTEM ===
-        // P2-3 FIX: defaultMemberPermissions disamakan dengan isAdmin check (ManageGuild).
-        // Sebelumnya: ModerateMembers → moderator bisa lihat command tapi ditolak saat dijalankan.
+        // P2-3 FIX: defaultMemberPermissions aligned with the isAdmin check (ManageGuild).
+        // Before: ModerateMembers → moderators could see the command but got denied when running it.
         {
             name: 'warn',
-            description: 'Beri warning ke member (auto-action: 3=mute 1h, 5=mute 1d, 7=kick)',
+            description: 'Warn a member (auto-action: 3=mute 1h, 5=mute 1d, 7=kick)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 6, name: 'user', description: 'Member yang diwarn', required: true },
-                { type: 3, name: 'reason', description: 'Alasan warning (support \\n newline)', required: true }
+                { type: 6, name: 'user', description: 'The member to warn', required: true },
+                { type: 3, name: 'reason', description: 'Warning reason (supports \\n newline)', required: true }
             ]
         },
         {
             name: 'warn-list',
-            description: 'Lihat semua warning milik user',
+            description: 'View all warnings for a user',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 6, name: 'user', description: 'User yang ingin dicek', required: true }]
+            options: [{ type: 6, name: 'user', description: 'The user to check', required: true }]
         },
         {
             name: 'warn-remove',
-            description: 'Hapus 1 warning berdasarkan ID',
+            description: 'Delete 1 warning by ID',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 6, name: 'user', description: 'User pemilik warning', required: true },
-                { type: 3, name: 'warn_id', description: 'Warn ID (lihat di /warn-list)', required: true }
+                { type: 6, name: 'user', description: 'The user who owns the warning', required: true },
+                { type: 3, name: 'warn_id', description: 'Warn ID (see /warn-list)', required: true }
             ]
         },
         {
             name: 'warn-clear',
-            description: 'Hapus SEMUA warning milik user',
+            description: 'Delete ALL warnings for a user',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 6, name: 'user', description: 'User yang ingin di-clear warn-nya', required: true }]
+            options: [{ type: 6, name: 'user', description: 'The user whose warnings to clear', required: true }]
         },
 
         // === STATS & LEADERBOARD ===
         {
             name: 'stats',
-            description: 'Lihat statistik agregat server (admin only)',
+            description: 'View aggregate server stats (admin only)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'leaderboard',
-            description: 'Lihat top 10 member (public — boleh dipakai member biasa)',
+            description: 'View the top 10 members (public — regular members can use it)',
             options: [
                 {
                     type: 3,
                     name: 'metric',
-                    description: 'Metric leaderboard',
+                    description: 'Leaderboard metric',
                     required: false,
                     choices: [
-                        { name: '💬 Pesan Terbanyak', value: 'messages' },
-                        { name: '🛒 Top Buyer (transaksi)', value: 'vipPurchases' },
-                        { name: '💰 Top Spender (belanja)', value: 'totalSpent' },
-                        { name: '🎉 Top Winner (giveaway)', value: 'giveawaysWon' }
+                        { name: '💬 Most Messages', value: 'messages' },
+                        { name: '🛒 Top Buyer (transactions)', value: 'vipPurchases' },
+                        { name: '💰 Top Spender (purchases)', value: 'totalSpent' },
+                        { name: '🎉 Top Winner (giveaways)', value: 'giveawaysWon' }
                     ]
                 }
             ]
         },
         {
             name: 'my-stats',
-            description: 'Lihat statistik pribadi kamu (public — boleh dipakai member biasa)'
+            description: 'View your personal stats (public — regular members can use it)'
         },
 
         // === POLL SYSTEM ===
         {
             name: 'poll',
-            description: 'Kelola poll komunitas (create, list, close)',
+            description: 'Manage community polls (create, list, close)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 1,
                     name: 'create',
-                    description: 'Buat poll baru (modal input untuk options)',
+                    description: 'Create a new poll (modal input for options)',
                     required: false,
                     options: [
                         {
                             type: 7,
                             name: 'channel',
-                            description: 'Channel untuk poll',
+                            description: 'Channel for the poll',
                             required: true,
-                            // v3.9.26: restrict ke text/announcement — tanpa ini admin
-                            // bisa pilih voice/category → channel.send gagal di modal
-                            // handler dengan pesan error yang menyesatkan.
+                            // v3.9.26: restrict to text/announcement — without this, admins
+                            // could pick voice/category → channel.send fails in the modal
+                            // handler with a misleading error message.
                             channel_types: [0, 5]
                         },
                         {
                             type: 3,
                             name: 'question',
-                            description: 'Pertanyaan poll (maks 250 char)',
+                            description: 'Poll question (max 250 chars)',
                             required: true,
                             max_length: 250
                         },
                         {
                             type: 5,
                             name: 'multiple',
-                            description: 'True = member boleh pilih banyak. Default false (single)',
+                            description: 'True = members can pick multiple options. Default false (single)',
                             required: false
                         }
                     ]
@@ -1050,53 +1051,53 @@ function getCommands() {
                 {
                     type: 1,
                     name: 'list',
-                    description: 'Lihat semua poll di guild ini',
+                    description: 'View all polls in this guild',
                     required: false
                 },
                 {
                     type: 1,
                     name: 'close',
-                    description: 'Tutup poll + tampilkan hasil akhir',
+                    description: 'Close a poll + show the final results',
                     required: false,
-                    options: [{ type: 3, name: 'id', description: 'Poll ID (lihat di /poll list)', required: true }]
+                    options: [{ type: 3, name: 'id', description: 'Poll ID (see /poll list)', required: true }]
                 }
             ]
         },
 
         // === TEMP VOICE ===
-        // v3.8.2: /setup-tempvoice tanpa parameter — bot auto-create kategori
-        // berisi text channel (untuk panel) + voice channel (untuk trigger).
+        // v3.8.2: /setup-tempvoice takes no parameters — the bot auto-creates a category
+        // containing a text channel (for the panel) + a voice channel (for the trigger).
         {
             name: 'setup-tempvoice',
-            description: 'Setup temp voice — auto buat kategori + channel panel + channel trigger',
+            description: 'Set up temp voice — auto-creates a category + panel channel + trigger channel',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'tempvoice-remove',
-            description: 'Hapus setup temp voice dari guild (kategori + semua channel terkait dihapus)',
+            description: 'Remove the temp voice setup from the guild (category + all related channels are deleted)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === SEND MESSAGE (plain text ke channel) ===
-        // v3.9.5: pelengkap /announce (yang kirim embed). /send-message kirim
-        // plain text biasa — cocok untuk pengumuman kasual, chat bot, atau
-        // teks yang tidak perlu styling embed.
+        // === SEND MESSAGE (plain text to a channel) ===
+        // v3.9.5: companion to /announce (which sends embeds). /send-message sends
+        // regular plain text — great for casual announcements, bot chat, or
+        // text that doesn't need embed styling.
         {
             name: 'send-message',
-            description: 'Kirim plain text message ke text channel (support \\n & mention)',
+            description: 'Send a plain text message to a text channel (supports \\n & mentions)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 7, name: 'channel', description: 'Channel tujuan (harus text channel)', required: true },
+                { type: 7, name: 'channel', description: 'Target channel (must be a text channel)', required: true },
                 {
                     type: 3,
                     name: 'message',
-                    description: 'Isi pesan (support \\n untuk newline). Maks 2000 char.',
+                    description: 'Message content (supports \\n for newline). Max 2000 chars.',
                     required: true
                 },
                 {
                     type: 3,
                     name: 'mention',
-                    description: 'Mention: @everyone, @here, atau <@&role_id> / <@user_id>',
+                    description: 'Mention: @everyone, @here, or <@&role_id> / <@user_id>',
                     required: false
                 }
             ]
@@ -1105,13 +1106,13 @@ function getCommands() {
         // === v3.9.13: AUTO-RESPONDER ===
         {
             name: 'add-responder',
-            description: 'Tambah auto-responder: trigger keyword → auto reply',
+            description: 'Add an auto-responder: trigger keyword → auto reply',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'trigger',
-                    description: 'Keyword trigger (mis. !sosmed). Case-insensitive, maks 50 char.',
+                    description: 'Trigger keyword (e.g. !sosmed). Case-insensitive, max 50 chars.',
                     required: true,
                     min_length: 1,
                     max_length: 50
@@ -1119,7 +1120,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'reply',
-                    description: 'Teks reply (support \\n). Maks 2000 char.',
+                    description: 'Reply text (supports \\n). Max 2000 chars.',
                     required: true,
                     min_length: 1,
                     max_length: 2000
@@ -1127,7 +1128,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'reply_type',
-                    description: 'Tipe reply (default: text)',
+                    description: 'Reply type (default: text)',
                     required: false,
                     choices: [
                         { name: 'Plain text', value: 'text' },
@@ -1137,7 +1138,7 @@ function getCommands() {
                 {
                     type: 4,
                     name: 'cooldown',
-                    description: 'Cooldown dalam detik (anti-spam, default: 3, 0 = matiin)',
+                    description: 'Cooldown in seconds (anti-spam, default: 3, 0 = off)',
                     required: false,
                     min_value: 0
                 }
@@ -1145,134 +1146,134 @@ function getCommands() {
         },
         {
             name: 'list-responder',
-            description: 'Lihat semua auto-responder terdaftar',
+            description: 'View all registered auto-responders',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'remove-responder',
-            description: 'Hapus auto-responder berdasarkan trigger',
+            description: 'Delete an auto-responder by trigger',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 3, name: 'trigger', description: 'Trigger yang akan dihapus', required: true }]
+            options: [{ type: 3, name: 'trigger', description: 'The trigger to delete', required: true }]
         },
 
         // === v3.9.13: ANTI-SPAM & AUTO-MOD ===
         {
             name: 'set-automod',
-            description: 'Konfigurasi auto-mod (spam, link, word filter, mention limit)',
+            description: 'Configure auto-mod (spam, links, word filter, mention limit)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 4,
                     name: 'spam_threshold',
-                    description: 'Jumlah pesan dalam window = spam (default: 5)',
+                    description: 'Number of messages in the window that counts as spam (default: 5)',
                     required: false,
                     min_value: 1
                 },
                 {
                     type: 3,
                     name: 'spam_action',
-                    description: 'Action untuk spammer',
+                    description: 'Action for spammers',
                     required: false,
                     choices: [
                         { name: 'Delete only', value: 'delete_only' },
                         { name: 'Warn', value: 'warn' },
-                        { name: 'Mute 10 menit', value: 'mute_10m' },
-                        { name: 'Mute 1 jam', value: 'mute_1h' },
+                        { name: 'Mute 10 minutes', value: 'mute_10m' },
+                        { name: 'Mute 1 hour', value: 'mute_1h' },
                         { name: 'Kick', value: 'kick' }
                     ]
                 },
-                { type: 5, name: 'block_links', description: 'Block semua link?', required: false },
+                { type: 5, name: 'block_links', description: 'Block all links?', required: false },
                 {
                     type: 3,
                     name: 'block_words',
-                    description: 'Kata yang di-block (comma-separated, mis. kata1,kata2)',
+                    description: 'Words to block (comma-separated, e.g. word1,word2)',
                     required: false
                 },
                 {
                     type: 3,
                     name: 'word_action',
-                    description: 'Action untuk word filter',
+                    description: 'Action for the word filter',
                     required: false,
                     choices: [
                         { name: 'Delete only', value: 'delete_only' },
                         { name: 'Warn', value: 'warn' },
-                        { name: 'Mute 10 menit', value: 'mute_10m' }
+                        { name: 'Mute 10 minutes', value: 'mute_10m' }
                     ]
                 },
                 {
                     type: 4,
                     name: 'max_mentions',
-                    description: 'Max mention per message (default: 5)',
+                    description: 'Max mentions per message (default: 5)',
                     required: false,
                     min_value: 0
                 },
                 {
                     type: 3,
                     name: 'mention_action',
-                    description: 'Action untuk mass-mention',
+                    description: 'Action for mass-mentions',
                     required: false,
                     choices: [
                         { name: 'Delete only', value: 'delete_only' },
                         { name: 'Warn', value: 'warn' },
-                        { name: 'Mute 10 menit', value: 'mute_10m' }
+                        { name: 'Mute 10 minutes', value: 'mute_10m' }
                     ]
                 }
             ]
         },
         {
             name: 'automod-show',
-            description: 'Lihat konfigurasi auto-mod saat ini',
+            description: 'View the current auto-mod configuration',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'automod-toggle',
             description: 'Enable/disable auto-mod',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 5, name: 'enabled', description: 'Enable atau disable?', required: true }]
+            options: [{ type: 5, name: 'enabled', description: 'Enable or disable?', required: true }]
         },
         {
             name: 'add-link-whitelist',
-            description: 'Tambah channel/role ke whitelist link (boleh post link)',
+            description: 'Add a channel/role to the link whitelist (allowed to post links)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 7, name: 'channel', description: 'Channel yang boleh post link', required: false },
-                { type: 8, name: 'role', description: 'Role yang boleh post link', required: false }
+                { type: 7, name: 'channel', description: 'Channel allowed to post links', required: false },
+                { type: 8, name: 'role', description: 'Role allowed to post links', required: false }
             ]
         },
 
         // === v3.9.23: AUTOMOD WORD FLEX ===
         {
             name: 'add-word',
-            description: 'Tambah kata ke blocklist/exempt auto-mod (append, tidak replace)',
+            description: 'Add words to the auto-mod blocklist/exempt (append, not replace)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'words',
-                    description: 'Kata yang mau ditambah (comma-separated, mis. kata1,kata2)',
+                    description: 'Words to add (comma-separated, e.g. word1,word2)',
                     required: true,
                     max_length: 500
                 },
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Tambah ke daftar mana?',
+                    description: 'Which list to add to?',
                     required: false,
                     choices: [
-                        { name: 'Blocklist (kata di-block)', value: 'blocklist' },
-                        { name: 'Exempt (kata diizinkan)', value: 'exempt' }
+                        { name: 'Blocklist (blocked words)', value: 'blocklist' },
+                        { name: 'Exempt (allowed words)', value: 'exempt' }
                     ]
                 },
                 {
                     type: 3,
                     name: 'action',
-                    description: 'Action khusus kata ini (kosong = pakai word_action global)',
+                    description: 'Action specific to these words (empty = use the global word_action)',
                     required: false,
                     choices: [
                         { name: 'Delete only', value: 'delete_only' },
                         { name: 'Warn', value: 'warn' },
-                        { name: 'Mute 10 menit', value: 'mute_10m' },
-                        { name: 'Mute 1 jam', value: 'mute_1h' },
+                        { name: 'Mute 10 minutes', value: 'mute_10m' },
+                        { name: 'Mute 1 hour', value: 'mute_1h' },
                         { name: 'Kick', value: 'kick' }
                     ]
                 }
@@ -1280,49 +1281,49 @@ function getCommands() {
         },
         {
             name: 'remove-word',
-            description: 'Hapus 1 kata dari blocklist/exempt auto-mod',
+            description: 'Remove 1 word from the auto-mod blocklist/exempt',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'word', description: 'Kata yang mau dihapus', required: true, max_length: 100 },
+                { type: 3, name: 'word', description: 'The word to remove', required: true, max_length: 100 },
                 {
                     type: 3,
                     name: 'tipe',
-                    description: 'Hapus dari daftar mana?',
+                    description: 'Which list to remove from?',
                     required: false,
                     choices: [
-                        { name: 'Blocklist (kata di-block)', value: 'blocklist' },
-                        { name: 'Exempt (kata diizinkan)', value: 'exempt' }
+                        { name: 'Blocklist (blocked words)', value: 'blocklist' },
+                        { name: 'Exempt (allowed words)', value: 'exempt' }
                     ]
                 }
             ]
         },
         {
             name: 'list-words',
-            description: 'Lihat daftar kata blocklist + exempt + action per kata',
+            description: 'View the blocklist + exempt word lists + per-word actions',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'remove-link-whitelist',
-            description: 'Hapus channel/role dari whitelist link',
+            description: 'Remove a channel/role from the link whitelist',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 7, name: 'channel', description: 'Channel yang dihapus dari whitelist', required: false },
-                { type: 8, name: 'role', description: 'Role yang dihapus dari whitelist', required: false }
+                { type: 7, name: 'channel', description: 'The channel to remove from the whitelist', required: false },
+                { type: 8, name: 'role', description: 'The role to remove from the whitelist', required: false }
             ]
         },
 
         // === v3.9.13: AFK SYSTEM ===
         {
             name: 'afk',
-            description: 'Set status AFK (bot auto-reply saat di-mention)',
+            description: 'Set AFK status (bot auto-replies when you get mentioned)',
             options: [
-                // v3.9.17: tambah max_length supaya reason tidak overflow reply.
-                // Sebelumnya, default Discord max 6000 char bisa bikin AFK reply
-                // (yang gabung multiple mentions) exceed 2000 char limit → gagal kirim.
+                // v3.9.17: added max_length so the reason can't overflow the reply.
+                // Before, Discord's default 6000 char max could make the AFK reply
+                // (which combines multiple mentions) exceed the 2000 char limit → send failure.
                 {
                     type: 3,
                     name: 'reason',
-                    description: 'Alasan AFK (support \\n, mis. "Makan dulu, 30 menit")',
+                    description: 'AFK reason (supports \\n, e.g. "Eating, back in 30 minutes")',
                     required: false,
                     max_length: 200
                 }
@@ -1330,11 +1331,11 @@ function getCommands() {
         },
         {
             name: 'afk-clear',
-            description: 'Clear status AFK kamu'
+            description: 'Clear your AFK status'
         },
         {
             name: 'afk-list',
-            description: 'Lihat semua member yang sedang AFK',
+            description: 'View all members who are currently AFK',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
@@ -1344,7 +1345,7 @@ function getCommands() {
             description: 'Enable/disable leveling system + config XP',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 5, name: 'enabled', description: 'Enable atau disable leveling?', required: true },
+                { type: 5, name: 'enabled', description: 'Enable or disable leveling?', required: true },
                 {
                     type: 4,
                     name: 'xp_per_message',
@@ -1356,7 +1357,7 @@ function getCommands() {
                 {
                     type: 4,
                     name: 'cooldown',
-                    description: 'Cooldown dalam detik (default: 60)',
+                    description: 'Cooldown in seconds (default: 60)',
                     required: false,
                     min_value: 0,
                     max_value: 3600
@@ -1364,39 +1365,39 @@ function getCommands() {
                 {
                     type: 5,
                     name: 'announce_levelup',
-                    description: 'Announce saat user level up? (default: true)',
+                    description: 'Announce when a user levels up? (default: true)',
                     required: false
                 }
             ]
         },
         {
             name: 'add-level-role',
-            description: 'Tambah role reward untuk level tertentu (auto-assign saat cap level)',
+            description: 'Add a reward role for a specific level (auto-assigned on level-up)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 4, name: 'level', description: 'Level yang harus dicap (mis. 10)', required: true },
-                { type: 8, name: 'role', description: 'Role yang akan di-assign', required: true }
+                { type: 4, name: 'level', description: 'The level to reach (e.g. 10)', required: true },
+                { type: 8, name: 'role', description: 'The role to assign', required: true }
             ]
         },
         {
             name: 'list-level-roles',
-            description: 'Lihat semua level role reward',
+            description: 'View all level reward roles',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
         {
             name: 'remove-level-role',
-            description: 'Hapus role reward untuk level tertentu',
+            description: 'Remove the reward role for a specific level',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [{ type: 4, name: 'level', description: 'Level yang akan dihapus role-nya', required: true }]
+            options: [{ type: 4, name: 'level', description: 'The level to remove the role from', required: true }]
         },
         {
             name: 'rank',
-            description: 'Lihat level & XP kamu (atau user lain)',
-            options: [{ type: 6, name: 'user', description: 'User yang ingin dicek (default: kamu)', required: false }]
+            description: 'View your level & XP (or another user)',
+            options: [{ type: 6, name: 'user', description: 'The user to check (default: you)', required: false }]
         },
         {
             name: 'leaderboard-level',
-            description: 'Top 10 member dengan level tertinggi (public)'
+            description: 'Top 10 members with the highest level (public)'
         }
     ];
 }

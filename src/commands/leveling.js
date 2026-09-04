@@ -24,9 +24,9 @@ module.exports = async function (interaction) {
 
         const updates = { ...(config.leveling || {}) };
         if (enabled !== null) updates.enabled = enabled;
-        // v3.9.26: clamp nilai absurd. Registry sudah min_value/max_value, tapi
-        // data lama / config manual bisa berisi nilai aneh (xpPerMessage: -50 →
-        // user BUSA XP tiap pesan; cooldownMs negatif → cooldown mati).
+        // v3.9.26: clamp absurd values. The registry already has min_value/max_value, but
+        // old data / manual config can contain weird values (xpPerMessage: -50 →
+        // user LOSES XP per message; negative cooldownMs → cooldown dead).
         if (xpPerMessage !== null) updates.xpPerMessage = Math.max(1, Math.min(1000, xpPerMessage));
         if (cooldown !== null) updates.cooldownMs = Math.max(0, Math.min(3600, cooldown)) * 1000;
         if (announceLevelUp !== null) updates.announceLevelUp = announceLevelUp;
@@ -52,7 +52,7 @@ module.exports = async function (interaction) {
                 { name: '📢 Announce Level Up', value: updates.announceLevelUp ? 'Yes' : 'No', inline: true }
             )
             .setFooter({
-                text: 'Member dapat XP tiap pesan (subject to cooldown). Pakai /add-level-role untuk setup role reward.'
+                text: 'Members earn XP per message (subject to cooldown). Use /add-level-role to set up reward roles.'
             });
 
         return safeEditReply(interaction, { embeds: [embed] });
@@ -66,7 +66,7 @@ module.exports = async function (interaction) {
         const role = interaction.options.getRole('role');
 
         if (level < 1 || level > 1000) {
-            return safeEditReply(interaction, { content: '❌ Level harus antara 1 dan 1000.' });
+            return safeEditReply(interaction, { content: '❌ Level must be between 1 and 1000.' });
         }
 
         const roles = config.levelRoles || [];
@@ -88,8 +88,8 @@ module.exports = async function (interaction) {
 
         return safeEditReply(interaction, {
             content:
-                `✅ Level role ditambahkan!\n\n📊 Level **${level}** → ${role} (${role.name})\n\n` +
-                `💡 User yang cap level ${level}+ akan otomatis dapat role ini.`
+                `✅ Level role added!\n\n📊 Level **${level}** → ${role} (${role.name})\n\n` +
+                `💡 Users who reach level ${level}+ automatically get this role.`
         });
     }
 
@@ -100,7 +100,7 @@ module.exports = async function (interaction) {
         const roles = config.levelRoles || [];
         if (roles.length === 0) {
             return safeEditReply(interaction, {
-                content: '📭 Belum ada level role. Pakai `/add-level-role level:10 role:@Active` untuk tambah.'
+                content: '📭 No level roles yet. Use `/add-level-role level:10 role:@Active` to add one.'
             });
         }
 
@@ -109,7 +109,7 @@ module.exports = async function (interaction) {
             .setTitle('📊 LEVEL ROLES')
             .setDescription(lines)
             .setColor(0x5865f2)
-            .setFooter({ text: `${roles.length} role reward terdaftar` });
+            .setFooter({ text: `${roles.length} reward roles registered` });
 
         return safeEditReply(interaction, { embeds: [embed] });
     }
@@ -124,7 +124,7 @@ module.exports = async function (interaction) {
         config.levelRoles = roles.filter(r => r.level !== level);
 
         if (config.levelRoles.length === before) {
-            return safeEditReply(interaction, { content: `❌ Tidak ada level role untuk level ${level}.` });
+            return safeEditReply(interaction, { content: `❌ No level role exists for level ${level}.` });
         }
 
         saveConfig(config);
@@ -133,18 +133,18 @@ module.exports = async function (interaction) {
             action: 'REMOVE_LEVEL_ROLE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Hapus level role untuk level ${level}`,
+            details: `Remove level role for level ${level}`,
             guildId: interaction.guild.id
         });
 
         return safeEditReply(interaction, {
-            content: `✅ Level role untuk level ${level} berhasil dihapus.`
+            content: `✅ Level role for level ${level} successfully removed.`
         });
     }
 
-    // === RANK (lihat level sendiri / user lain) ===
+    // === RANK (view your own or another user's level) ===
     if (interaction.commandName === 'rank') {
-        // deferReply dulu biar gak timeout kalo disk I/O lambat
+        // deferReply first so it doesn't time out if disk I/O is slow
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const targetUser = interaction.options.getUser('user') || interaction.user;
@@ -185,7 +185,7 @@ module.exports = async function (interaction) {
         const top = levelManager.getTopUsers(interaction.guild.id, 10);
         if (top.length === 0) {
             return safeEditReply(interaction, {
-                content: '📭 Belum ada member yang punya XP. Kirim pesan dulu untuk dapat XP!'
+                content: '📭 No members have XP yet. Send some messages to earn XP!'
             });
         }
 

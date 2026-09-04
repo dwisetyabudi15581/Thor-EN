@@ -1,10 +1,10 @@
 /**
- * Measure embed size untuk semua command yang reply embed.
- * Discord max: 6000 char total per embed.
+ * Measure embed size for the command that replies with an embed.
+ * Discord max: 6000 chars total per embed.
  */
 const path = require('path');
 
-// Mock interaction minimal
+// Minimal mock interaction
 function makeMockInteraction() {
     return {
         user: { toString: () => '<@test>', tag: 'TestUser#1234' },

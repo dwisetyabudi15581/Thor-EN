@@ -1,29 +1,31 @@
 /**
- * Unit tests v3.9.38 — hardening domain midman/rekber (task 3-a).
+ * Unit tests v3.9.38 — midman/escrow domain hardening (task 3-a).
  *
- * Bug yang diuji (semua fix v3.9.38 di src/interactions/midman.js +
+ * Bugs being tested (all v3.9.38 fixes in src/interactions/midman.js +
  * src/data/midmanManager.js):
- *   1. FIX 3 — parsePriceNumber: "1.5m" tidak lagi jadi 15.000.000 (desimal
- *      dibaca sebagai digit ekstra = harga salah 10x). Dengan suffix k/m,
- *      sisa `.`/`,` = invalid. Tanpa suffix, `.`/`,` hanya boleh pemisah
- *      ribuan dengan jenis separator konsisten.
- *   2. FIX 1 — handlePickMember/handleRemovePick kini ikut transitionLocks
- *      (lock per-deal yang sama dengan handleEvent): saat lock dipegang,
- *      klik ditolak "sedang diproses" TANPA menyentuh permission channel.
- *   3. FIX 1 — fresh re-read: transisi state tervalidasi (fundin) yang
- *      tersimpan TEPAT selama await permissionOverwrites TIDAK di-revert
- *      oleh stale write observer (state + history tetap utuh).
- *   4. FIX 2 — anti double-submit: sesi pending dihapus SEBELUM await create
- *      channel → submit kedua dropdown penjual ditolak "kedaluwarsa" →
- *      hanya SATU deal yang terbentuk.
- *   5. FIX 2 — re-check "deal aktif" tepat sebelum setDeal: deal lain yang
- *      ter-commit di tengah await create → channel baru dibersihkan & deal
- *      TOCTOU tidak tersimpan.
- *   6. FIX 5 — creator pihak ketiga tercatat sebagai observer pertama deal
- *      (dulu hanya dapat akses channel, tidak bisa dikeluarkan lewat tombol ➖).
- *   7. FIX 4 — handleEvent deferReply di awal; konfirmasi/guard lewat
- *      editReply (safeEditReply), bukan interaction.reply setelah beberapa
- *      await (window ack 3 detik Discord).
+ *   1. FIX 3 — parsePriceNumber: "1.5m" no longer becomes 15,000,000 (the
+ *      decimal read as an extra digit = price 10x off). With a k/m suffix,
+ *      a leftover `.`/`,` = invalid. Without a suffix, `.`/`,` are only
+ *      allowed as thousand separators with a consistent separator type.
+ *   2. FIX 1 — handlePickMember/handleRemovePick now also follow
+ *      transitionLocks (the same per-deal lock as handleEvent): while the
+ *      lock is held, the click is rejected as "being processed" WITHOUT
+ *      touching channel permissions.
+ *   3. FIX 1 — fresh re-read: a validated state transition (fundin) saved
+ *      EXACTLY during the permissionOverwrites await is NOT reverted by a
+ *      stale observer write (state + history stay intact).
+ *   4. FIX 2 — anti double-submit: the pending session is deleted BEFORE the
+ *      channel create await → a second seller-dropdown submit is rejected as
+ *      "expired" → only ONE deal is formed.
+ *   5. FIX 2 — re-check "active deal" right before setDeal: another deal
+ *      committed in the middle of the create await → the new channel is
+ *      cleaned up & the TOCTOU deal is not saved.
+ *   6. FIX 5 — a third-party creator is recorded as the deal's first observer
+ *      (previously they only got channel access, and could not be removed via
+ *      the ➖ button).
+ *   7. FIX 4 — handleEvent deferReply at the start; confirmations/guards via
+ *      editReply (safeEditReply), not interaction.reply after several awaits
+ *      (Discord's 3-second ack window).
  */
 
 const test = require('node:test');
@@ -35,8 +37,8 @@ const { MessageFlags } = require('discord.js');
 const dataDir = path.join(__dirname, '..', '..', 'data');
 
 // ====================================================
-// === Sandbox: file data produksi di-snapshot & restore ===
-// === (pola hardeningV37.test.js / midman.test.js)      ===
+// === Sandbox: production data files are snapshotted & restored ===
+// === (hardeningV37.test.js / midman.test.js pattern)         ===
 // ====================================================
 const SANDBOX_FILES = ['deals.json', 'config.json', 'tickets.json'];
 const backups = [];
@@ -81,8 +83,8 @@ const midmanDomain = require('../../src/interactions/midman');
 // === 1. FIX 3 — parsePriceNumber ===
 // ====================================================
 
-test('parsePriceNumber v3.9.38: desimal + suffix k/m → invalid (0), bukan 10x harga', () => {
-    // Bug lama: "1.5m" → "15" × 1e6 = 15.000.000 (harga termakan 10x).
+test('parsePriceNumber v3.9.38: decimal + k/m suffix → invalid (0), not a 10x price', () => {
+    // Old bug: "1.5m" → "15" × 1e6 = 15,000,000 (price inflated 10x).
     assert.strictEqual(mm.parsePriceNumber('1.5m'), 0);
     assert.strictEqual(mm.parsePriceNumber('0.5k'), 0);
     assert.strictEqual(mm.parsePriceNumber('2.5k'), 0);
@@ -90,15 +92,15 @@ test('parsePriceNumber v3.9.38: desimal + suffix k/m → invalid (0), bukan 10x 
     assert.strictEqual(mm.parsePriceNumber('0.5M'), 0);
 });
 
-test('parsePriceNumber v3.9.38: tanpa suffix, separator harus pemisah ribuan konsisten', () => {
-    assert.strictEqual(mm.parsePriceNumber('2.5'), 0); // desimal, bukan grup ribuan
+test('parsePriceNumber v3.9.38: without a suffix, separators must be consistent thousand separators', () => {
+    assert.strictEqual(mm.parsePriceNumber('2.5'), 0); // decimal, not a thousands group
     assert.strictEqual(mm.parsePriceNumber('1,5'), 0);
-    assert.strictEqual(mm.parsePriceNumber('100.00'), 0); // grup 2 digit — bukan ribuan
-    assert.strictEqual(mm.parsePriceNumber('1.000,000'), 0); // campur dua jenis separator
+    assert.strictEqual(mm.parsePriceNumber('100.00'), 0); // 2-digit group — not thousands
+    assert.strictEqual(mm.parsePriceNumber('1.000,000'), 0); // mixing two separator types
     assert.strictEqual(mm.parsePriceNumber('100000.'), 0); // trailing separator
 });
 
-test('parsePriceNumber v3.9.38 (regression): format sah tetap ter-parse benar', () => {
+test('parsePriceNumber v3.9.38 (regression): valid formats still parse correctly', () => {
     assert.strictEqual(mm.parsePriceNumber('500000'), 500000);
     assert.strictEqual(mm.parsePriceNumber('500k'), 500000);
     assert.strictEqual(mm.parsePriceNumber('1m'), 1000000);
@@ -114,10 +116,10 @@ test('parsePriceNumber v3.9.38 (regression): format sah tetap ter-parse benar', 
 });
 
 // ====================================================
-// === 2. Mock infrastructure (pola hardeningV37) ===
+// === 2. Mock infrastructure (hardeningV37 pattern) ===
 // ====================================================
 
-/** Collection palsu (Map + find — mirror discord.js Collection API). */
+/** Fake Collection (Map + find — mirrors the discord.js Collection API). */
 class FakeCollection extends Map {
     find(pred) {
         for (const v of this.values()) if (pred(v)) return v;
@@ -126,9 +128,10 @@ class FakeCollection extends Map {
 }
 
 /**
- * Interaction mock — semua reply/edit/defer direkam ke array terpisah supaya
- * test FIX 4 bisa membedakan reply baru vs edit deferred reply.
- * Default aktor: user 'mid-1' dengan role midman 'rm' (bukan admin Discord).
+ * Interaction mock — all reply/edit/defer calls are recorded into separate
+ * arrays so the FIX 4 test can distinguish a new reply vs an edit of the
+ * deferred reply.
+ * Default actor: user 'mid-1' with the midman role 'rm' (not a Discord admin).
  */
 function makeInteraction({ type, customId, values, fields, channel, guild, userId, userTag }) {
     const replies = [];
@@ -173,7 +176,7 @@ function makeInteraction({ type, customId, values, fields, channel, guild, userI
     };
 }
 
-/** Channel deal mock — mencatat berapa kali permission & send disentuh. */
+/** Deal channel mock — records how many times permission & send are touched. */
 function makeDealChannel({ id, onPermEdit, onPermDelete }) {
     const sent = [];
     return {
@@ -195,15 +198,15 @@ function makeDealChannel({ id, onPermEdit, onPermDelete }) {
     };
 }
 
-/** Guild mock — members (buyer1/seller1/witness1) + kategori rekber + create. */
+/** Guild mock — members (buyer1/seller1/witness1) + escrow category + create. */
 function makeV38Guild({ guildId, createImpl }) {
     const members = new FakeCollection();
     members.set('buyer1', { id: 'buyer1', user: { id: 'buyer1', bot: false } });
     members.set('seller1', { id: 'seller1', user: { id: 'seller1', bot: false } });
     members.set('witness1', { id: 'witness1', user: { id: 'witness1', bot: false } });
     const channels = new FakeCollection();
-    // Kategori rekber "sudah ada" → skip create kategori.
-    channels.set('cat_rec', { id: 'cat_rec', name: '🤝 REKBER', type: 4 });
+    // The escrow category "already exists" → skip category creation.
+    channels.set('cat_rec', { id: 'cat_rec', name: '🤝 ESCROW', type: 4 });
     return {
         id: guildId,
         roles: { everyone: { id: 'everyone1' } },
@@ -212,13 +215,13 @@ function makeV38Guild({ guildId, createImpl }) {
         channels: {
             cache: channels,
             create: createImpl || (async () => {
-                throw new Error('channels.create tidak boleh dipanggil di test ini');
+                throw new Error('channels.create must not be called in this test');
             })
         }
     };
 }
 
-/** Seed satu deal WAITING_PAYMENT ke deals.json. */
+/** Seed one WAITING_PAYMENT deal into deals.json. */
 function seedDeal(channelId, overrides = {}) {
     const deal = {
         channelId,
@@ -248,13 +251,13 @@ function seedConfig() {
 }
 
 // ====================================================
-// === 3. FIX 1 — lock per-deal pada kelola observer ===
+// === 3. FIX 1 — per-deal lock for observer management ===
 // ====================================================
 
-test('v3.9.38 FIX 1: mm_pick_member saat transitionLocks dipegang → ditolak tanpa menyentuh permission', async () => {
+test('v3.9.38 FIX 1: mm_pick_member while transitionLocks is held → rejected without touching permissions', async () => {
     seedConfig();
     seedDeal('ch_v38_lock', {});
-    mm.transitionLocks.add('ch_v38_lock'); // handleEvent sedang memproses transisi
+    mm.transitionLocks.add('ch_v38_lock'); // handleEvent is processing a transition
     try {
         let permEdits = 0;
         const dealChannel = makeDealChannel({
@@ -274,16 +277,16 @@ test('v3.9.38 FIX 1: mm_pick_member saat transitionLocks dipegang → ditolak ta
         await midmanDomain(interaction);
 
         const last = interaction._edits[interaction._edits.length - 1];
-        assert.ok(last, 'harus ada balasan');
-        assert.match(last.content, /sedang diproses/i);
-        assert.strictEqual(permEdits, 0, 'permissionOverwrites.edit TIDAK boleh dipanggil saat lock dipegang');
-        assert.deepStrictEqual(mm.getDeal('ch_v38_lock').observers, [], 'observers tidak berubah');
+        assert.ok(last, 'there must be a reply');
+        assert.match(last.content, /being processed/i);
+        assert.strictEqual(permEdits, 0, 'permissionOverwrites.edit must NOT be called while the lock is held');
+        assert.deepStrictEqual(mm.getDeal('ch_v38_lock').observers, [], 'observers unchanged');
     } finally {
         mm.transitionLocks.delete('ch_v38_lock');
     }
 });
 
-test('v3.9.38 FIX 1: mm_remove_pick saat transitionLocks dipegang → ditolak tanpa menyentuh permission', async () => {
+test('v3.9.38 FIX 1: mm_remove_pick while transitionLocks is held → rejected without touching permissions', async () => {
     seedConfig();
     seedDeal('ch_v38_lock2', { observers: ['witness1'] });
     mm.transitionLocks.add('ch_v38_lock2');
@@ -306,27 +309,27 @@ test('v3.9.38 FIX 1: mm_remove_pick saat transitionLocks dipegang → ditolak ta
         await midmanDomain(interaction);
 
         const last = interaction._edits[interaction._edits.length - 1];
-        assert.ok(last, 'harus ada balasan');
-        assert.match(last.content, /sedang diproses/i);
-        assert.strictEqual(permDeletes, 0, 'permissionOverwrites.delete TIDAK boleh dipanggil saat lock dipegang');
-        assert.deepStrictEqual(mm.getDeal('ch_v38_lock2').observers, ['witness1'], 'observers tidak berubah');
+        assert.ok(last, 'there must be a reply');
+        assert.match(last.content, /being processed/i);
+        assert.strictEqual(permDeletes, 0, 'permissionOverwrites.delete must NOT be called while the lock is held');
+        assert.deepStrictEqual(mm.getDeal('ch_v38_lock2').observers, ['witness1'], 'observers unchanged');
     } finally {
         mm.transitionLocks.delete('ch_v38_lock2');
     }
 });
 
 // ====================================================
-// === 4. FIX 1 — fresh re-read (transisi tidak di-revert) ===
+// === 4. FIX 1 — fresh re-read (transition not reverted) ===
 // ====================================================
 
-test('v3.9.38 FIX 1: mm_pick_member — transisi fundin di tengah await permission TIDAK di-revert (fresh re-read)', async () => {
+test('v3.9.38 FIX 1: mm_pick_member — a fundin transition during the permission await is NOT reverted (fresh re-read)', async () => {
     seedConfig();
     seedDeal('ch_v38_race', {});
     let permEdits = 0;
     const dealChannel = makeDealChannel({
         id: 'ch_v38_race',
-        // Grant permission "lambat" — selama await, handleEvent lain (simulasi)
-        // menyimpan transisi fundin tervalidasi ke deals.json.
+        // "Slow" permission grant — during the await, another (simulated)
+        // handleEvent saves a validated fundin transition to deals.json.
         onPermEdit: async () => {
             permEdits++;
             await new Promise(r => setTimeout(r, 10));
@@ -346,16 +349,16 @@ test('v3.9.38 FIX 1: mm_pick_member — transisi fundin di tengah await permissi
     await midmanDomain(interaction);
 
     const after = mm.getDeal('ch_v38_race');
-    // Sebelum fix: stale write menimpa fundin → state balik WAITING_PAYMENT.
-    assert.strictEqual(after.state, 'WAITING_DELIVERY', 'fundin tetap utuh (tidak di-revert oleh stale write)');
-    assert.ok(after.observers.includes('witness1'), 'observer tetap ditambahkan pada objek fresh');
-    assert.strictEqual(after.history.filter(h => h.event === 'fundin').length, 1, 'history fundin tidak hilang');
-    assert.ok(after.history.some(h => /Member ditambahkan/.test(h.event)), 'history member-add tercatat');
+    // Before the fix: a stale write overwrote fundin → state rolled back to WAITING_PAYMENT.
+    assert.strictEqual(after.state, 'WAITING_DELIVERY', 'fundin stays intact (not reverted by a stale write)');
+    assert.ok(after.observers.includes('witness1'), 'the observer is still added on the fresh object');
+    assert.strictEqual(after.history.filter(h => h.event === 'fundin').length, 1, 'the fundin history is not lost');
+    assert.ok(after.history.some(h => /Member added/.test(h.event)), 'member-add history recorded');
     assert.strictEqual(permEdits, 1);
-    assert.strictEqual(mm.transitionLocks.has('ch_v38_race'), false, 'lock dilepas setelah selesai');
+    assert.strictEqual(mm.transitionLocks.has('ch_v38_race'), false, 'lock released when done');
 });
 
-test('v3.9.38 FIX 1: mm_remove_pick — transisi fundin di tengah await permission TIDAK di-revert (fresh re-read)', async () => {
+test('v3.9.38 FIX 1: mm_remove_pick — a fundin transition during the permission await is NOT reverted (fresh re-read)', async () => {
     seedConfig();
     seedDeal('ch_v38_rm', { observers: ['witness1'] });
     const dealChannel = makeDealChannel({
@@ -378,23 +381,23 @@ test('v3.9.38 FIX 1: mm_remove_pick — transisi fundin di tengah await permissi
     await midmanDomain(interaction);
 
     const after = mm.getDeal('ch_v38_rm');
-    assert.strictEqual(after.state, 'WAITING_DELIVERY', 'fundin tetap utuh (tidak di-revert oleh stale write)');
-    assert.deepStrictEqual(after.observers, [], 'observer dikeluarkan dari objek fresh');
-    assert.strictEqual(after.history.filter(h => h.event === 'fundin').length, 1, 'history fundin tidak hilang');
-    assert.ok(after.history.some(h => /Member dikeluarkan/.test(h.event)), 'history member-remove tercatat');
-    assert.strictEqual(mm.transitionLocks.has('ch_v38_rm'), false, 'lock dilepas setelah selesai');
+    assert.strictEqual(after.state, 'WAITING_DELIVERY', 'fundin stays intact (not reverted by a stale write)');
+    assert.deepStrictEqual(after.observers, [], 'the observer is removed from the fresh object');
+    assert.strictEqual(after.history.filter(h => h.event === 'fundin').length, 1, 'the fundin history is not lost');
+    assert.ok(after.history.some(h => /Member removed/.test(h.event)), 'member-remove history recorded');
+    assert.strictEqual(mm.transitionLocks.has('ch_v38_rm'), false, 'lock released when done');
 });
 
 // ====================================================
 // === 5. FIX 2 — creation TOCTOU / double-submit ===
 // ====================================================
 
-test('v3.9.38 FIX 2: mm_pick_seller double-submit saat create masih jalan → submit kedua ditolak, hanya 1 deal', async () => {
+test('v3.9.38 FIX 2: mm_pick_seller double-submit while create is still running → the second submit is rejected, only 1 deal', async () => {
     seedConfig();
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {});
 
-    // channels.create "lambat" (jaringan) — gate dikontrol manual dari test.
+    // "Slow" (network) channels.create — the gate is controlled manually from the test.
     let resolveCreate;
     const createGate = new Promise(res => {
         resolveCreate = res;
@@ -412,7 +415,7 @@ test('v3.9.38 FIX 2: mm_pick_seller double-submit saat create masih jalan → su
         }
     });
 
-    // Langkah 1-2: modal item+harga, lalu pilih pembeli.
+    // Steps 1-2: item+price modal, then pick the buyer.
     const i1 = makeInteraction({
         type: 'modal',
         customId: 'modal_mm_create',
@@ -432,7 +435,7 @@ test('v3.9.38 FIX 2: mm_pick_seller double-submit saat create masih jalan → su
     });
     await midmanDomain(i2);
 
-    // Langkah 3 pertama — jalan sampai suspends di await channels.create.
+    // First step 3 — runs until it suspends at the await channels.create.
     const i3a = makeInteraction({
         type: 'userselect',
         customId: 'mm_pick_seller',
@@ -442,9 +445,9 @@ test('v3.9.38 FIX 2: mm_pick_seller double-submit saat create masih jalan → su
         userTag: 'Creator#0001'
     });
     const p1 = midmanDomain(i3a);
-    await new Promise(r => setImmediate(r)); // biarkan i3a lewat validasi + hapus sesi pending
+    await new Promise(r => setImmediate(r)); // let i3a pass validation + delete the pending session
 
-    // Submit kedua (double-click dropdown) saat create masih berjalan.
+    // Second submit (dropdown double-click) while create is still running.
     const i3b = makeInteraction({
         type: 'userselect',
         customId: 'mm_pick_seller',
@@ -455,21 +458,21 @@ test('v3.9.38 FIX 2: mm_pick_seller double-submit saat create masih jalan → su
     });
     await midmanDomain(i3b);
     const lastB = i3b._edits[i3b._edits.length - 1];
-    assert.ok(lastB, 'submit kedua harus dijawab');
-    assert.match(lastB.content, /kedaluwarsa/i, 'sesi pending sudah dihapus sebelum await → ditolak sebagai expired');
+    assert.ok(lastB, 'the second submit must be answered');
+    assert.match(lastB.content, /expired/i, 'the pending session was deleted before the await → rejected as expired');
 
-    // Selesaikan create pertama.
+    // Complete the first create.
     resolveCreate();
     await p1;
 
     const all = mm.loadDeals();
-    assert.strictEqual(Object.keys(all).length, 1, 'hanya SATU deal yang terbentuk (tanpa duplikat)');
-    assert.ok(all['ch_new_deal_c'], 'deal pertama tersimpan');
+    assert.strictEqual(Object.keys(all).length, 1, 'only ONE deal is formed (no duplicate)');
+    assert.ok(all['ch_new_deal_c'], 'the first deal is saved');
     const lastA = i3a._edits[i3a._edits.length - 1];
-    assert.match(lastA.content, /Deal rekber dibuat/, 'submit pertama sukses normal');
+    assert.match(lastA.content, /Escrow deal created/, 'the first submit succeeds normally');
 });
 
-test('v3.9.38 FIX 2: deal lain ter-commit di tengah await create → channel dibersihkan & deal TOCTOU tidak tersimpan', async () => {
+test('v3.9.38 FIX 2: another deal committed in the middle of the create await → the channel is cleaned up & the TOCTOU deal is not saved', async () => {
     seedConfig();
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {});
@@ -478,8 +481,8 @@ test('v3.9.38 FIX 2: deal lain ter-commit di tengah await create → channel dib
     const guild = makeV38Guild({
         guildId: 'g_v38d',
         createImpl: async () => {
-            // Deal LAIN untuk seller1 ter-commit saat create masih berjalan
-            // (race nyata dua pembuat deal untuk penjual yang sama).
+            // ANOTHER deal for seller1 is committed while create is still
+            // running (a real race of two deal creators for the same seller).
             await new Promise(r => setTimeout(r, 5));
             mm.setDeal('ch_other_v38d', {
                 channelId: 'ch_other_v38d',
@@ -527,18 +530,18 @@ test('v3.9.38 FIX 2: deal lain ter-commit di tengah await create → channel dib
     });
     await midmanDomain(i3);
 
-    assert.strictEqual(deleted, true, 'channel yang baru dibuat dibersihkan (best-effort delete)');
-    assert.strictEqual(mm.getDeal('ch_new_deal_d'), null, 'deal hasil TOCTOU TIDAK tersimpan');
-    assert.ok(mm.getDeal('ch_other_v38d'), 'deal yang lebih dulu menang tetap utuh');
+    assert.strictEqual(deleted, true, 'the newly created channel is cleaned up (best-effort delete)');
+    assert.strictEqual(mm.getDeal('ch_new_deal_d'), null, 'the TOCTOU deal is NOT saved');
+    assert.ok(mm.getDeal('ch_other_v38d'), 'the deal that won the race stays intact');
     const last = i3._edits[i3._edits.length - 1];
-    assert.match(last.content, /terlibat deal aktif lain/, 'apology jelas ke user');
+    assert.match(last.content, /involved in another active deal/, 'a clear apology to the user');
 });
 
 // ====================================================
-// === 6. FIX 5 — creator pihak ketiga jadi observer ===
+// === 6. FIX 5 — a third-party creator becomes an observer ===
 // ====================================================
 
-test('v3.9.38 FIX 5: creator pihak ketiga tercatat sebagai observer deal (bisa dikeluarkan lewat tombol ➖)', async () => {
+test('v3.9.38 FIX 5: a third-party creator is recorded as a deal observer (can be removed via the ➖ button)', async () => {
     seedConfig();
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {});
@@ -582,11 +585,11 @@ test('v3.9.38 FIX 5: creator pihak ketiga tercatat sebagai observer deal (bisa d
     await midmanDomain(i3);
 
     const deal = mm.getDeal('ch_new_deal_e');
-    assert.ok(deal, 'deal dibuat');
-    assert.deepStrictEqual(deal.observers, ['creator1'], 'creator pihak ketiga masuk daftar observer');
-    // Creator sekarang bisa dikeluarkan lewat mekanisme observer biasa.
+    assert.ok(deal, 'deal created');
+    assert.deepStrictEqual(deal.observers, ['creator1'], 'the third-party creator is in the observer list');
+    // The creator can now be removed via the regular observer mechanism.
     assert.strictEqual(mm.removeObserver(deal, 'creator1'), true);
-    // Slot observer tidak jebol: 1 dari MAX_OBSERVERS terpakai → masih bisa tambah.
+    // The observer slot is not leaked: 1 of MAX_OBSERVERS used → can still add.
     assert.strictEqual(mm.canAddObserver(mm.getDeal('ch_new_deal_e'), 'witness1').ok, true);
 });
 
@@ -594,7 +597,7 @@ test('v3.9.38 FIX 5: creator pihak ketiga tercatat sebagai observer deal (bisa d
 // === 7. FIX 4 — handleEvent deferReply + safeEditReply ===
 // ====================================================
 
-test('v3.9.38 FIX 4: handleEvent mm_fundin → deferReply di awal, konfirmasi lewat editReply (bukan reply baru)', async () => {
+test('v3.9.38 FIX 4: handleEvent mm_fundin → deferReply at the start, confirmation via editReply (not a new reply)', async () => {
     seedConfig();
     seedDeal('ch_v38_ev', {});
     const dealChannel = makeDealChannel({ id: 'ch_v38_ev' });
@@ -607,19 +610,19 @@ test('v3.9.38 FIX 4: handleEvent mm_fundin → deferReply di awal, konfirmasi le
     });
     await midmanDomain(interaction);
 
-    assert.strictEqual(interaction._defers.length, 1, 'deferReply dipanggil tepat sekali di awal');
+    assert.strictEqual(interaction._defers.length, 1, 'deferReply called exactly once at the start');
     assert.strictEqual(interaction._defers[0].flags, MessageFlags.Ephemeral, 'defer ephemeral');
-    assert.strictEqual(interaction._replies.length, 0, 'tidak ada interaction.reply setelah defer (window ack 3s aman)');
-    assert.ok(interaction._edits.length > 0, 'konfirmasi lewat editReply deferred');
-    assert.match(interaction._edits[interaction._edits.length - 1].content, /Dana dikonfirmasi masuk/);
-    assert.strictEqual(mm.getDeal('ch_v38_ev').state, 'WAITING_DELIVERY', 'transisi tetap tersimpan');
-    assert.strictEqual(mm.transitionLocks.has('ch_v38_ev'), false, 'lock dilepas setelah selesai');
+    assert.strictEqual(interaction._replies.length, 0, 'no interaction.reply after the defer (3s ack window safe)');
+    assert.ok(interaction._edits.length > 0, 'confirmation via editReply of the deferred reply');
+    assert.match(interaction._edits[interaction._edits.length - 1].content, /Funds confirmed received/);
+    assert.strictEqual(mm.getDeal('ch_v38_ev').state, 'WAITING_DELIVERY', 'the transition is still saved');
+    assert.strictEqual(mm.transitionLocks.has('ch_v38_ev'), false, 'lock released when done');
 });
 
-test('v3.9.38 FIX 4: handleEvent saat lock dipegang → ditolak via editReply, state & channel tidak tersentuh', async () => {
+test('v3.9.38 FIX 4: handleEvent while the lock is held → rejected via editReply, state & channel untouched', async () => {
     seedConfig();
     seedDeal('ch_v38_ev2', {});
-    mm.transitionLocks.add('ch_v38_ev2'); // transisi lain sedang diproses
+    mm.transitionLocks.add('ch_v38_ev2'); // another transition is being processed
     try {
         const dealChannel = makeDealChannel({ id: 'ch_v38_ev2' });
         const guild = makeV38Guild({ guildId: 'g_v38' });
@@ -631,13 +634,13 @@ test('v3.9.38 FIX 4: handleEvent saat lock dipegang → ditolak via editReply, s
         });
         await midmanDomain(interaction);
 
-        assert.strictEqual(interaction._defers.length, 1, 'defer tetap dijalankan di awal');
+        assert.strictEqual(interaction._defers.length, 1, 'the defer still runs at the start');
         assert.ok(
-            interaction._edits.some(e => /sedang diproses/.test(e.content)),
-            'penolakan dikirim lewat editReply deferred'
+            interaction._edits.some(e => /being processed/.test(e.content)),
+            'the rejection is sent via editReply of the deferred reply'
         );
-        assert.strictEqual(mm.getDeal('ch_v38_ev2').state, 'WAITING_PAYMENT', 'state tidak berubah');
-        assert.strictEqual(dealChannel._sent.length, 0, 'tidak ada pengumuman terkirim');
+        assert.strictEqual(mm.getDeal('ch_v38_ev2').state, 'WAITING_PAYMENT', 'state unchanged');
+        assert.strictEqual(dealChannel._sent.length, 0, 'no announcement sent');
     } finally {
         mm.transitionLocks.delete('ch_v38_ev2');
     }

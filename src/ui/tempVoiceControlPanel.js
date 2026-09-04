@@ -1,40 +1,40 @@
 /**
- * Temp Voice Control Panel Builder — render embed + button untuk panel kontrol GLOBAL.
+ * Temp Voice Control Panel Builder — renders the embed + buttons for the GLOBAL control panel.
  *
- * v3.8.5: Panel GLOBAL — menampilkan daftar semua voice aktif + button kontrol.
- *   - Idle: tampilkan info cara buat voice
- *   - Active: tampilkan daftar voice aktif + button kontrol (Rename, Kick, Limit, Lock, Transfer, Delete, Info Room)
- *   - Buat voice hanya via join trigger channel "🔊 Buat Voice", tidak ada button di panel
- *   - Info Room: tampilkan detail voice room (ephemeral)
- *   - Control buttons bekerja via auto-detect owner
+ * v3.8.5: GLOBAL panel — shows a list of all active voice channels + control buttons.
+ *   - Idle: shows info on how to create a voice channel
+ *   - Active: shows the list of active voice channels + control buttons (Rename, Kick, Limit, Lock, Transfer, Delete, Info Room)
+ *   - Creating a voice channel only works by joining the "🔊 Create Voice" trigger channel — there is no button on the panel
+ *   - Info Room: shows voice room details (ephemeral)
+ *   - Control buttons work via owner auto-detect
  *
- * Dipakai oleh refreshGlobalControlPanel() di index.js.
+ * Used by refreshGlobalControlPanel() in index.js.
  */
 
 const { EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 
 /**
- * Build select menu untuk kick member (hanya yang saat ini di voice).
+ * Build the select menu for kicking members (only those currently in the voice channel).
  */
 function buildKickSelectMenu(voiceChannel, ownerId) {
     const options = [];
     if (voiceChannel?.members) {
         for (const [memberId, member] of voiceChannel.members) {
-            if (memberId === ownerId) continue; // skip owner
+            if (memberId === ownerId) continue; // skip the owner
             options.push({
                 label: member.user.tag.slice(0, 100),
                 value: memberId,
-                description: `Keluarkan ${member.user.username} dari voice`
+                description: `Kick ${member.user.username} from the voice channel`
             });
         }
     }
     if (options.length === 0) {
-        return null; // tidak ada member untuk di-kick
+        return null; // no members to kick
     }
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('tv_kick_select')
-            .setPlaceholder('Pilih member yang ingin di-kick...')
+            .setPlaceholder('Select a member to kick...')
             .addOptions(options.slice(0, 25))
             .setMinValues(1)
             .setMaxValues(Math.min(options.length, 25))
@@ -42,17 +42,17 @@ function buildKickSelectMenu(voiceChannel, ownerId) {
 }
 
 /**
- * Build select menu untuk transfer ownership.
+ * Build the select menu for transferring ownership.
  */
 function buildTransferSelectMenu(voiceChannel, ownerId) {
     const options = [];
     if (voiceChannel?.members) {
         for (const [memberId, member] of voiceChannel.members) {
-            if (memberId === ownerId) continue; // skip current owner
+            if (memberId === ownerId) continue; // skip the current owner
             options.push({
                 label: member.user.tag.slice(0, 100),
                 value: memberId,
-                description: `Pindah ownership ke ${member.user.username}`
+                description: `Transfer ownership to ${member.user.username}`
             });
         }
     }
@@ -62,7 +62,7 @@ function buildTransferSelectMenu(voiceChannel, ownerId) {
     return new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('tv_transfer_select')
-            .setPlaceholder('Pilih member baru sebagai owner...')
+            .setPlaceholder('Select the new owner...')
             .addOptions(options.slice(0, 25))
             .setMinValues(1)
             .setMaxValues(1)
@@ -70,11 +70,11 @@ function buildTransferSelectMenu(voiceChannel, ownerId) {
 }
 
 /**
- * v3.8.5: Build embed + components untuk panel kontrol GLOBAL.
+ * v3.8.5: Build the embed + components for the GLOBAL control panel.
  *
- * Panel ini murni global — menampilkan daftar semua voice aktif tanpa fokus ke owner tertentu.
- * Control buttons (Rename, Kick, Limit, dll) bekerja via auto-detect owner
- * (bot otomatis deteksi channel mana yang user owner-inya dan sedang user tinggali).
+ * This panel is purely global — it shows all active voice channels without focusing on a specific owner.
+ * The control buttons (Rename, Kick, Limit, etc) work via owner auto-detect
+ * (the bot automatically detects which channel the user owns and is currently in).
  *
  * @param {Object} options - { activeOwners: [{channelId, channelInfo, voiceChannel}], guildName }
  * @returns {Object} { embed, components }
@@ -83,12 +83,12 @@ function buildGlobalControlPanel(options = {}) {
     const { activeOwners = [], guildName = 'Server' } = options;
 
     if (activeOwners.length === 0) {
-        // Tidak ada voice aktif — tampilan idle
+        // No active voice channels — idle view
         const embed = new EmbedBuilder()
             .setTitle('TEMP VOICE')
             .setDescription(
-                'Tidak ada voice channel aktif.\n\n' +
-                    `Join ke channel "🔊 Buat Voice" untuk membuat voice channel pribadi.`
+                'There are no active voice channels.\n\n' +
+                    `Join the "🔊 Create Voice" channel to create your own private voice channel.`
             )
             .setColor(0x2c2f33)
             .setFooter({ text: `${guildName}` })
@@ -97,32 +97,32 @@ function buildGlobalControlPanel(options = {}) {
         return { embed, components: [] };
     }
 
-    // v3.8.5: Sort activeOwners by createdAt desc (paling baru pertama)
+    // v3.8.5: Sort activeOwners by createdAt desc (newest first)
     const sorted = [...activeOwners].sort((a, b) => (b.channelInfo.createdAt || 0) - (a.channelInfo.createdAt || 0));
 
-    // Build description — daftar voice aktif + keterangan button
-    let description = `**Voice Aktif (${sorted.length})**\n\n`;
+    // Build description — list of active voice channels + button legend
+    let description = `**Active Voice Channels (${sorted.length})**\n\n`;
 
     for (let i = 0; i < Math.min(sorted.length, 10); i++) {
         const o = sorted[i];
         const mc = o.voiceChannel?.members?.size || 0;
         const lockIcon = o.channelInfo.locked ? ' 🔒' : '';
-        // Null check channelInfo.name (kalau data corrupt / migrated dari format lama)
+        // Null check channelInfo.name (in case of corrupt data / migrated from an old format)
         const displayName = o.channelInfo.name || `Channel ${o.channelId || 'unknown'}`;
         description += `• ${displayName} — <@${o.channelInfo.ownerId}> (${mc}${lockIcon})\n`;
     }
     if (sorted.length > 10) {
-        description += `• ... +${sorted.length - 10} lainnya\n`;
+        description += `• ... +${sorted.length - 10} more\n`;
     }
 
-    description += `\n**Tombol Kontrol:**\n`;
-    description += `✏️ Rename — Ubah nama channel\n`;
-    description += `🚫 Kick — Keluarkan member dari voice\n`;
-    description += `👥 Limit — Atur max member (0 = unlimited)\n`;
-    description += `🔒 Lock — Kunci/buka akses join\n`;
-    description += `🔄 Transfer — Pindah ownership\n`;
-    description += `🗑️ Delete — Hapus channel\n`;
-    description += `ℹ️ Info Room — Lihat detail voice room`;
+    description += `\n**Control Buttons:**\n`;
+    description += `✏️ Rename — Change the channel name\n`;
+    description += `🚫 Kick — Remove a member from the voice channel\n`;
+    description += `👥 Limit — Set the member cap (0 = unlimited)\n`;
+    description += `🔒 Lock — Lock/unlock joining\n`;
+    description += `🔄 Transfer — Transfer ownership\n`;
+    description += `🗑️ Delete — Delete the channel\n`;
+    description += `ℹ️ Info Room — View voice room details`;
 
     const embed = new EmbedBuilder()
         .setTitle('TEMP VOICE')
@@ -152,19 +152,19 @@ function buildGlobalControlPanel(options = {}) {
 
     const components = [row1, row2];
 
-    // v3.8.5: kalau ada multiple active voices, tambah select menu "Info Room"
-    // supaya user bisa pilih channel mana yang ingin dilihat infonya
+    // v3.8.5: if there are multiple active voices, add an "Info Room" select menu
+    // so the user can pick which channel's info to view
     if (sorted.length > 1) {
         const switchOptions = sorted.map(o => ({
-            // Null check channelInfo.name (sama kayak di description)
+            // Null check channelInfo.name (same as in the description)
             label: `${o.channelInfo.name || `Channel ${o.channelId}`}`.slice(0, 100),
             value: o.channelId,
-            description: `Owner: ${o.channelInfo.ownerTag} (${o.voiceChannel?.members?.size || 0} member)`.slice(0, 100)
+            description: `Owner: ${o.channelInfo.ownerTag} (${o.voiceChannel?.members?.size || 0} member(s))`.slice(0, 100)
         }));
         const switchRow = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
                 .setCustomId('tv_switch_select')
-                .setPlaceholder('ℹ️ Pilih channel untuk lihat info...')
+                .setPlaceholder('ℹ️ Select a channel to view its info...')
                 .addOptions(switchOptions.slice(0, 25))
                 .setMinValues(1)
                 .setMaxValues(1)
@@ -176,10 +176,10 @@ function buildGlobalControlPanel(options = {}) {
 }
 
 /**
- * v3.8.5: Build ephemeral embed info room untuk voice channel tertentu.
- * Dipanggil saat user klik "Info Room" atau pilih channel dari switch select.
+ * v3.8.5: Build the ephemeral room-info embed for a specific voice channel.
+ * Called when the user clicks "Info Room" or selects a channel from the switch select.
  *
- * @param {Object} channelInfo - info dari tempVoiceManager
+ * @param {Object} channelInfo - info from tempVoiceManager
  * @param {VoiceChannel} voiceChannel - Discord voice channel object
  * @param {string} guildName
  * @returns {Object} { embed }
@@ -187,7 +187,7 @@ function buildGlobalControlPanel(options = {}) {
 function buildInfoRoomEmbed(channelInfo, voiceChannel, guildName = 'Server') {
     const memberCount = voiceChannel?.members?.size || 0;
     const limitStr = channelInfo.limit === 0 ? 'Unlimited' : `${channelInfo.limit}`;
-    const lockStr = channelInfo.locked ? 'Terkunci' : 'Terbuka';
+    const lockStr = channelInfo.locked ? 'Locked' : 'Open';
     const createdDate = channelInfo.createdAt ? `<t:${Math.floor(channelInfo.createdAt / 1000)}:R>` : '-';
 
     let memberList = '';
@@ -205,11 +205,11 @@ function buildInfoRoomEmbed(channelInfo, voiceChannel, guildName = 'Server') {
         .setTitle(`${channelInfo.name}`)
         .setDescription(
             `👑 Owner: <@${channelInfo.ownerId}>\n` +
-                `👥 Member: ${memberCount}${channelInfo.limit > 0 ? ` / ${channelInfo.limit}` : ''}\n` +
+                `👥 Members: ${memberCount}${channelInfo.limit > 0 ? ` / ${channelInfo.limit}` : ''}\n` +
                 `📊 Limit: ${limitStr}\n` +
                 `🔒 Status: ${lockStr}\n` +
-                `🕐 Dibuat: ${createdDate}\n\n` +
-                `**Member di voice:**\n${memberList}`
+                `🕐 Created: ${createdDate}\n\n` +
+                `**Members in voice:**\n${memberList}`
         )
         .setColor(channelInfo.locked ? 0xe67e22 : 0x57f287)
         .setFooter({ text: `${guildName}` })
