@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.39] — 2026-09-04
+
+### Changed — 🚀 /help redesign: interactive navigator — find commands without scrolling (user-reported: "one giant embed, finding a command meant scrolling")
+
+`/help` used to send ONE giant embed (~5,400 chars, 18+ categories on a single page) → admins had to scroll far to find a command. It is now an **interactive navigator** inside one clickable ephemeral message:
+
+- 🟢 **🏠 Home (default)** — a condensed index of 19 categories (3 per line) + search instructions. The embed is only ~860 chars — fits one screen.
+- 🟢 **📂 Category dropdown (String Select Menu)** — pick 1 of 19 categories (emoji + name + short description) → only that category's command details are shown (small embed). The dropdown stays attached to every view for jumping between categories without going back home.
+- 🟢 **🔍 Search Commands (button + modal)** — type any free-form keyword (`key`, `escrow`, `vip`...) → instant results grouped by category, case-insensitive substring matching; if the keyword hits a category NAME, the whole category is displayed. Results are capped at 20 blocks (with a "+more results" note) so the embed stays small and scannable.
+- 🟢 **`/help search:<keyword>` (new slash option)** — search directly without opening the menu (Discord autocomplete helps clients that already know what they want).
+- 🟢 **📖 All Commands (button)** — the old full-list view is still available for those who prefer scrolling; auto-splits into 2 embeds if > 5,800 chars (combined total still ≤ 6,000 within 1 message).
+- 🟢 All navigation uses `interaction.update()` → **the same single message gets edited**, no new-message spam while switching categories; customIds are stable (no id suffixes) → `/help` messages that are still open remain clickable after a bot restart.
+- 🟢 **Architecture**: all help content now has a single source of truth in `src/ui/helpCatalog.js` (19-category catalog + embed builders + the search engine + component builders) — shared by the slash command (`src/commands/help.js`) and the new interaction handler (`src/interactions/help.js`, router prefix `help_`). Adding a category = adding 1 catalog entry; dropdown/home/search/all follow automatically.
+- 🟢 **Defensive**: an unrecognized dropdown value (an old message after a catalog update) → safe fallback to home instead of "interaction failed"; empty queries / empty modals are handled with guidance text.
+
+### Tests
+
+- 🟢 +26 unit tests (total **412**, up from 386): `tests/unit/helpNav.test.js` — catalog integrity (unique ids, ≤25 select options, label/desc ≤100 chars, every view ≤ 4096/6000 chars), the search engine (case-insensitive, whole-category match, bullet blocks carrying continuation option lines, empty/no-result, result cap), the slash command (home/search/whitespace), the interaction handler (dropdown known/unknown, showModal required, modal submit, home/all buttons, foreign customId), `help_` prefix routing, old content regression (Auto-Split 3 categories, midman, use_dropdown, update-category/product) — 3 old tests that locked the giant-embed structure were updated to the navigator structure. Full suite 412/412 green, ESLint 0 warnings.
+
 ## [3.9.38] — 2026-09-04
 
 ### Fixed — 🛡️ Full audit v3: 34 bugs/issues fixed across every domain (escrow, tickets, data layer, automod, router)

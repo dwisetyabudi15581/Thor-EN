@@ -34,6 +34,9 @@ const { check, mark } = require('./_dedup');
 // Domain handlers — each exports `async function(interaction)`.
 const verifyDomain = require('./verify');
 const ticketDomain = require('./ticket');
+// v3.9.39: help domain — interactive /help navigation (category dropdown +
+// search/all/home buttons + the search modal).
+const helpDomain = require('./help');
 // v3.9.32: midman/escrow domain (3-party escrow deals).
 const midmanDomain = require('./midman');
 const selfroleDomain = require('./selfrole');
@@ -55,6 +58,10 @@ const { handlePanelModal: panelModalHandler } = require('../commands/panels-mgmt
 // `btn_verify` is handled by exact match (see the `pickDomain` helper).
 const PREFIX_TO_DOMAIN = [
     { prefix: 'btn_verify', domain: 'verify', exact: true },
+    // v3.9.39: /help navigation (select help_cat, buttons help_search/
+    // help_home/help_all, modal help_search_modal). Stable customIds without
+    // suffixes — the `help_` prefix catches them all, no collisions.
+    { prefix: 'help_', domain: 'help' },
     { prefix: 'select_product', domain: 'ticket', exact: true },
     // v3.9.14: dropdown select menu from the panel (customId: ticket_cat_select)
     { prefix: 'ticket_cat_select', domain: 'ticket', exact: true },
@@ -99,6 +106,7 @@ const PREFIX_TO_DOMAIN = [
 const DOMAIN_HANDLERS = {
     verify: verifyDomain,
     ticket: ticketDomain,
+    help: helpDomain,
     midman: midmanDomain,
     selfrole: selfroleDomain,
     embed: embedDomain,

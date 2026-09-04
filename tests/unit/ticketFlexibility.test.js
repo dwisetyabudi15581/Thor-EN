@@ -597,7 +597,10 @@ test('help.js: help embed mentions new v3.9.14+ commands', async () => {
 
     assert.strictEqual(replies.length, 1);
     const embed = replies[0].embeds[0];
-    const allText = embed.data.fields.map(f => f.value).join('\n') + embed.data.description;
+    // v3.9.39: /help is now an interactive navigator — the full command list
+    // lives in the catalog (used by the category dropdown & the 📖 All Commands view).
+    const { HELP_CATEGORIES } = require('../../src/ui/helpCatalog');
+    const allText = HELP_CATEGORIES.map(c => c.lines.join('\n')).join('\n') + embed.data.description;
 
     // v3.9.14 new commands
     assert.match(allText, /list-panels/);
@@ -605,10 +608,12 @@ test('help.js: help embed mentions new v3.9.14+ commands', async () => {
     assert.match(allText, /update-panel/);
     assert.match(allText, /refresh-panel/);
     assert.match(allText, /use_dropdown/);
+    // v3.9.39: the navigator must carry the dropdown + navigation buttons.
+    assert.ok(replies[0].components?.length >= 2, 'reply must have a dropdown + buttons');
     // v3.9.37: the version in help is now dynamic from package.json (anti-stale) —
     // the assertion compares against package.json, not a hardcoded literal.
     const { version: pkgVersion } = require('../../package.json');
-    assert.match(allText, new RegExp(`v${pkgVersion.replace(/\./g, '\\.')}`));
+    assert.match(embed.data.footer.text, new RegExp(`v${pkgVersion.replace(/\./g, '\\.')}`));
     assert.doesNotMatch(allText, /v3\.9\.26/); // the old literal must not appear anymore
 });
 
@@ -904,8 +909,9 @@ test('help.js: mentions /update-category and /update-product', async () => {
     };
     const helpHandler = require('../../src/commands/help');
     await helpHandler(mockInteraction);
-    const allText =
-        replies[0].embeds[0].data.fields.map(f => f.value).join('\n') + replies[0].embeds[0].data.description;
+    // v3.9.39: the command list moved into the catalog (interactive navigator).
+    const { HELP_CATEGORIES } = require('../../src/ui/helpCatalog');
+    const allText = HELP_CATEGORIES.map(c => c.lines.join('\n')).join('\n') + replies[0].embeds[0].data.description;
     assert.match(allText, /update-category/);
     assert.match(allText, /update-product/);
 });

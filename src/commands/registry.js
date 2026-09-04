@@ -12,8 +12,17 @@ function getCommands() {
         // === HELP ===
         {
             name: 'help',
-            description: 'View all commands & how to use the bot',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild
+            description: 'Help center: pick a category or search commands by keyword',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                // v3.9.39: search directly without opening the menu (alternative to the 🔍 modal).
+                {
+                    type: 3,
+                    name: 'search',
+                    description: 'Keyword of the command to search (e.g. key, escrow, panel)',
+                    required: false
+                }
+            ]
         },
 
         // === PANEL SETUP ===

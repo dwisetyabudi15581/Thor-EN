@@ -245,8 +245,16 @@ test('help v3.9.37: Auto-Split 3 categories (TRANSACTIONS/SUPPORT/ESCROW) + Midm
     };
     const helpHandler = require('../../src/commands/help');
     await helpHandler(mockInteraction);
+
+    // v3.9.39: /help is now an interactive navigator (home + dropdown + buttons) —
+    // the full command list moved into the helpCatalog. Content regressions are
+    // checked against the catalog; navigation structure via the reply.
     const embed = replies[0].embeds[0];
-    const allText = embed.data.fields.map(f => f.value).join('\n') + '\n' + embed.data.description;
+    assert.ok(replies[0].components?.length >= 1, 'v3.9.39: the reply must carry navigation components (dropdown)');
+    assert.strictEqual(replies[0].components[0].components[0].toJSON().custom_id, 'help_cat');
+
+    const { HELP_CATEGORIES } = require('../../src/ui/helpCatalog');
+    const allText = HELP_CATEGORIES.map(c => c.lines.join('\n')).join('\n') + '\n' + embed.data.description;
 
     // Auto-Split now has 3 categories — user-reported bug ("still 2").
     assert.match(allText, /3 categories/);

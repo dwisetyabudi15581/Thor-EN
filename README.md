@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.38** · 82 slash commands · 386 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.39** · 82 slash commands · 412 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -72,7 +72,7 @@ Thor/
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 386 unit tests (node:test)
+├── tests/unit/                   # 412 unit tests (node:test)
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js
@@ -140,7 +140,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (386 tests)  |
+| `npm test`       | Run all unit tests (412 tests)  |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 
