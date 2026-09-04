@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.42] — 2026-09-05
+
+### Changed — 🔔 user request: "don't DM the voice owner, just tell them in the voice chat"
+
+The **temp-voice new-owner notification** is no longer sent via DM — it is now posted in the **voice channel's own text chat** with a mention of the new owner (the ping notification still works). Applies to both ownership-change paths:
+
+- 🟢 **Auto-transfer (owner leaves the voice channel)** — previously a DM to the most senior member inheriting the channel; DMs often failed silently (user DMs closed — swallowed by `catch (_) {}`) or went unread. Now: a `🎁 <@newOwner> You are now the owner of voice channel...` message appears in the channel chat, visible to everyone inside.
+- 🟢 **Manual transfer via the panel** — same pattern; plus `oldOwnerId` is now captured explicitly **before** `transferOwnership` overwrites the registry, so the "Ownership was transferred to you by <@oldOwner>" message no longer depends on an in-memory object that could change if `load()` ever gets cached.
+
+### Tests
+
+- 🟢 +3 unit tests (total **436**, up from 433): `tests/unit/voiceNotify.test.js` — static anti-regression contract: (1) auto-transfer goes through `voiceChannel.send`, not `newOwner.send`, with a new-owner mention, (2) manual transfer goes through `found.channel.send` + the `oldOwnerId` capture ordering before `transferOwnership`, (3) regression: the temp-voice domain stays free of new-owner DMs. Full suite 436/436 green, ESLint 0 warnings.
+
 ## [3.9.41] — 2026-09-05
 
 ### Fixed — 🔍 Full re-debug in response to a production error report ("Interaction Error: ExpectedConstraintError — s.string().lengthLessThanOrEqual()")

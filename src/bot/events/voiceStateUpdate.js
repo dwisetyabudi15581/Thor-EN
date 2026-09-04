@@ -188,9 +188,13 @@ async function handleAutoTransferOwnership(client, guildId, channelId, channelIn
 
         tempVoiceManager.transferOwnership(guildId, channelId, newOwner.id, newOwner.user.tag);
 
+        // v3.9.42: notify the new owner via the voice channel's TEXT CHAT (not a DM) — user request.
+        // Reason: DMs often don't arrive (user DMs closed) / go unread; via the channel
+        // chat the message is guaranteed visible to everyone inside, and the new-owner
+        // mention keeps a ping notification.
         try {
-            await newOwner.send(
-                `🎁 **You are now the owner of voice channel: ${voiceChannel.name}**\n\n` +
+            await voiceChannel.send(
+                `🎁 <@${newOwner.id}> **You are now the owner of voice channel: ${voiceChannel.name}**\n\n` +
                     `Ownership was automatically transferred to you because the previous owner (<@${oldOwnerId}>) left the voice channel.\n\n` +
                     `🎛️ You can control this channel via the global temp voice panel in the server.`
             );

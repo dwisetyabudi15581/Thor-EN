@@ -550,15 +550,21 @@ async function handleTempVoiceTransferExecute(interaction) {
             return safeEditReply(interaction, { content: `❌ Failed to update permissions: ${err.message}` });
         }
 
+        // Capture the OLD owner before the registry is overwritten by
+        // transferOwnership — used in the notification message below (the
+        // permission revoke above already read the old ownerId directly).
+        const oldOwnerId = found.channelInfo.ownerId;
+
         tempVoiceManager.transferOwnership(found.guild.id, found.channelId, newOwnerId, newOwner.user.tag);
 
-        // v3.9.8 FIX: DM the new owner (consistent with auto-transfer in index.js).
-        // Previously the new owner wasn't notified → they had no idea they got
-        // channel management permissions until they tried the panel.
+        // v3.9.8 FIX: the new owner gets notified (previously not notified at all).
+        // v3.9.42: notify via the voice channel's TEXT CHAT (not a DM) — user request:
+        // DMs often don't arrive (DMs closed / ignored) → announce it in the channel
+        // chat itself, with a mention so the new owner still gets a ping.
         try {
-            await newOwner.send(
-                `🎁 **You are now the owner of voice channel: ${found.channel.name}**\n\n` +
-                    `Ownership was transferred to you by <@${found.channelInfo.ownerId}>.\n\n` +
+            await found.channel.send(
+                `🎁 <@${newOwnerId}> **You are now the owner of voice channel: ${found.channel.name}**\n\n` +
+                    `Ownership was transferred to you by <@${oldOwnerId}>.\n\n` +
                     `🎛️ You can control this channel via the global temp voice panel.`
             );
         } catch (_) {}

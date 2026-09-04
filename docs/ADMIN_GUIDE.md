@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.41
+# 📖 Admin Guide — Thor Bot v3.9.42
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -700,7 +700,7 @@ The bot replies automatically when a member types a trigger at the start of a me
 
 - A member joins the trigger channel → the bot creates a private voice channel (they automatically become the owner)
 - Controls via panel: rename, lock, user limit, transfer ownership, delete
-- Empty channels are deleted automatically; if the owner leaves → auto-transfer to the most senior member
+- Empty channels are deleted automatically; if the owner leaves → auto-transfer to the most senior member — the new owner is notified in the **voice channel's chat** with a mention (not a DM, since v3.9.42)
 
 ### Multi-Panel Tickets + Customization
 
@@ -926,10 +926,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.41) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.42) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.42** (2026-09-05) — 🔔 behavior change per user request ("don't DM the voice owner, just tell them in the voice chat"): the **temp-voice new-owner notification** (auto-transfer when the owner leaves & manual transfer via the panel) is now posted in the **voice channel's own text chat** with a mention of the new owner (they still get pinged) — instead of a DM (which often failed silently because the user's DMs are closed / went unread); +3 anti-regression contract unit tests `voiceNotify.test.js`; 82 commands total, 436 unit tests.
 - **v3.9.41** (2026-09-05) — 🔍 re-debug in response to a production error report ("Interaction Error: ExpectedConstraintError — label > 45 chars"): **the embed send & set-message modals were completely dead in the EN repo** (labels of 48 & 49 chars vs the Discord limit of 45 — the Indonesian twin happened to survive because the Indonesian text is shorter; the earlier v3.9.27 limit fix only covered ticket flows) → labels shortened, hints moved into the placeholders; accompanied by a **full sweep of every Discord component limit** (TextInput label/placeholder/maxLength, modal titles, button labels, select options) across both repos — 0 remaining violations, every dynamic site verified as guarded; +4 unit tests as a permanent safety net (`componentLimits.test.js`: a static scan of the whole src/ — any future PR adding an over-length label instantly goes red — plus a real-builder runtime contract) (82 commands total, 433 unit tests).
 - **v3.9.40** (2026-09-04) — 🛡️ post-v3.9.39 full audit (code check + docs sync): **6 real bugs fixed** + docs synced to the code — a long `/help search` query no longer crashes (cap 100 + `max_length`), a manual `/giveaway end` with 0 participants now properly announces "ended with no winners" and disables the buttons (previously silent), a transient ticket verification now ABORTS instead of creating a duplicate ticket (`TICKET_VERIFY_TRANSIENT`), the close-ticket vs set-key/deliver-order race is now gated by `completionLocks` (no more contradictory transcripts), a PARALLEL interaction replay is dropped by the router's in-flight guard, and zombie-deal reconcile skips deals currently locked; plus minor hardening (Discord limit guards on the "All Commands" embed for giant catalogs, ``` escaping in transcripts, ghost-member permission revocation, acknowledging alien help customIds) + **docs**: every stale number fixed (doc version 3.9.38 → 3.9.40, test counts, 18 data managers, 63 audit action types) + a /help navigator tip in Section 1; +17 unit tests (total 429).
 - **v3.9.39** (2026-09-04) — 🚀 **/help redesigned into an interactive navigator** (user request: "find commands easily, no scrolling"): 🏠 compact home + 📂 dropdown with 19 categories + 🔍 **Search Commands** (button → keyword modal, or `/help search:<keyword>` directly) + 📖 All Commands (the old full list remains); all navigation edits ONE ephemeral message (no spam), stable customIds (old messages stay clickable after a restart); help content now has a single source of truth in `src/ui/helpCatalog.js` — add a category = 1 entry, dropdown/search/all follow automatically; +26 unit tests (82 commands, 412 unit tests).
@@ -958,6 +959,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.41
+**Document version:** v3.9.42
 **Last updated:** September 5, 2026
-**Bot version:** 3.9.41 · 82 slash commands · 433 unit tests
+**Bot version:** 3.9.42 · 82 slash commands · 436 unit tests
