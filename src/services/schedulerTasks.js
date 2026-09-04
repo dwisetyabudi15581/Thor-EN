@@ -40,7 +40,11 @@ const { recordGiveawayWin: trackGiveawayWin } = require('../data/statsManager');
 // (including terminal) — getActiveDealsByGuild is no longer used here.
 const {
     loadDeals: loadAllDeals,
-    removeDeal: removeDealMeta
+    removeDeal: removeDealMeta,
+    // v3.9.40: per-channel transition lock Set from midmanManager — used by
+    // reconcileZombieDeals so it does NOT delete the meta of a deal currently
+    // being processed by a handler (setDeal after removeDealMeta = zombie revival).
+    transitionLocks: mmTransitionLocks
 } = require('../data/midmanManager');
 // v3.9.38 FIX: GC old AFK entries (see pruneStaleData below).
 const { pruneOldAFK } = require('../data/afkManager');
@@ -223,10 +227,17 @@ async function processGiveawayEnd(client, gw, options = {}) {
             console.log(`⏭️ processGiveawayEnd ${gw.id} skipped (giveaway not on disk).`);
             return;
         }
-        // Manual announce path: the giveaway is ALREADY ended with persisted winners
-        // (picked manually by /giveaway end before calling this) and the caller
-        // requests skipPick → continue announcing using the winnerIds from disk, do NOT re-pick.
-        const isManualAnnounce = Boolean(options.skipPick && fresh.winnerIds && fresh.winnerIds.length > 0);
+        // Manual announce path: the giveaway is ALREADY ended (persisted by
+        // /giveaway end before calling this — winnerIds may legitimately be
+        // EMPTY because of 0 participants) → continue announcing using the
+        // winnerIds from disk, do NOT re-pick.
+        // v3.9.40 FIX: the old condition `fresh.winnerIds.length > 0` made a
+        // manual end with 0 participants skip SILENTLY (early return) — the
+        // giveaway message was never edited (Join buttons stayed live), no
+        // "ended with no winners" announcement, while the admin had already
+        // seen a success message. The correct manual marker: skipPick && ended
+        // (the manual caller ALWAYS persists ended first — see commands/giveaway.js).
+        const isManualAnnounce = Boolean(options.skipPick && fresh.ended);
         if (fresh.ended && !isManualAnnounce) {
             // Already fully-ended & announced by another process (manual end
             // OR a previous scheduler tick) → don't double announce/DM.
@@ -536,6 +547,14 @@ async function reconcileZombieDeals(client) {
         }
         for (const deal of deals) {
             if (!deal.channelId) continue;
+            // v3.9.40 FIX: skip deals CURRENTLY mid-transition in a handler
+            // (midman.js holds mm.transitionLocks). Without this, the race
+            // window: the deal channel is deleted manually while a handler
+            // still holds the lock → reconcile removeDealMeta → the handler's
+            // setDeal WRITES the meta back → the zombie meta revives until the
+            // next reconcile (buyer/seller locked out of hasActiveDealFor for
+            // up to 24h).
+            if (mmTransitionLocks.has(deal.channelId)) continue;
             try {
                 // Cache first, fetch from the API on cache miss (the findActiveTicketFor pattern).
                 let ch = guild.channels.cache.get(deal.channelId);

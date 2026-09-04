@@ -16,11 +16,18 @@ function getCommands() {
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 // v3.9.39: search directly without opening the menu (alternative to the 🔍 modal).
+                // v3.9.40 FIX: max_length 100 — without it Discord allows a STRING
+                // option input up to 6000 chars → a long query is echoed into the
+                // search results embed → description > 4096 → EmbedBuilder
+                // THROWS (uncaught) → /help search silently errors. The search
+                // modal is already capped at 100 (setMaxLength in
+                // interactions/help.js); the slash path is now consistent.
                 {
                     type: 3,
                     name: 'search',
                     description: 'Keyword of the command to search (e.g. key, escrow, panel)',
-                    required: false
+                    required: false,
+                    max_length: 100
                 }
             ]
         },

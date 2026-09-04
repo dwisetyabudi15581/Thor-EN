@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.38
+# 📖 Admin Guide — Thor Bot v3.9.40
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -50,6 +50,8 @@ npm start
 - In Discord, type `/` — all **82 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
+> 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll): 🏠 a compact home of 19 categories, 📂 a **category dropdown** to jump to a command group (tickets, products, escrow, warns, ...), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `vip`...), or `/help search:<keyword>` directly. All navigation happens inside one ephemeral message — it never floods the channel.
+
 ---
 
 ## 2. Initial Server Setup
@@ -86,7 +88,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `welcome` — the channel where the bot posts the welcome message when a member joins
 - `goodbye` — the channel where the bot posts the goodbye message when a member leaves / is kicked / is banned
 - `invoice` — the transaction testimonial channel (filled in automatically on every Set Key / Deliver Order / Order Successful — **once per ticket**, never duplicated)
-- `audit-log` — the channel where the bot records ALL admin actions (50 action types; automatically retried once if delivery fails due to rate limits/network)
+- `audit-log` — the channel where the bot records ALL admin actions (63 action types; automatically retried once if delivery fails due to rate limits/network)
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
 
 > 💡 Since v3.9.30 every channel is configured through **one command**, `/set-channel` — including transcript (previously a separate command, `/set-transcript-channel`). Remove one with `/remove-channel <type>`.
@@ -924,10 +926,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.39) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.40) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.40** (2026-09-04) — 🛡️ post-v3.9.39 full audit (code check + docs sync): **6 real bugs fixed** + docs synced to the code — a long `/help search` query no longer crashes (cap 100 + `max_length`), a manual `/giveaway end` with 0 participants now properly announces "ended with no winners" and disables the buttons (previously silent), a transient ticket verification now ABORTS instead of creating a duplicate ticket (`TICKET_VERIFY_TRANSIENT`), the close-ticket vs set-key/deliver-order race is now gated by `completionLocks` (no more contradictory transcripts), a PARALLEL interaction replay is dropped by the router's in-flight guard, and zombie-deal reconcile skips deals currently locked; plus minor hardening (Discord limit guards on the "All Commands" embed for giant catalogs, ``` escaping in transcripts, ghost-member permission revocation, acknowledging alien help customIds) + **docs**: every stale number fixed (doc version 3.9.38 → 3.9.40, test counts, 18 data managers, 63 audit action types) + a /help navigator tip in Section 1; +17 unit tests (total 429).
 - **v3.9.39** (2026-09-04) — 🚀 **/help redesigned into an interactive navigator** (user request: "find commands easily, no scrolling"): 🏠 compact home + 📂 dropdown with 19 categories + 🔍 **Search Commands** (button → keyword modal, or `/help search:<keyword>` directly) + 📖 All Commands (the old full list remains); all navigation edits ONE ephemeral message (no spam), stable customIds (old messages stay clickable after a restart); help content now has a single source of truth in `src/ui/helpCatalog.js` — add a category = 1 entry, dropdown/search/all follow automatically; +26 unit tests (82 commands, 412 unit tests).
 - **v3.9.38** (2026-09-04) — 🛡️ full audit v3: **34 bugs/issues fixed across every domain** (escrow, tickets, data layer, automod, router). Highlights: escrow observer add/remove now respects the transition locks (no more stale-snapshot reverts), double-submit race on the 3-step deal form, ticket self-healing no longer deletes meta on transient errors, Set Key / Deliver Order / Order Success are now guarded by per-channel locks (no more double invoice/stats/keys), giveaway double-end fixed, `linkAllowedRoles` no longer whitelists the whole automod, `parsePriceNumber("1.5m")` no longer inflates 10×, ticket meta stores `productValue` (rename-safe), poll multi-choice unvote works, cooldown 0 = off for responder & leveling, bare-domain link detection (`discord.gg/xxx`), exempt words masked per occurrence, `/config-show` & `/announce-list` no longer crash on long lists, explicit timezone offset for `/announce-schedule` (env `TZ_OFFSET_HOURS`), transcripts paginate up to 1000 messages, `/set-role` validates assignable roles, `/help` auto-splits into 2 embeds above 5800 chars. +62 unit tests (82 commands, 386 unit tests).
 - **v3.9.37** (2026-09-02) — 🐛 fixed **/help** (Auto-Split now 3 categories TRANSACTIONS/SUPPORT/ESCROW — user-reported bug "still 2"), Midman/Escrow section added, the embed version is now dynamic from package.json (no more stale); 🩹 full audit v2: **restore-backup no longer breaks escrow deals** (deals.json was missing from FILES_TO_BACKUP), **zombie deals are reconciled automatically** (channel deleted manually → buyer/seller freed from the lock, at startup + daily), the router's `ticket_cat:midman` is now an exact match (custom `midman_*` categories no longer die), deal sellers are now also checked for active tickets, the escrow panel dropdown descriptions & warnings are no longer misleading, MIDMAN_* audit labels, +12 unit tests (82 commands, 324 unit tests).
@@ -954,6 +957,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.38
+**Document version:** v3.9.40
 **Last updated:** September 4, 2026
-**Bot version:** 3.9.38 · 82 slash commands · 386 unit tests
+**Bot version:** 3.9.40 · 82 slash commands · 429 unit tests

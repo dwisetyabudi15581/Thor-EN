@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.39** · 82 slash commands · 412 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.40** · 82 slash commands · 429 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -52,7 +52,7 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 - **Announce** — quick embed, scheduled (one-shot & recurring daily/weekly/monthly), plus an interactive embed builder with live preview.
 - **Warn system** — automatic actions: 3 warnings → 1-hour mute, 5 → 24-hour mute, 7 → kick.
 - **Backup** — automatic every 24 hours and on startup, max 7 backups, restore with 2-step confirmation + safety backup.
-- **Audit log** — every admin action is logged to a dedicated channel (50 action types, automatic retry).
+- **Audit log** — every admin action is logged to a dedicated channel (63 action types, automatic retry).
 
 ---
 
@@ -66,13 +66,13 @@ Thor/
 │   ├── bot/events/               # Discord event handlers
 │   ├── commands/                 # Slash command handlers (per-domain)
 │   ├── interactions/             # Button/select/modal handlers (per-domain)
-│   ├── data/                     # JSON persistence layer (16 managers)
+│   ├── data/                     # JSON persistence layer (18 managers)
 │   ├── services/                 # Business logic (scheduler, etc.)
 │   ├── ui/                       # Embed/panel builders
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 412 unit tests (node:test)
+├── tests/unit/                   # 429 unit tests (node:test)
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js
@@ -140,7 +140,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (412 tests)  |
+| `npm test`       | Run all unit tests (429 tests)  |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 

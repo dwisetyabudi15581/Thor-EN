@@ -261,17 +261,32 @@ async function findActiveTicketFor(guild, userId) {
             // invoice/completion guards were lost. Now it mirrors the reconcileZombieDeals
             // pattern (services/schedulerTasks.js): only 10003 counts as a channel
             // truly deleted; other errors = transient, metadata is kept.
+            //
+            // v3.9.40 FIX: transient errors now THROW (code
+            // TICKET_VERIFY_TRANSIENT) instead of falling through to return null.
+            // Before: the metadata was correctly kept on disk, BUT the function
+            // still returned null → createTicket / escrow deal validation read
+            // "no active ticket" → a SECOND ticket/channel was created for the
+            // same user — 2 live metas, the invoice/completion guards split
+            // across 2 channels. Callers (createTicket + midman pick buyer/seller)
+            // catch this error and ask the user to retry in a few seconds.
             try {
                 const fetched = await guild.channels.fetch(chId);
                 if (fetched) return fetched;
             } catch (err) {
-                // v3.9.38 FIX: 10003 = Unknown Channel — the channel is truly deleted.
-                // Other errors (5xx/network/rate-limit) = TRANSIENT — don't delete meta,
-                // let the next attempt retry.
+                // 10003 = Unknown Channel — the channel is truly deleted.
                 if (err?.code === 10003) {
                     removeTicketMeta(chId);
                 } else {
+                    // Other errors (5xx/network/rate-limit) = TRANSIENT — don't
+                    // delete the meta and don't treat it as "no ticket": THROW so
+                    // the caller knows verification FAILED and can abort safely.
                     console.warn(`⚠️ Failed to fetch ticket channel ${chId} (transient): ${err?.message ?? err}`);
+                    const ex = new Error(
+                        `Failed to verify active ticket for user ${userId} (transient: ${err?.message ?? err})`
+                    );
+                    ex.code = 'TICKET_VERIFY_TRANSIENT';
+                    throw ex;
                 }
             }
         }
@@ -310,7 +325,20 @@ async function createTicket(interaction, product) {
         //      user ID that is a prefix of another user ID can't false-match.
         // v3.9.32: the tickets.json loop below is extracted into findActiveTicketFor()
         //      (reused by escrow deals) — identical behavior.
-        let existingTicket = await findActiveTicketFor(guild, user.id);
+        let existingTicket;
+        try {
+            existingTicket = await findActiveTicketFor(guild, user.id);
+        } catch (verifyErr) {
+            // v3.9.40 FIX: active-ticket verification FAILED (429/5xx/network) —
+            // do NOT continue creating a ticket (the old null return created a
+            // duplicate ticket for users with a live one). Abort + ask to retry.
+            if (verifyErr?.code === 'TICKET_VERIFY_TRANSIENT') {
+                return safeEditReply(interaction, {
+                    content: '⚠️ Could not verify your active ticket (the Discord network is busy right now). Please try again in a few seconds.'
+                });
+            }
+            throw verifyErr;
+        }
         // Fallback: scan channel topics (old tickets)
         if (!existingTicket) {
             // v3.9.8: added ` |` so an ID that is a prefix of another ID can't false-match.
@@ -746,8 +774,13 @@ async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
 
     for (let i = 0; i < chunks.length; i++) {
         const header = chunks.length > 1 ? `\n[Part ${i + 1}/${chunks.length}]\n` : '';
+        // v3.9.40 FIX: user message content can contain ``` → it would close
+        // the transcript code fence early (the rest of the chunk renders as
+        // broken markdown). Triple backticks are escaped with zero-width
+        // spaces — the fence stays intact and the text remains readable.
+        const safeChunk = String(chunks[i]).replace(/```/g, '`\u200b`\u200b`');
         await transcriptChannel.send({
-            content: `${header}\`\`\`\n${chunks[i]}\n\`\`\``
+            content: `${header}\`\`\`\n${safeChunk}\n\`\`\``
         });
     }
 

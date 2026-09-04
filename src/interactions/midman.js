@@ -528,7 +528,20 @@ async function handlePickBuyer(interaction) {
     }
     // The buyer must not have an active regular ticket at the same time (the
     // 1 active channel per user policy — consistent with createTicket).
-    const activeTicket = await findActiveTicketFor(guild, buyerId);
+    // v3.9.40 FIX: catch TICKET_VERIFY_TRANSIENT — don't treat a failed check
+    // as "no ticket" (a deal could slip through while the buyer has a live ticket).
+    let activeTicket;
+    try {
+        activeTicket = await findActiveTicketFor(guild, buyerId);
+    } catch (verifyErr) {
+        if (verifyErr?.code === 'TICKET_VERIFY_TRANSIENT') {
+            return safeEditReply(interaction, {
+                content: '⚠️ Could not verify the active ticket (the Discord network is busy). Please pick the buyer again in a few seconds.',
+                components: buyerSelectRow()
+            });
+        }
+        throw verifyErr;
+    }
     if (activeTicket) {
         return safeEditReply(interaction, {
             content: `❌ <@${buyerId}> still has an active ticket in ${activeTicket}. Close it before creating an escrow deal. Please pick another buyer:`,
@@ -620,7 +633,19 @@ async function handlePickSeller(interaction) {
     }
     // The buyer must not have an active regular ticket at the same time (the
     // 1 active channel per user policy — consistent with createTicket).
-    const activeTicket = await findActiveTicketFor(guild, buyerId);
+    // v3.9.40 FIX: catch TICKET_VERIFY_TRANSIENT — a failed check ≠ "no
+    // ticket"; abort so no deal is created for a user with a live ticket.
+    let activeTicket;
+    try {
+        activeTicket = await findActiveTicketFor(guild, buyerId);
+    } catch (verifyErr) {
+        if (verifyErr?.code === 'TICKET_VERIFY_TRANSIENT') {
+            return safeEditReply(interaction, {
+                content: '⚠️ Could not verify the buyer’s active ticket (the Discord network is busy). Please try again in a few seconds.'
+            });
+        }
+        throw verifyErr;
+    }
     if (activeTicket) {
         return safeEditReply(interaction, {
             content: `❌ <@${buyerId}> turns out to already have an active ticket in ${activeTicket}. Close it before creating an escrow deal.`
@@ -630,7 +655,17 @@ async function handlePickSeller(interaction) {
     // only the buyer was checked, so a user with an open ticket could still become
     // a seller (asymmetric with the 1-channel-per-user policy that applies in the
     // 3 other directions: creating a ticket, being a deal buyer, being a deal seller).
-    const sellerTicket = await findActiveTicketFor(guild, sellerId);
+    let sellerTicket;
+    try {
+        sellerTicket = await findActiveTicketFor(guild, sellerId);
+    } catch (verifyErr) {
+        if (verifyErr?.code === 'TICKET_VERIFY_TRANSIENT') {
+            return safeEditReply(interaction, {
+                content: '⚠️ Could not verify the seller’s active ticket (the Discord network is busy). Please try again in a few seconds.'
+            });
+        }
+        throw verifyErr;
+    }
     if (sellerTicket) {
         return safeEditReply(interaction, {
             content: `❌ <@${sellerId}> still has an active ticket in ${sellerTicket}. Please pick another seller:`,
@@ -1205,8 +1240,14 @@ async function handlePickMember(interaction) {
         // during that await. Mutation + setDeal are done on the FRESH object,
         // not the initial snapshot, so a validated transition isn't reverted
         // by a stale write.
+        // v3.9.40 FIX: if the fresh-check FAILS after permissionOverwrites.edit
+        // succeeded, the user's channel access must be REVOKED best-effort —
+        // otherwise the user can enter the channel (permission granted) but is
+        // never recorded in deal.observers → a "ghost member": invisible on the
+        // Deal Board and impossible to remove via the ➖ button.
         const fresh = mm.getDeal(channel.id);
         if (!fresh || mm.TERMINAL_STATES.has(fresh.state)) {
+            await channel.permissionOverwrites.delete(userId).catch(() => {});
             return safeEditReply(interaction, { content: '❌ The deal is already complete — members cannot be changed.' });
         }
         const freshCheck = mm.canAddObserver(fresh, userId);
@@ -1217,6 +1258,7 @@ async function handlePickMember(interaction) {
                     : freshCheck.reason === 'duplicate'
                       ? '❌ They are already an extra member on this deal.'
                       : `❌ Maximum **${mm.MAX_OBSERVERS}** extra members per deal.`;
+            await channel.permissionOverwrites.delete(userId).catch(() => {});
             return safeEditReply(interaction, { content: hint, components: memberSelectRow() });
         }
 

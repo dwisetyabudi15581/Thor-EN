@@ -544,6 +544,19 @@ module.exports = async function (interaction) {
                 flags: MessageFlags.Ephemeral
             });
         }
+        // v3.9.40 FIX: close-vs-complete race — admin B clicks "✅ Done" exactly
+        // while admin A still holds completionLocks (set key / deliver order /
+        // ✅ Order Complete still running). Without this gate, closeTicket deletes
+        // the channel + meta first → flow A writes to a vanished meta → the
+        // transcript is archived as "Cancelled" while the buyer actually received
+        // the key/role/invoice (contradictory records). Mirrors the busy gate in
+        // set-key/deliver.
+        if (interaction.channel?.id && completionLocks.has(interaction.channel.id)) {
+            return interaction.reply({
+                content: '⏳ The ticket is being processed by another admin (set key / deliver order). Wait a moment, then close it again.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
         try {
             await interaction.deferUpdate();
         } catch (err) {
@@ -625,6 +638,15 @@ module.exports = async function (interaction) {
         if (!getTicketMeta(interaction.channel?.id, interaction.channel?.topic || '')) {
             return interaction.reply({
                 content: '❌ This channel is not a registered ticket (another admin may have already closed it).',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+        // v3.9.40 FIX: close-vs-cancel race — mirrors the gate in ticket_close_success.
+        // "❌ Purchase Cancelled" / "❌ Close Without Completing" while a completion
+        // is still in-flight → don't close yet (avoids contradictory transcripts).
+        if (interaction.channel?.id && completionLocks.has(interaction.channel.id)) {
+            return interaction.reply({
+                content: '⏳ The ticket is being processed by another admin (set key / deliver order). Wait a moment, then close it again.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -1341,6 +1363,11 @@ module.exports = async function (interaction) {
         }
     }
 };
+
+// v3.9.40: completionLocks attached to the export (for testing the
+// close-vs-complete race). The handler is still called as a function as usual
+// (router: ticketDomain(interaction)) — the extra property doesn't interfere.
+module.exports.completionLocks = completionLocks;
 
 /**
  * v3.9.27: "✅ Order Successful" side effects for non-key transactions closed

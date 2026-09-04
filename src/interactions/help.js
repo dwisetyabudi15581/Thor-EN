@@ -15,7 +15,7 @@
  * still open remain clickable after a bot restart.
  */
 
-const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
 const {
     HELP_IDS,
     buildHomeEmbed,
@@ -86,6 +86,14 @@ module.exports = async function handleHelpInteraction(interaction) {
         return interaction.update({ embeds: buildAllEmbeds(), components: buildHelpComponents('all') });
     }
 
-    // Any other help_* customId (should not happen) — defensive noop.
+    // Any other help_* customId (should not happen) — v3.9.40: acknowledge
+    // with an ephemeral reply instead of warn-only. Without an ack, users see
+    // a red "This interaction failed" in Discord (old /help messages from a
+    // previous bot version whose customIds are no longer recognized).
     console.warn(`[help] unrecognized help customId: ${id}`);
+    if (typeof interaction.reply === 'function' && !interaction.replied) {
+        return interaction
+            .reply({ content: '❓ Unrecognized help component (possibly from an old message). Run `/help` again for the latest menu.', flags: MessageFlags.Ephemeral })
+            .catch(() => {});
+    }
 };

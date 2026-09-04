@@ -40,6 +40,11 @@
 const fs = require('fs');
 const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
+// v3.9.40: hoist the discord.js require to the top — PermissionFlagsBits was
+// previously required INSIDE isUserWhitelisted()/isLinkAllowed(), which run per
+// message (hot path). The module cache keeps it cheap, but hoisting is cleaner
+// and avoids repeated lookups on every message.
+const { PermissionFlagsBits } = require('discord.js');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'automod.json');
 
@@ -504,7 +509,6 @@ function countMentions(message) {
 function isUserWhitelisted(member, config) {
     if (!member) return false;
     // Admins (Administrator/ManageGuild) are always whitelisted from all checks
-    const { PermissionFlagsBits } = require('discord.js');
     if (member.permissions?.has(PermissionFlagsBits.Administrator)) return true;
     if (member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
     // GLOBAL (non-link) role whitelist — the field doesn't exist in the config schema yet.
@@ -530,7 +534,6 @@ function isLinkAllowed(member, config) {
     if (!member || !config) return false;
     // Admins may always post links — consistent with the global guard (admins are
     // returned early by hookAutoMod, so this check is purely belt-and-suspenders).
-    const { PermissionFlagsBits } = require('discord.js');
     if (member.permissions?.has(PermissionFlagsBits.Administrator)) return true;
     if (member.permissions?.has(PermissionFlagsBits.ManageGuild)) return true;
     // Link whitelist roles

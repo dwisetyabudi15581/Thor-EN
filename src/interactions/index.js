@@ -31,6 +31,11 @@
 
 const { check, mark } = require('./_dedup');
 
+// v3.9.40: interactions CURRENTLY being dispatched (in-flight) — closes the
+// PARALLEL duplicate-delivery window between check() and mark() (see the
+// comment in routeInteraction). In-memory, no TTL needed (always deleted in finally).
+const inFlightInteractions = new Set();
+
 // Domain handlers — each exports `async function(interaction)`.
 const verifyDomain = require('./verify');
 const ticketDomain = require('./ticket');
@@ -186,6 +191,18 @@ async function routeInteraction(interaction) {
     if (check(interaction.id)) {
         return;
     }
+    // v3.9.40 FIX: IN-FLIGHT guard. v3.9.38 moved mark() to AFTER success,
+    // which opened a window: a gateway replay arriving WHILE the first handler
+    // is still running passes check() (not yet marked) + the replied/deferred
+    // guard (the replay instance has its own still-fresh flags) → the handler
+    // runs 2x IN PARALLEL. Money flows are protected by domain-internal locks,
+    // but non-idempotent toggles (sr_btn selfrole — 2 clicks = the role reverts)
+    // could double-execute. Duplicates arriving during in-flight are dropped
+    // silently — the first instance will ack via the same interaction token
+    // (a reply from the second instance would break the first one's reply).
+    if (inFlightInteractions.has(interaction.id)) {
+        return;
+    }
 
     // Guard: skip if the interaction is already replied/deferred.
     // A modal submit that was already replied = CONSIDERED PROCESSED, don't continue.
@@ -201,9 +218,17 @@ async function routeInteraction(interaction) {
         // the error to the caller, the entry is NOT marked) → the gateway replay
         // (Discord retrying the same interaction) can process it again. No
         // try/catch rethrow because the semantics are identical (eslint no-useless-catch).
-        const result = await handler(interaction);
-        mark(interaction.id);
-        return result;
+        inFlightInteractions.add(interaction.id);
+        try {
+            const result = await handler(interaction);
+            mark(interaction.id);
+            return result;
+        } finally {
+            // v3.9.40: in-flight is always released (on success AND on throw —
+            // if it throws, Discord's NEXT retry can still get in, preserving
+            // the v3.9.38 crash-retry semantics).
+            inFlightInteractions.delete(interaction.id);
+        }
     }
 
     // v3.9.9 refactor: fallback to the legacy handler was REMOVED. Every customId

@@ -4,6 +4,29 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.40] — 2026-09-04
+
+### Fixed — 🛡️ Post-v3.9.39 full audit ("check the whole codebase + sync the docs"): 6 real bugs + hardening + docs sync
+
+A 3-domain parallel review (escrow/scheduler, tickets/automod/data-layer, /help redesign) of the v3.9.38 & v3.9.39 results — **all v3.9.38 fixes were confirmed correct** (transitionLocks, isCompleted gates, giveaway fresh re-read, etc.) and the **82-command registry vs help-catalog cross-check is clean** (0 missing/stale commands). New bugs found & fixed:
+
+- 🟠 **`/help search:<long query>` crash** — a Discord STRING slash option can be up to 6,000 chars; a query ≥ ~3,875 chars was echoed into the results embed → description > 4096 → `EmbedBuilder.setDescription` THROWS (uncaught) → the feature silently errors. Now: `max_length: 100` in the registry (consistent with the modal, already 100) + a 100-char cap in `searchHelp` (defensive — closes both entry points at once); backticks in the query are sanitized so they can't break the embed header styling.
+- 🟠 **Manual `/giveaway end` with 0 participants was silent** — `isManualAnnounce` required `winnerIds.length > 0`; a giveaway with no participants was skipped ENTIRELY: the giveaway message was never edited (the 🎉 Join button stayed live and clickable!), no "ended with no winners" announcement — even though the admin saw a success message claiming "message updated + winners DMed + announced". The correct manual marker is now `skipPick && ended` → the ended embed + disabled buttons + no-winner announcement are delivered.
+- 🟠 **Transient ticket verification → duplicate ticket** — `findActiveTicketFor` still returned `null` on a 429/5xx error (the meta was safe on disk, but callers read "no active ticket") → `createTicket` created a SECOND channel for a user with a live ticket (2 live metas, the invoice/isCompleted guards split). Now it throws with code `TICKET_VERIFY_TRANSIENT`; `createTicket` + the 3 escrow call sites (pick buyer/seller) catch it and ask for a retry — the 1-active-ticket-per-user invariant holds.
+- 🟠 **Close-ticket vs completion race** — admin B clicking "❌ Close Without Completing" / "✅ Done" while admin A was still processing Set Key / Deliver Order (holding `completionLocks`) → the channel + meta were deleted first → flow A wrote to a vanished meta → the buyer still received the key/role/invoice but the transcript was archived as "Cancelled" (contradictory records). Both close buttons now reject with "⏳ being processed by another admin" while the lock is held.
+- 🟠 **PARALLEL interaction replay double-executed** — v3.9.38 moved the dedup mark to AFTER handler success (correct for crash retries), but that opened a window: a gateway replay arriving WHILE the first handler was still running passed check() + the replied guard → the handler ran 2x in parallel (a selfrole toggle could revert). Now: an `inFlightInteractions` guard (silent drop — the first instance owns the interaction token); the v3.9.38 crash-retry semantics stay intact.
+- 🟡 **Zombie-deal reconcile could resurrect** — `reconcileZombieDeals` deleted the meta of a deal whose channel was gone WITHOUT checking `transitionLocks`; if a handler was mid-transition on that same channel, its `setDeal` rewrote the just-deleted meta → the zombie came back (buyer/seller locked out of `hasActiveDealFor` for up to 24h). Reconcile now skips locked deals.
+- 🟢 **Minor hardening**: Discord limit guards on the "📖 All Commands" view for giant catalogs (field value ≤ 1024 + fields ≤ 25 + a guaranteed total ≤ 6,000 with a note pointing to dropdown/search — replacing the dead-code 2-embed split path from v3.9.39 that could overshoot); the "ghost member" channel permission is revoked when the escrow fresh-check fails after the grant; transcripts escape ``` in user content (the code fence no longer breaks); alien `help_*` customIds get an ephemeral ack (instead of a red "interaction failed"); the automodManager `require('discord.js')` was hoisted out of the per-message hot path.
+
+### Docs — 📚 documentation synced to the actual code (docs audit findings)
+
+- 🟢 Every stale version number fixed: `docs/ADMIN_GUIDE.md` header & footer (3.9.38 → 3.9.40), `docs/README.md` (3.9.38 → 3.9.40), unit test counts in all three docs (386/412 → **429**), "16 managers" → **18** (matching the actual `src/data/` files), "50 action types" → **63** (matching `ACTION_LABELS`).
+- 🟢 New tip in ADMIN_GUIDE Section 1: how to use the `/help` interactive navigator (19-category dropdown + Search Commands + `/help search:`) — the v3.9.39 feature was previously undocumented in the guide body.
+
+### Tests
+
+- 🟢 +17 unit tests (total **429**, up from 412): `tests/unit/hardeningV40.test.js` — long/backtick queries (slash + modal), registry max_length, a 49-category & giant-field catalog stress test (1024/25/6000 guards + notes), manual giveaway end with 0 participants, the transient throw + createTicket abort (1-meta invariant), the close-vs-completionLocks race (2 buttons), the parallel in-flight replay + post-throw retry, reconcile skipping locked deals, transcript ``` fences, acknowledging alien help customIds; + the v3.9.38 transient test contract updated (null → throw `TICKET_VERIFY_TRANSIENT`). Full suite 429/429 green, ESLint 0 warnings.
+
 ## [3.9.39] — 2026-09-04
 
 ### Changed — 🚀 /help redesign: interactive navigator — find commands without scrolling (user-reported: "one giant embed, finding a command meant scrolling")

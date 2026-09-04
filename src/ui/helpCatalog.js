@@ -30,6 +30,7 @@ const {
     StringSelectMenuOptionBuilder
 } = require('discord.js');
 const { EMBED_LIMITS, DISCORD_LIMITS } = require('../infra/constants');
+const { truncateUtf8Safe } = require('../infra/text');
 
 // v3.9.37: version is taken dynamically from package.json (single source of
 // truth) so /help never goes stale again.
@@ -354,37 +355,54 @@ function buildCategoryEmbed(client, categoryId) {
 
 /**
  * 📖 All — the full command list (classic view).
- * Split into max 2 embeds if over budget (combined total stays ≤ 6000 —
- * one message may hold multiple embeds sharing a 6000 budget).
- * Returns an array of EmbedBuilder (1 or 2 elements).
+ * Returns an array with 1 EmbedBuilder (array contract kept).
+ *
+ * v3.9.40 REWRITE: within ONE message, the TOTAL of all embeds = 6000 chars —
+ * the v3.9.39 "auto-split into 2 embeds" added NO budget at all (that path
+ * was dead code — current content is 5.5K < 5.800 — and if the catalog grew,
+ * splitting could actually make the total overshoot + embed 1/2 got the wrong
+ * "Continuation" description). Now one embed with a guaranteed fit:
+ *   - Guard 1: each field value is capped at 1024 (surrogate-safe truncation + note).
+ *   - Guard 2: max 25 fields (Discord; currently 19 categories).
+ *   - Guard 3: if the total > budget (5.800), trailing categories are dropped
+ *     and replaced with a note pointing to the 📂 dropdown / 🔍 Search — the
+ *     message total NEVER exceeds 6.000, whatever the catalog size.
  */
 function buildAllEmbeds() {
-    const fields = HELP_CATEGORIES.map(c => ({ name: `${c.emoji} ${c.name}`, value: c.lines.join('\n'), inline: false }));
-    const desc = `_Full command list (v${BOT_VERSION})._`;
-    const makeEmbed = (fs, part) => {
-        const e = baseEmbed()
-            .setTitle(part ? `🤖 ALL COMMANDS (${part})` : '🤖 ALL COMMANDS')
-            .setDescription(part ? `_Continuation of the command list (v${BOT_VERSION})._` : desc);
-        if (fs.length) e.addFields(fs);
-        return e;
+    // Guard 1: field value ≤ 1024 — leave room for the truncation note.
+    const capField = lines => {
+        const text = lines.join('\n');
+        if (text.length <= EMBED_LIMITS.FIELD_VALUE) return text;
+        return truncateUtf8Safe(text, EMBED_LIMITS.FIELD_VALUE - 45) + '\n… +more lines not shown.';
     };
+    // Guard 2: slice to 25 — categories 26+ never reach addFields.
+    // (const: only mutated via pop, never reassigned.)
+    const fields = HELP_CATEGORIES.slice(0, EMBED_LIMITS.FIELDS_COUNT).map(c => ({
+        name: `${c.emoji} ${c.name}`,
+        value: capField(c.lines),
+        inline: false
+    }));
 
-    // Budget for all embeds in ONE message = 6000 (EMBED_LIMITS.TOTAL_CHARS).
-    // Measure with the real builders (embedTotalChars) so titles/footers count.
+    const droppedNote = n =>
+        `\n\n… +${n} more categories not loaded (single-message size limit) — use the 📂 dropdown or 🔍 Search Commands.`;
+    const build = (fs, extra) =>
+        baseEmbed()
+            .setTitle('🤖 ALL COMMANDS')
+            .setDescription(`_Full command list (v${BOT_VERSION})._${extra || ''}`)
+            .addFields(fs);
+
+    // Budget for ALL embeds in ONE message = 6.000 — 200 slack for note
+    // overhead + embedTotalChars accounting (title/footer are counted).
     const BUDGET = EMBED_LIMITS.TOTAL_CHARS - 200;
-    let first = fields;
-    const second = [];
-    const totalSize = () =>
-        embedTotalChars(makeEmbed(first, null)) + (second.length > 0 ? embedTotalChars(makeEmbed(second, '2/2')) : 0);
-    while (first.length > 1 && totalSize() > BUDGET) {
-        // Move the LAST field to the second embed (repeat until it fits).
-        second.unshift(first[first.length - 1]);
-        first = first.slice(0, -1);
+    let dropped = 0;
+    let embed = build(fields, '');
+    // Guard 3: drop trailing categories until the total fits (min 1 field).
+    while (fields.length > 1 && embedTotalChars(embed) > BUDGET) {
+        fields.pop();
+        dropped++;
+        embed = build(fields, droppedNote(dropped));
     }
-    if (second.length > 0) {
-        return [makeEmbed(first, '1/2'), makeEmbed(second, '2/2')];
-    }
-    return [makeEmbed(fields, null)];
+    return [embed];
 }
 
 // === Search ===
@@ -416,7 +434,16 @@ function buildBlocks(lines) {
  * Returns { query, groups: [{ cat, blocks }], totalBlocks, truncated, emptyQuery }
  */
 function searchHelp(rawQuery) {
-    const query = String(rawQuery || '').trim().toLowerCase();
+    // v3.9.40 FIX: cap the input at 100 chars before processing. The slash
+    // registry option now also has max_length:100, but this builder serves
+    // TWO entry points (slash + modal) and old messages/modals can still come
+    // through — a single defensive cap closes every route. Without the cap, a
+    // multi-thousand-char query is echoed into the results embed
+    // → description > 4096 → EmbedBuilder.setDescription throws (uncaught).
+    const query = String(rawQuery || '')
+        .slice(0, 100)
+        .trim()
+        .toLowerCase();
     if (!query) return { query: '', groups: [], totalBlocks: 0, truncated: false, emptyQuery: true };
 
     const groups = [];
@@ -472,8 +499,12 @@ function buildSearchEmbed(rawQuery) {
         sections.push(`**${group.cat.emoji} ${group.cat.name}**\n${lines.join('\n')}`);
     }
 
+    // v3.9.40 FIX: a backtick in the query could close the inline-code header
+    // and restyle the rest of the embed — sanitize for display (matching still
+    // uses the raw query, identical results).
+    const safeQuery = result.query.replace(/`/g, "'");
     const header =
-        `Keyword: \`${result.query}\` — ` +
+        `Keyword: \`${safeQuery}\` — ` +
         (result.totalBlocks > 0 ? `**${result.totalBlocks}** results found` : 'no matches') +
         `\n_Change the keyword via the 🔍 button · 🏠 Main Menu to go back._`;
 

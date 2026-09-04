@@ -82,7 +82,7 @@ function makeFetchGuild({ cachedEntries = [], fetchImpl }) {
     };
 }
 
-test('FIX 1: fetch throws code 429 (transient) → LIVE ticket meta KEPT, returns null', async () => {
+test('FIX 1: fetch throws code 429 (transient) → LIVE ticket meta KEPT, throws TICKET_VERIFY_TRANSIENT', async () => {
     resetDataFile('tickets.json', {
         'ch-tr-429': { userId: 'user-429', guildId: 'g38', productName: 'VIP 30 Hari', productValue: 'vip30' }
     });
@@ -94,9 +94,16 @@ test('FIX 1: fetch throws code 429 (transient) → LIVE ticket meta KEPT, return
         }
     });
 
-    const ch = await findActiveTicketFor(guild, 'user-429');
-    assert.strictEqual(ch, null, 'transient blip → no active channel to return');
-    // Core fix: metadata must NOT be deleted — the channel is still alive, only
+    // v3.9.40: the contract was strengthened — a transient error is NOT "no
+    // ticket" (null) but a THROW coded TICKET_VERIFY_TRANSIENT so callers
+    // (createTicket, midman pick buyer/seller) can abort & ask for a retry
+    // instead of creating a duplicate ticket.
+    await assert.rejects(
+        findActiveTicketFor(guild, 'user-429'),
+        err => err.code === 'TICKET_VERIFY_TRANSIENT',
+        'transient blip → must throw TICKET_VERIFY_TRANSIENT (not return null)'
+    );
+    // Core fix stays: metadata must NOT be deleted — the channel is still alive, only
     // its fetch failed momentarily. Before v3.9.38, the meta was deleted → the
     // user could open a 2nd ticket.
     const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'tickets.json'), 'utf8'));
