@@ -178,7 +178,7 @@ test('v3.9.40 FIX: buildAllEmbeds — one category with giant lines → field ca
     }
 });
 
-test('v3.9.40: buildAllEmbeds with the normal catalog (19 categories) → no truncation note, total ≤ 6000', () => {
+test('v3.9.40: buildAllEmbeds with the normal catalog (20 categories) → no truncation note, total ≤ 6000', () => {
     const embeds = buildAllEmbeds();
     assert.strictEqual(embeds.length, 1);
     assert.ok(embedTotalChars(embeds[0]) <= EMBED_LIMITS.TOTAL_CHARS);

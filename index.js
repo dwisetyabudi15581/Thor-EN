@@ -72,6 +72,11 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
+        // v3.9.43: GuildBans — required for the guildBanAdd/guildBanRemove
+        // events (server log ban/unban, including manual bans from the
+        // Discord UI). REGULAR intent (not privileged) — no Developer
+        // Portal toggle needed.
+        GatewayIntentBits.GuildBans,
         // REQUIRED: Message Content Intent. Without it, message.content is always empty
         // for other users' messages, so auto-responder, anti-spam word/link checks,
         // and AFK mention replies won't work.
@@ -118,7 +123,15 @@ const eventHandlers = [
     require('./src/bot/events/guildMemberAdd'),
     require('./src/bot/events/guildMemberRemove'),
     require('./src/bot/events/messageCreate'),
-    require('./src/bot/events/voiceStateUpdate')
+    require('./src/bot/events/voiceStateUpdate'),
+    // v3.9.43: server log events (log to config.channels['server-log']).
+    // If the channel is not configured, all of these are no-ops (silent skip).
+    require('./src/bot/events/messageDelete'),
+    require('./src/bot/events/messageUpdate'),
+    require('./src/bot/events/messageBulkDelete'),
+    require('./src/bot/events/guildBanAdd'),
+    require('./src/bot/events/guildBanRemove'),
+    require('./src/bot/events/guildMemberUpdate')
 ];
 
 for (const handler of eventHandlers) {

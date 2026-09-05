@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.42
+# 📖 Admin Guide — Thor Bot v3.9.43
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -12,7 +12,7 @@ The complete guide for Discord server admins running this bot — suitable both 
 2. [Initial Server Setup](#2-initial-server-setup)
 3. [Product & VIP Management](#3-product--vip-management)
 4. [Daily Operations (Tickets, Announce, Embed)](#4-daily-operations-tickets-announce-embed)
-5. [Moderation (Warn System)](#5-moderation-warn-system)
+5. [Moderation (Warn + Direct Actions)](#5-moderation-warn--direct-actions)
 6. [Engagement (Giveaway & Poll)](#6-engagement-giveaway--poll)
 7. [Advanced Community Features](#7-advanced-community-features)
 8. [Backup & Restore](#8-backup--restore)
@@ -47,7 +47,7 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **82 slash commands** must appear
+- In Discord, type `/` — all **88 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
 > 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll): 🏠 a compact home of 19 categories, 📂 a **category dropdown** to jump to a command group (tickets, products, escrow, warns, ...), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `vip`...), or `/help search:<keyword>` directly. All navigation happens inside one ephemeral message — it never floods the channel.
@@ -514,7 +514,7 @@ A middleman service for member-to-member transactions: **buyer + seller + middle
 
 ---
 
-## 5. Moderation (Warn System)
+## 5. Moderation (Warn + Direct Actions)
 
 ### Issue a Warning
 
@@ -558,6 +558,56 @@ The bot rejects `/warn` if:
 - An admin tries to warn themselves
 - An admin tries to warn the bot
 - An admin tries to warn a member whose role is at or above their own
+
+### Direct Actions (v3.9.43)
+
+The full moderation pack — the sanction ladder now ends in real actions, not just records. Every action: **recorded in the user's history** (shown by `/warn-list` in the "Moderation History" section), **logged to the audit-log channel**, and the member is **DMed the reason** (best-effort).
+
+| Command | Purpose | Notes |
+|---|---|---|
+| `/timeout user duration reason` | Temporary mute | `duration` in **minutes** (60 = 1 hour, 1440 = 1 day, max 40320 = 28 days — Discord limit) |
+| `/untimeout user reason` | Lift a mute early | only runs if the user is actually muted |
+| `/purge amount user?` | Bulk delete messages | 1–100 messages; messages **older than 14 days cannot be** bulk-deleted (API limit) — skipped automatically; set `user` = only their messages |
+| `/kick user reason` | Remove a member | they can rejoin via invite |
+| `/ban user reason delete_days?` | Ban + delete messages | `delete_days` 0–7 (Discord limit); the DM is sent BEFORE the ban so it arrives |
+| `/unban user_id reason` | Revoke a ban | uses a **User ID** (17–20 digits) since the user is not in the server |
+
+**Safety guards (every action):**
+
+- Cannot action yourself, the bot, or a member whose role is at or above yours (checked against BOTH the moderator AND the bot)
+- Bot permissions are checked up front with a clear message (not a raw "Missing Permissions" error)
+- Commands are usable by **admins** OR members with the matching Discord permission (Timeout/Kick/Ban/Manage Messages) — moderation staff don't need the bot's admin role (least privilege)
+
+**Quick usage example:**
+
+```
+/timeout user:@spammer duration:60 reason:"Ad spam in #general"
+/purge amount:50 user:@spammer        → clean up their ads too
+/warn-list user:@spammer              → full record + moderation history
+```
+
+> **Design:** moderation actions are NOT counted as warns — so 3 timeouts do not trigger an extra auto-mute (no double punishment). Warn = violation; modlog = action. Both show in `/warn-list` in one view.
+
+### Server Log (Server Events, v3.9.43)
+
+```
+/set-channel tipe:"Server Log (message delete/edit, join/leave, bans)" channel:#server-log
+```
+
+Enable once, then all of these events are logged automatically to that channel (a channel **separate** from audit-log so admin logs and activity logs don't mix):
+
+- 🗑️ **Message deleted** — the content + who deleted it (detected from Discord's audit log; also covers manual deletions via the Discord UI) — the only way to see what a deleted message said
+- ✏️ **Message edited** — before/after + message link (proof of a seller changing the price after a deal)
+- 🧹 **Bulk purge** — message count + who purged
+- 📥📤 **Join/leave** — account age (new-account detection), member count; **manual kicks from the Discord UI are detected too** (not just voluntary leaves)
+- 🔨 **Ban/unban** — including manual bans from the Discord UI (not only the bot's /ban), with executor & reason
+- 🎭 **Role changes** & 📝 **nickname changes** — catch scammers switching identity / unexpected access changes
+
+**Important notes:**
+
+- The bot needs the **View Audit Log** permission for the "by whom" column (without it everything still works, the column just says "unknown")
+- Bot messages are skipped (so the log isn't flooded with the bot's own embeds)
+- If the channel is not set, all of the above is a no-op — no errors
 
 ---
 
@@ -926,10 +976,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.42) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.43) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.43** (2026-09-06) — 🛡️ **full moderation pack + server log** (user request: "add a complete moderation package and a server log for message delete/edit and more"): 6 new commands **`/timeout` `/untimeout` `/purge` `/kick` `/ban` `/unban`** (88 total) with two-way hierarchy guards (the moderator's AND the bot's roles must be higher than the target's — same level = rejected), Discord limits enforced on both sides (timeout max 28 days = 40320 minutes, purge 1–100 + messages older than 14 days skipped per the bulk API limit, ban message deletion 0–7 days), bot permissions checked up front with clear messages, best-effort reason DMs; actions are **not counted as warns** (modlog = actions, warns = violations — no double punishment) but render in `/warn-list` in a **"Moderation History"** section (a 0-warn user with moderation history still shows); the router now allows **non-admin moderators** holding the matching Discord permission (least privilege); **Server Log**: `message deleted` (content + executor via the audit log — including manual deletions from the Discord UI), `message edited` (before/after + link), `bulk purge`, `join/leave` (account age + manual kicks detected), `ban/unban` manual & via the bot, `role/nickname changes` — delivered to a new `server-log` channel (separate from audit-log; `/set-channel tipe:server-log`); the **GuildBans** intent enabled (without it the ban events never fire); +21 unit tests (moderation.test.js + serverLog.test.js, total 457).
 - **v3.9.42** (2026-09-05) — 🔔 behavior change per user request ("don't DM the voice owner, just tell them in the voice chat"): the **temp-voice new-owner notification** (auto-transfer when the owner leaves & manual transfer via the panel) is now posted in the **voice channel's own text chat** with a mention of the new owner (they still get pinged) — instead of a DM (which often failed silently because the user's DMs are closed / went unread); +3 anti-regression contract unit tests `voiceNotify.test.js`; 82 commands total, 436 unit tests.
 - **v3.9.41** (2026-09-05) — 🔍 re-debug in response to a production error report ("Interaction Error: ExpectedConstraintError — label > 45 chars"): **the embed send & set-message modals were completely dead in the EN repo** (labels of 48 & 49 chars vs the Discord limit of 45 — the Indonesian twin happened to survive because the Indonesian text is shorter; the earlier v3.9.27 limit fix only covered ticket flows) → labels shortened, hints moved into the placeholders; accompanied by a **full sweep of every Discord component limit** (TextInput label/placeholder/maxLength, modal titles, button labels, select options) across both repos — 0 remaining violations, every dynamic site verified as guarded; +4 unit tests as a permanent safety net (`componentLimits.test.js`: a static scan of the whole src/ — any future PR adding an over-length label instantly goes red — plus a real-builder runtime contract) (82 commands total, 433 unit tests).
 - **v3.9.40** (2026-09-04) — 🛡️ post-v3.9.39 full audit (code check + docs sync): **6 real bugs fixed** + docs synced to the code — a long `/help search` query no longer crashes (cap 100 + `max_length`), a manual `/giveaway end` with 0 participants now properly announces "ended with no winners" and disables the buttons (previously silent), a transient ticket verification now ABORTS instead of creating a duplicate ticket (`TICKET_VERIFY_TRANSIENT`), the close-ticket vs set-key/deliver-order race is now gated by `completionLocks` (no more contradictory transcripts), a PARALLEL interaction replay is dropped by the router's in-flight guard, and zombie-deal reconcile skips deals currently locked; plus minor hardening (Discord limit guards on the "All Commands" embed for giant catalogs, ``` escaping in transcripts, ghost-member permission revocation, acknowledging alien help customIds) + **docs**: every stale number fixed (doc version 3.9.38 → 3.9.40, test counts, 18 data managers, 63 audit action types) + a /help navigator tip in Section 1; +17 unit tests (total 429).
@@ -959,6 +1010,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.42
-**Last updated:** September 5, 2026
-**Bot version:** 3.9.42 · 82 slash commands · 436 unit tests
+**Document version:** v3.9.43
+**Last updated:** September 6, 2026
+**Bot version:** 3.9.43 · 88 slash commands · 457 unit tests

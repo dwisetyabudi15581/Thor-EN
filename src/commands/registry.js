@@ -72,7 +72,7 @@ function getCommands() {
         // so admins only have to remember ONE channel command.
         {
             name: 'set-channel',
-            description: 'Set channels (invoice / welcome / goodbye / audit-log / transcript)',
+            description: 'Set channels (invoice / welcome / goodbye / audit-log / server-log / transcript)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -85,6 +85,7 @@ function getCommands() {
                         { name: 'Welcome', value: 'welcome' },
                         { name: 'Goodbye', value: 'goodbye' },
                         { name: 'Audit Log (logs admin actions)', value: 'audit-log' },
+                        { name: 'Server Log (message delete/edit, join/leave, bans)', value: 'server-log' },
                         { name: 'Ticket Transcript (auto-saved on close)', value: 'transcript' }
                     ]
                 },
@@ -577,7 +578,7 @@ function getCommands() {
         // === REMOVE CHANNEL (remove a channel from the config) ===
         {
             name: 'remove-channel',
-            description: 'Remove a channel from the config (invoice / welcome / goodbye / audit-log / transcript)',
+            description: 'Remove a channel from the config (invoice / welcome / goodbye / audit-log / server-log / transcript)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -590,6 +591,7 @@ function getCommands() {
                         { name: 'Welcome', value: 'welcome' },
                         { name: 'Goodbye', value: 'goodbye' },
                         { name: 'Audit Log', value: 'audit-log' },
+                        { name: 'Server Log', value: 'server-log' },
                         { name: 'Ticket Transcript', value: 'transcript' }
                     ]
                 }
@@ -996,6 +998,89 @@ function getCommands() {
             description: 'Delete ALL warnings for a user',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [{ type: 6, name: 'user', description: 'The user whose warnings to clear', required: true }]
+        },
+
+        // === MODERATION (v3.9.43) ===
+        // Router: usable by admins OR members with the matching Discord
+        // permission (ModerateMembers/KickMembers/BanMembers/ManageMessages) —
+        // see MODERATION_COMMANDS in src/commands/index.js. Role hierarchy
+        // guards still run in the handler (role must be higher than the target's).
+        {
+            name: 'timeout',
+            description: 'Temporarily mute a member (max 28 days) — recorded in their history',
+            defaultMemberPermissions: PermissionFlagsBits.ModerateMembers,
+            options: [
+                { type: 6, name: 'user', description: 'The member to mute', required: true },
+                {
+                    type: 4,
+                    name: 'duration',
+                    description: 'Duration in MINUTES (e.g. 60 = 1 hour, 1440 = 1 day, max 40320 = 28 days)',
+                    required: true,
+                    min_value: 1,
+                    max_value: 40320
+                },
+                { type: 3, name: 'reason', description: 'Reason (sent to the member via DM)', required: false }
+            ]
+        },
+        {
+            name: 'untimeout',
+            description: 'Lift a member\'s timeout (mute) early',
+            defaultMemberPermissions: PermissionFlagsBits.ModerateMembers,
+            options: [
+                { type: 6, name: 'user', description: 'The member whose timeout is lifted', required: true },
+                { type: 3, name: 'reason', description: 'Reason for lifting it', required: false }
+            ]
+        },
+        {
+            name: 'purge',
+            description: 'Bulk delete messages in a channel (1-100, only <14 days old)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageMessages,
+            options: [
+                {
+                    type: 4,
+                    name: 'amount',
+                    description: 'Number of messages to delete (1-100)',
+                    required: true,
+                    min_value: 1,
+                    max_value: 100
+                },
+                { type: 6, name: 'user', description: 'Empty = all messages; set = only this user\'s messages', required: false }
+            ]
+        },
+        {
+            name: 'kick',
+            description: 'Remove a member from the server (recorded in their history)',
+            defaultMemberPermissions: PermissionFlagsBits.KickMembers,
+            options: [
+                { type: 6, name: 'user', description: 'The member to kick', required: true },
+                { type: 3, name: 'reason', description: 'Reason (sent to the member via DM)', required: false }
+            ]
+        },
+        {
+            name: 'ban',
+            description: 'Ban a member + optionally delete 0-7 days of messages (recorded)',
+            defaultMemberPermissions: PermissionFlagsBits.BanMembers,
+            options: [
+                { type: 6, name: 'user', description: 'The member to ban', required: true },
+                {
+                    type: 4,
+                    name: 'delete_days',
+                    description: 'Delete the member\'s messages from the last N days (0-7, default 0)',
+                    required: false,
+                    min_value: 0,
+                    max_value: 7
+                },
+                { type: 3, name: 'reason', description: 'Reason (sent to the member via DM)', required: false }
+            ]
+        },
+        {
+            name: 'unban',
+            description: 'Revoke a ban by User ID (user need not be in the server)',
+            defaultMemberPermissions: PermissionFlagsBits.BanMembers,
+            options: [
+                { type: 3, name: 'user_id', description: 'User ID, 17-20 digits (Developer Mode → Copy User ID)', required: true },
+                { type: 3, name: 'reason', description: 'Reason for the unban', required: false }
+            ]
         },
 
         // === STATS & LEADERBOARD ===

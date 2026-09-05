@@ -4,6 +4,43 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.43] — 2026-09-06
+
+### Added — 🛡️ user request: "add a complete moderation package and a server log for message delete/edit and more"
+
+**Full moderation pack — 6 new commands (88 total):**
+
+- 🟢 **`/timeout user duration reason`** — temporary mute; `duration` in **minutes** (60 = 1 hour, 1440 = 1 day, max 40320 = 28 days — the Discord limit); reason DM to the member (best-effort); recorded in the moderation history + audit log (`MOD_TIMEOUT`).
+- 🟢 **`/untimeout user reason`** — lift a mute early; only runs if the user is actually muted (`isCommunicationDisabled()`), never overwrites someone else's timer.
+- 🟢 **`/purge amount user?`** — bulk delete 1–100 messages; optional per-user filter; messages **older than 14 days are skipped automatically** (bulk delete API limit) with a skipped-count report; 1 message → single delete (bulkDelete needs ≥2); audit `MOD_PURGE`.
+- 🟢 **`/kick user reason`** — the DM is sent BEFORE the kick (the member context still exists, most reliable delivery); recorded + audited.
+- 🟢 **`/ban user reason delete_days?`** — `delete_days` 0–7 (the `deleteMessageSeconds` API limit); DM before the ban; recorded + audited.
+- 🟢 **`/unban user_id reason`** — takes a User ID string (the user is not in the guild); 17–20 digit snowflake validation; checks the ban list first so the error message is clear; recorded + audited.
+
+**Guards & design (unit-tested, `src/infra/moderationGuards.js`):**
+
+- 🟢 **Two-way hierarchy**: the moderator's AND the bot's highest roles must be above the target's — same level = rejected (consistent with `/warn` v3.9.8); self/bot/bot-targets rejected.
+- 🟢 **Two-sided limit parity**: slash command option bounds (min/max value) = runtime guard bounds (40320 minutes, 100 purge, 7 days) — neither side can leak.
+- 🟢 **Bot permissions checked up front** (ModerateMembers/KickMembers/BanMembers/ManageMessages) with clear English messages — not a raw "Missing Permissions" API error.
+- 🟢 **`MODERATION_COMMANDS` router gate**: non-admin moderators holding the matching Discord permission may now use the moderation commands — staff don't need the bot's admin role (least privilege; hierarchy guards still run in the handler).
+- 🟢 **modLogManager (`data/modlogs.json`)** — actions are NOT counted as warns (no double punishment: 3 timeouts do not trigger an extra auto-mute); but they render in `/warn-list` in a **"⚡ Moderation History"** section — a 0-warn user with moderation history still shows (pulled before the early-return); description guarded with `truncateUtf8Safe` 4096.
+
+**Server Log — 8 server events to a new `server-log` channel (separate from `audit-log`):**
+
+- 🟢 **Message deleted** (`messageDelete`) — the content + **who deleted it** (executor detection via Discord's audit log, 60-second window — catches manual deletions from the Discord UI; the only way to see what a deleted message said); partial → "not cached" note.
+- 🟢 **Message edited** (`messageUpdate`) — before/after + message link (proof of a seller changing the price after a deal); skips edits with no content change (pin/embed-only).
+- 🟢 **Bulk purge** (`messageBulkDelete`) — count + executor; catches manual purges & AutoMod, not just the bot's `/purge`.
+- 🟢 **Join/leave** (inside `guildMemberAdd`/`Remove`) — account age (new-account detection), member count; **manual kicks from the Discord UI are detected** via the MemberKick audit (labeled differently from a voluntary leave).
+- 🟢 **Ban/unban** (`guildBanAdd`/`Remove`) — including manual bans from the Discord UI; executor + official reason from the audit log.
+- 🟢 **Role & nickname changes** (`guildMemberUpdate`) — catch scammers switching identity / unexpected access changes; partial old state → per-section skip.
+- 🟢 Every handler guarded: single-guild `GUILD_ID` (v3.9.26 pattern), bot skips (no flooding from the bot's own embeds), best-effort audit fetches (works without View Audit Log), `logServerEvent` **never throws** + field truncation 1024/25/6000 (an event error must never crash the bot); without a configured channel everything is a no-op.
+- 🟡 **`GuildBans` intent enabled** in `index.js` — without it the ban/unban events NEVER fire (a regular intent, no Developer Portal toggle). WITHOUT THIS: the ban-log feature would be silently dead.
+- 🟢 **`/set-channel` & `/remove-channel`** now know the `server-log` type; 6 `MOD_*` audit labels added.
+
+### Tests
+
+- 🟢 +21 unit tests (total **457**, up from 436): `tests/unit/moderation.test.js` (12) — behavioral hierarchy/limit guards, modLogManager roundtrip + corrupt-file quarantine, registry↔guard parity, router mapping + moderator gate, handler contracts (member.timeout called, best-effort DM, filterBulkDeletable, deleteMessageSeconds v14), /warn-list integration (pull order before the early-return, 4096 guard), audit labels; `tests/unit/serverLog.test.js` (9) — behavioral logServerEvent (unconfigured channel → false, embed title/color/fields, 1024 + 25-field truncation, send throwing → false without re-throw), snip, findAuditExecutor (window/target/channel), event registration + the GuildBans intent, per-event-file guards. Full suite 457/457 green, ESLint 0 warnings.
+
 ## [3.9.42] — 2026-09-05
 
 ### Changed — 🔔 user request: "don't DM the voice owner, just tell them in the voice chat"

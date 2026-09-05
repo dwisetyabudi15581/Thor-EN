@@ -110,7 +110,14 @@ const ACTION_LABELS = {
     MIDMAN_RESOLVE_RELEASE: '⚖️ Resolve Dispute — Release',
     MIDMAN_RESOLVE_REFUND: '⚖️ Resolve Dispute — Refund',
     MIDMAN_MEMBER_ADD: '➕ Add Deal Member',
-    MIDMAN_MEMBER_REMOVE: '➖ Remove Deal Member'
+    MIDMAN_MEMBER_REMOVE: '➖ Remove Deal Member',
+    // Moderation (v3.9.43)
+    MOD_TIMEOUT: '🔇 Timeout Member',
+    MOD_UNTIMEOUT: '🔊 Lift Timeout',
+    MOD_PURGE: '🧹 Purge Messages',
+    MOD_KICK: '👢 Kick Member',
+    MOD_BAN: '🔨 Ban Member',
+    MOD_UNBAN: '♻️ Unban Member'
 };
 
 const RETRY_DELAY_MS = 500;

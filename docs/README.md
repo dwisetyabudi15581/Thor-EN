@@ -1,12 +1,12 @@
 # 📚 Documentation — Thor Bot
 
-The official documentation set for **Thor — All-in-One Discord Community Bot** (v3.9.42).
+The official documentation set for **Thor — All-in-One Discord Community Bot** (v3.9.43).
 
 | Document                           | Contents                                                                                                                                      |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | [README.md](../README.md)          | Project overview: features, installation, initial configuration, development, basic troubleshooting                                           |
 | [ADMIN_GUIDE.md](./ADMIN_GUIDE.md) | Complete admin guide: server setup, product & VIP management, daily operations, moderation, backup & restore, troubleshooting, best practices |
-| [CHANGELOG.md](../CHANGELOG.md)    | Full history of every version (v3.9.0 – v3.9.42)                                                                                              |
+| [CHANGELOG.md](../CHANGELOG.md)    | Full history of every version (v3.9.0 – v3.9.43)                                                                                              |
 
 ## Quick Start
 
@@ -17,8 +17,8 @@ The official documentation set for **Thor — All-in-One Discord Community Bot**
 
 ## Project Statistics
 
-- **82 slash commands** — every feature is configurable from Discord, no file editing
-- **436 unit tests** — `node:test`, sandboxed (safe to run on a live server)
+- **88 slash commands** — every feature is configurable from Discord, no file editing
+- **457 unit tests** — `node:test`, sandboxed (safe to run on a live server)
 - **discord.js v14** · Node.js 18+ · single-guild
 - **CI/CD** — GitHub Actions runs lint + tests on every push (Node 18/20/22)
 

@@ -21,8 +21,13 @@ const {
     markActionTaken,
     WARN_THRESHOLDS,
     logAudit,
-    safeEditReply
+    safeEditReply,
+    // v3.9.43: moderation history (timeout/kick/ban/...) shown in /warn-list
+    getModLogs,
+    modLogTypeLabel
 } = require('./_shared');
+const { formatDurationMinutes } = require('../infra/moderationGuards');
+const { truncateUtf8Safe } = require('../infra/text');
 
 // v3.9.25: convert literal \n → real newlines (PC multi-line feature)
 const { normalizeNewlines } = require('../infra/text');
@@ -149,8 +154,11 @@ module.exports = async function (interaction) {
         const user = interaction.options.getUser('user');
         // v3.9.0: getWarns is now scoped per guild
         const warns = getWarns(interaction.guild.id, user.id);
-        if (warns.length === 0) {
-            return safeEditReply(interaction, { content: `✅ <@${user.id}> has no warnings.` });
+        // v3.9.43: moderation history is pulled BEFORE the early-return — a user
+        // with zero warns but past timeouts/kicks still has a record.
+        const modLogs = getModLogs(interaction.guild.id, user.id);
+        if (warns.length === 0 && modLogs.length === 0) {
+            return safeEditReply(interaction, { content: `✅ <@${user.id}> has no warnings or moderation history.` });
         }
         const lines = warns
             .map((w, i) => {
@@ -158,11 +166,35 @@ module.exports = async function (interaction) {
                 return `\`${i + 1}.\` 🆔 \`${w.id}\`\n   📝 ${w.reason}\n   👤 By: ${w.warnedByTag} | ⏰ <t:${Math.floor(w.createdAt / 1000)}:R>${w.actionTaken ? ` | ⚡ ${w.actionTaken}` : ''}`;
             })
             .join('\n\n');
+
+        // v3.9.43: moderation history section (real actions, not violations).
+        // Merged into /warn-list so admins see the full picture of a user in
+        // one view — but NOT counted toward the warn thresholds (no double
+        // punishment; design rationale in modLogManager.js).
+        const MAX_MODLOG_SHOWN = 8;
+        let modSection = '';
+        if (modLogs.length > 0) {
+            const shown = modLogs.slice(-MAX_MODLOG_SHOWN).reverse(); // most recent first
+            const modLines = shown
+                .map(
+                    m =>
+                        `\`${m.id.slice(4, 12)}\` ${modLogTypeLabel(m.type)}${m.durationMs ? ` (${formatDurationMinutes(Math.round(m.durationMs / 60000))})` : ''}\n   📝 ${m.reason}\n   👤 By: ${m.moderatorTag} | ⏰ <t:${Math.floor(m.createdAt / 1000)}:R>`
+                )
+                .join('\n\n');
+            const more = modLogs.length > MAX_MODLOG_SHOWN ? `\n\n_+${modLogs.length - MAX_MODLOG_SHOWN} more actions (see data/modlogs.json)_` : '';
+            modSection = `\n\n## ⚡ Moderation History (${modLogs.length})\n\n${modLines}${more}`;
+        }
+
+        // v3.9.43: guard description ≤ 4096 — a long warn list + the moderation
+        // section can breach the limit (old code: warns only, rarely breached).
+        const description = truncateUtf8Safe(
+            `Total **${warns.length}** warning(s).${modLogs.length > 0 ? ` Moderation history: **${modLogs.length}** action(s).` : ''}\n\n${lines}${modSection}\n\n**Thresholds:**\n• ${WARN_THRESHOLDS.mute1h} warns → 1 hour mute\n• ${WARN_THRESHOLDS.mute1d} warns → 1 day mute\n• ${WARN_THRESHOLDS.kick} warns → kick`,
+            4090
+        );
+
         const embed = new EmbedBuilder()
-            .setTitle(`⚠️ WARN HISTORY — ${user.tag}`)
-            .setDescription(
-                `Total **${warns.length}** warning(s).\n\n${lines}\n\n**Thresholds:**\n• ${WARN_THRESHOLDS.mute1h} warns → 1 hour mute\n• ${WARN_THRESHOLDS.mute1d} warns → 1 day mute\n• ${WARN_THRESHOLDS.kick} warns → kick`
-            )
+            .setTitle(`⚠️ USER HISTORY — ${user.tag}`)
+            .setDescription(description)
             .setColor(
                 warns.length >= WARN_THRESHOLDS.kick
                     ? 0xed4245

@@ -4,7 +4,7 @@
  * v3.9.39 REDESIGN: /help used to be ONE giant embed (~5,400 chars) → admins
  * had to scroll forever to find a command. It is now an interactive
  * navigator:
- *   - 🏠 Home     : category index + 📂 dropdown (19 categories) + buttons
+ *   - 🏠 Home     : category index + 📂 dropdown (20 categories) + buttons
  *   - 📂 Category : command details per category (small embed, easy to scan)
  *   - 🔍 Search   : keyword modal OR /help search:<keyword> → instant results
  *   - 📖 All      : the full list (classic view, still available)
@@ -16,7 +16,7 @@
  *   - src/interactions/help.js  (dropdown/button/modal navigation)
  *
  * Discord contracts enforced (unit-tested in tests/unit/helpNav.test.js):
- *   - StringSelectMenu max 25 options (currently 19 categories — guard test).
+ *   - StringSelectMenu max 25 options (currently 20 categories — guard test).
  *   - Select options: label ≤ 100, description ≤ 100, value ≤ 100.
  *   - Embed description ≤ 4096; total of all embeds in one message ≤ 6000.
  */
@@ -77,11 +77,11 @@ const HELP_CATEGORIES = [
         short: 'Verification panel & multi-panel ticket setup',
         lines: [
             '• `/setup-verify` — install the verification panel',
-            '• `/setup-ticket` — install the ticket panel (legacy)',
+            '• `/setup-ticket` — ticket panel (legacy)',
             '• `/setup-ticket-panel` — full multi-panel setup:',
             '   options: `title` `body` `color:#ff5733` `image` `thumbnail` `footer` `categories` `channel` `use_dropdown`',
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel`',
-            '• `/set-verify-button` — customize the verification button',
+            '• `/set-verify-button` — customize the verify button',
             '💡 Multi-panel = each panel has its own customization. Saved to panels.json.'
         ]
     },
@@ -156,15 +156,15 @@ const HELP_CATEGORIES = [
         name: 'Channel Settings & Ticket Auto-Split',
         short: 'Set channels & the 3-way ticket auto-split',
         lines: [
-            '• `/set-channel welcome #ch` — set a channel (welcome/goodbye/invoice/audit-log/**transcript**)',
+            '• `/set-channel welcome #ch` — set welcome/goodbye/invoice/audit-log/transcript',
             '• `/remove-channel welcome` — remove the channel from config',
             '• `/set-channel transcript #ch` — auto-save ticket transcripts before close',
             '',
-            '**🎫 Auto-Split:** the bot splits tickets into 3 categories automatically:',
-            '• **`🎫 TRANSACTIONS`** — all product tickets: with key (🔑 Set Key) OR non-key (📦 Deliver Order)',
+            '**🎫 Auto-Split:** tickets are split into 3 categories automatically:',
+            '• **`🎫 TRANSACTIONS`** — product tickets: key (🔑 Set Key) or non-key (📦 Deliver)',
             '• **`🎫 SUPPORT`** — tickets in categories without products (help/report/claim_giveaway)',
-            '• **`🤝 ESCROW`** — middleman escrow deal channel (created when an escrow deal is opened)',
-            'Want custom names? Edit `data/config.json`: `ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`'
+            '• **`🤝 ESCROW`** — escrow deal channel (created when a deal is opened)',
+            'Custom names: edit `data/config.json` (`ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`)'
         ]
     },
     {
@@ -210,10 +210,10 @@ const HELP_CATEGORIES = [
         name: 'Midman / Escrow',
         short: '3-party escrow deals + automatic fees',
         lines: [
-            '• `/set-role midman @role` — must be set before any deal can be opened',
-            '• `/set-midman-fee mode:percent value:5` — automatic fee per deal (percent / flat, 0 = free)',
+            '• `/set-role midman @role` — required before any deal can be opened',
+            '• `/set-midman-fee mode:percent value:5` — fee per deal (percent/flat, 0 = free)',
             '• `/midman-deals` — view all active escrow deals on the server',
-            '💡 3-party escrow deal (buyer ⇄ seller + a middleman holds the funds). Anyone can open one via the **🤝 Escrow** button on the panel — 3 steps: item & price → pick the buyer → pick the seller, then both parties click **Agree to Deal**.'
+            '💡 3-party escrow deal (buyer ⇄ seller + a middleman holds the funds). Open one via the **🤝 Escrow** button on the panel — 3 steps: item & price → pick buyer → pick seller, then both click **Agree to Deal**.'
         ]
     },
     {
@@ -268,6 +268,19 @@ const HELP_CATEGORIES = [
             '• `/announce-schedule channel:#ch at:30m recurring?:daily`',
             '• `/announce-list` `/announce-cancel`',
             '• `/warn` `/warn-list` `/warn-remove` `/warn-clear` (3=mute1h, 5=mute1d, 7=kick)'
+        ]
+    },
+    {
+        id: 'moderation',
+        emoji: '🛡️',
+        name: 'Moderation & Server Log',
+        short: 'Timeout, purge, kick, ban + server event log',
+        lines: [
+            '• `/timeout user duration` — mute in minutes (max 40320 = 28 days)',
+            '• `/untimeout` `/purge amount:100 user?` — lift mute · bulk delete',
+            '• `/kick` `/ban` `/unban` — recorded in `/warn-list`',
+            '• `/set-channel server-log #ch` — enable server event log',
+            '• 🗑️✏️ delete/edit · 📥📤 join/leave · 🔨 bans · 🎭 roles — logged'
         ]
     },
     {
@@ -363,7 +376,7 @@ function buildCategoryEmbed(client, categoryId) {
  * splitting could actually make the total overshoot + embed 1/2 got the wrong
  * "Continuation" description). Now one embed with a guaranteed fit:
  *   - Guard 1: each field value is capped at 1024 (surrogate-safe truncation + note).
- *   - Guard 2: max 25 fields (Discord; currently 19 categories).
+ *   - Guard 2: max 25 fields (Discord; currently 20 categories).
  *   - Guard 3: if the total > budget (5.800), trailing categories are dropped
  *     and replaced with a note pointing to the 📂 dropdown / 🔍 Search — the
  *     message total NEVER exceeds 6.000, whatever the catalog size.

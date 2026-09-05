@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.42** · 82 slash commands · 436 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.43** · 88 slash commands · 457 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -31,6 +31,14 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 - Spam detection (N messages within a window → action) + mass-mention blocking.
 - Link blocking with a channel/role whitelist.
 - **Flexible word filter**: add words one at a time (`/add-word`), per-word actions, exempt words, and **whole-word** matching ("asu" does not match "asus").
+
+### ⚔️ Direct Moderation
+
+- **`/timeout` `/untimeout`** — temporary mute (minutes → max 28 days) with a reason DM to the member.
+- **`/purge`** — bulk delete 1–100 messages (per-user filter, >14-day-old messages skipped automatically per the API limit).
+- **`/kick` `/ban` `/unban`** — heavy actions recorded in the user's history (`/warn-list`), without double punishment.
+- **Two-way hierarchy guards** — the moderator's & bot's roles must be higher than the target's; commands can be granted to non-admin moderators (Discord permissions, least privilege).
+- **Server Log** — message delete/edit (content + by whom), bulk purge, join/leave (account age, kicks detected), ban/unban (including manual ones from the Discord UI), role & nickname changes → a separate `server-log` channel.
 
 ### 💬 Auto-Responder & AFK
 
@@ -72,7 +80,7 @@ Thor/
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 436 unit tests (node:test)
+├── tests/unit/                   # 457 unit tests (node:test)
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js

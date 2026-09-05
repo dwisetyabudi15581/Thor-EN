@@ -23,6 +23,10 @@ stats.json
 tempVoice.json
 tickets.json
 
+# Corrupt-file quarantine (safeWrite pattern) — can appear at any time at
+# runtime, including corrupt-file test residue (v3.9.43: modlogs.json.corrupt-*).
+data/*.corrupt-*
+
 # === Backup folder ===
 backups/
 

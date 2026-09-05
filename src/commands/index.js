@@ -38,7 +38,7 @@
  * handlers/commandHandler.js is deprecated — no longer used by this router.
  */
 
-const { MessageFlags } = require('discord.js');
+const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { isAdmin: checkIsAdmin } = require('../infra/permissions');
 
 // === Domain handlers ===
@@ -69,6 +69,8 @@ const afkHandler = require('./afk');
 const levelingHandler = require('./leveling');
 // v3.9.32: midman/escrow commands (/set-midman-fee, /midman-deals)
 const midmanHandler = require('./midman');
+// v3.9.43: the moderation pack (/timeout /untimeout /purge /kick /ban /unban)
+const moderationHandler = require('./moderation');
 
 const DOMAIN_HANDLERS = {
     help: helpHandler,
@@ -96,7 +98,9 @@ const DOMAIN_HANDLERS = {
     // v3.9.14
     'panels-mgmt': panelsMgmtHandler,
     // v3.9.32
-    midman: midmanHandler
+    midman: midmanHandler,
+    // v3.9.43
+    moderation: moderationHandler
 };
 
 // Mapping commandName → domain key (in DOMAIN_HANDLERS).
@@ -167,6 +171,14 @@ const COMMAND_TO_DOMAIN = {
     'warn-list': 'warn',
     'warn-remove': 'warn',
     'warn-clear': 'warn',
+
+    // v3.9.43: moderation
+    timeout: 'moderation',
+    untimeout: 'moderation',
+    purge: 'moderation',
+    kick: 'moderation',
+    ban: 'moderation',
+    unban: 'moderation',
 
     // stats
     stats: 'stats',
@@ -240,6 +252,19 @@ const COMMAND_TO_DOMAIN = {
 // v3.9.13: added afk, afk-clear, rank, leaderboard-level (public community features)
 const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'afk', 'afk-clear', 'rank', 'leaderboard-level'];
 
+// v3.9.43: moderation commands — usable by non-admin moderators as long as
+// they hold the matching Discord permission (role hierarchy is still checked
+// in the handler). This means moderation staff don't need the bot's admin
+// role just to mute/kick — least privilege.
+const MODERATION_COMMANDS = {
+    timeout: PermissionFlagsBits.ModerateMembers,
+    untimeout: PermissionFlagsBits.ModerateMembers,
+    purge: PermissionFlagsBits.ManageMessages,
+    kick: PermissionFlagsBits.KickMembers,
+    ban: PermissionFlagsBits.BanMembers,
+    unban: PermissionFlagsBits.BanMembers
+};
+
 /**
  * Main router — called from index.js on InteractionCreate (chatInputCommand).
  */
@@ -247,7 +272,14 @@ async function routeCommand(interaction) {
     if (!interaction.isChatInputCommand()) return;
 
     // === PERMISSION CHECK ===
-    if (!checkIsAdmin(interaction.member) && !PUBLIC_COMMANDS.includes(interaction.commandName)) {
+    const modPerm = MODERATION_COMMANDS[interaction.commandName];
+    const allowedModerator =
+        modPerm && interaction.member?.permissions?.has(modPerm);
+    if (
+        !checkIsAdmin(interaction.member) &&
+        !PUBLIC_COMMANDS.includes(interaction.commandName) &&
+        !allowedModerator
+    ) {
         return interaction.reply({
             content:
                 '🚫 **Access Denied.**\n\nSlash commands can only be used by **Admin/Staff**.\n\nIf you believe this is a mistake, contact a server admin.',

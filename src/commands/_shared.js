@@ -96,6 +96,9 @@ const {
 const { createBackup, listBackups, restoreBackup, formatSize: formatBackupSize } = require('../data/backupManager');
 // v3.9.9 refactor: sendInvoice is used by /set-key to send an invoice to the invoice channel.
 const { sendInvoice } = require('../data/ticketManager');
+// v3.9.43: moderation action history (timeout/kick/ban/...) — used by the
+// moderation domain + displayed in /warn-list (warn.js).
+const { addModLog, getModLogs, getModLogCount, modLogTypeLabel } = require('../data/modLogManager');
 
 // === UI builders ===
 const { Embeds } = require('../ui/embedBuilder');
@@ -197,6 +200,10 @@ module.exports = {
     restoreBackup,
     formatBackupSize,
     sendInvoice,
+    addModLog,
+    getModLogs,
+    getModLogCount,
+    modLogTypeLabel,
     tempVoiceManager,
     // UI
     Embeds,
