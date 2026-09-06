@@ -2,10 +2,13 @@
  * Domain: help
  * Slash commands: /help [search]
  *
+ * v3.9.44: catalog reorganized — 20 categories ordered by usage priority,
+ *   /warn* moved to Moderation, + 🚀 Quick Start category (see
+ *   src/ui/helpCatalog.js). This handler is unchanged.
  * v3.9.39 REDESIGN (user request: "/help was one giant embed, finding a
  * command meant scrolling"):
  *   /help now renders an interactive navigator — no longer one giant embed:
- *     - 🏠 Home     : 19-category index + 📂 dropdown + 🔍/📖 buttons
+ *     - 🏠 Home     : 20-category index + 📂 dropdown + 🔍/📖 buttons
  *     - 📂 Category : command details per category (small embed)
  *     - 🔍 Search   : keyword modal OR `/help search:<keyword>` directly
  *     - 📖 All      : the full list (classic view, still available)

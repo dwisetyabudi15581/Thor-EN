@@ -2,7 +2,7 @@
  * Unit tests for the interactive /help navigation (v3.9.39).
  *
  * Verifies:
- *   - Catalog integrity: 19 categories, unique ids, all select-menu options
+ *   - Catalog integrity: 20 categories, unique ids, all select-menu options
  *     within Discord limits (label/desc/value ≤ 100, options ≤ 25).
  *   - Every view embed within limits (description ≤ 4096, total ≤ 6000 —
  *     including the 📖 All Commands view which may be 2 embeds in 1 message).
@@ -449,4 +449,42 @@ test('helpNav: old content intact in the catalog (regression v3.9.37/v3.9.38)', 
     assert.match(allText, /use_dropdown/);
     assert.match(allText, /update-category/);
     assert.match(allText, /update-product/);
+});
+
+// ====================================================
+// === 7. v3.9.44 redesign — moderation in one place ===
+// ====================================================
+
+test('helpNav: v3.9.44 — /warn* lives in Moderation, NOT in announcements (regression)', () => {
+    // User complaint: "/warn lives under Scheduled Announce" — this contract
+    // keeps moderation commands from ever landing in the wrong category.
+    const moderation = HELP_CATEGORIES.find(c => c.id === 'moderation');
+    assert.ok(moderation, 'moderation category is mandatory');
+    const modText = moderation.lines.join('\n');
+    for (const cmd of ['/warn', '/warn-list', '/timeout', '/untimeout', '/kick', '/ban', '/unban', '/purge']) {
+        assert.ok(modText.includes(cmd), `moderation must contain ${cmd}`);
+    }
+    // The announcement category is pure announce — must not mention warn.
+    const announce = HELP_CATEGORIES.find(c => c.id === 'announce');
+    assert.ok(announce, 'pure announce category is mandatory');
+    assert.doesNotMatch(announce.lines.join('\n'), /warn/i, 'announce category must not contain warn commands');
+    // Searching "warn" must land in moderation.
+    const r = searchHelp('warn');
+    assert.ok(r.groups.some(g => g.cat.id === 'moderation'), 'searchHelp(warn) → moderation');
+});
+
+test('helpNav: v3.9.44 — Quick Start first + new categories present in the dropdown', () => {
+    assert.strictEqual(HELP_CATEGORIES[0].id, 'quickstart', 'first entry = Quick Start');
+    for (const id of ['quickstart', 'moderation', 'logging', 'backup', 'stats', 'info']) {
+        assert.ok(HELP_CATEGORIES.some(c => c.id === id), `new category mandatory: ${id}`);
+    }
+    // set-channel (server-log/audit-log/transcript) now in one place: logging.
+    const logging = HELP_CATEGORIES.find(c => c.id === 'logging');
+    const logText = logging.lines.join('\n');
+    for (const type of ['server-log', 'audit-log', 'transcript']) {
+        assert.ok(logText.includes(type), `logging must contain ${type}`);
+    }
+    // reset-config moved to backup & maintenance.
+    const backup = HELP_CATEGORIES.find(c => c.id === 'backup');
+    assert.match(backup.lines.join('\n'), /reset-config/);
 });

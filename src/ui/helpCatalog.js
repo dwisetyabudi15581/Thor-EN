@@ -1,22 +1,40 @@
 /**
- * Help Catalog — single source of truth for /help content (v3.9.39).
+ * Help Catalog — single source of truth for /help content (v3.9.44).
  *
- * v3.9.39 REDESIGN: /help used to be ONE giant embed (~5,400 chars) → admins
- * had to scroll forever to find a command. It is now an interactive
- * navigator:
- *   - 🏠 Home     : category index + 📂 dropdown (20 categories) + buttons
- *   - 📂 Category : command details per category (small embed, easy to scan)
- *   - 🔍 Search   : keyword modal OR /help search:<keyword> → instant results
- *   - 📖 All      : the full list (classic view, still available)
+ * v3.9.44 REDESIGN (user request: "/warn lives under Scheduled Announce —
+ * please read & sync every feature, reorganize so it is easy to
+ * understand"):
+ *   - /warn* MOVED to the Moderation category (it used to sit under
+ *     "Scheduled Announce & Warn" — illogical). Moderation is now one
+ *     place: warn → timeout → kick → ban + purge.
+ *   - 20 categories ordered by how often they are used: 🚀 Quick Start
+ *     (NEW — setup order for a fresh server) → Moderation → commerce
+ *     (products, keys, panels, categories, escrow) → oversight (logging,
+ *     auto-mod) → engagement (giveaways, leveling, roles) → utilities
+ *     (messages, backup, stats).
+ *   - Previously messy categories were reorganized: "Scheduled Announce &
+ *     Warn" → pure Announcements; "Announce, Embed & Backup" → split into
+ *     "Messages & Embed Builder" + "Backup & Maintenance"; "Stats & More"
+ *     → pure Statistics (audit-log moved to Logging & Channels,
+ *     reset-config moved to Backup); set-channel (previously scattered
+ *     across 3 categories) now lives in one place: Logging & Channels.
+ *   - Every command gets a one-phrase explanation — a new admin never has
+ *     to guess a command's purpose from its name.
+ *
+ * Navigator architecture (unchanged from v3.9.39):
+ *   - 🏠 Home   : category summary + common tasks + 📂 dropdown + buttons
+ *   - 📂 Category: command details per category (small, readable embed)
+ *   - 🔍 Search : keyword modal OR /help search:<keyword> → instant results
+ *   - 📖 All    : full listing (with budget guards — see buildAllEmbeds)
  * Every view is rendered into ONE ephemeral message (interaction.update) —
- * no new-message spam while switching categories.
+ * no new-message spam when switching categories.
  *
- * This module is shared by:
+ * Shared by:
  *   - src/commands/help.js      (slash /help + search option)
  *   - src/interactions/help.js  (dropdown/button/modal navigation)
  *
- * Discord contracts enforced (unit-tested in tests/unit/helpNav.test.js):
- *   - StringSelectMenu max 25 options (currently 20 categories — guard test).
+ * Discord contracts kept (unit-tested in tests/unit/helpNav.test.js):
+ *   - StringSelectMenu max 25 options (currently 20 categories — guarded by a test).
  *   - Select options: label ≤ 100, description ≤ 100, value ≤ 100.
  *   - Embed description ≤ 4096; total of all embeds in one message ≤ 6000.
  */
@@ -32,11 +50,11 @@ const {
 const { EMBED_LIMITS, DISCORD_LIMITS } = require('../infra/constants');
 const { truncateUtf8Safe } = require('../infra/text');
 
-// v3.9.37: version is taken dynamically from package.json (single source of
-// truth) so /help never goes stale again.
+// v3.9.37: version is read dynamically from package.json (single source of
+// truth) so /help can never go stale.
 const { version: BOT_VERSION } = require('../../package.json');
 
-// === Custom IDs (stable — old /help messages stay clickable after restart) ===
+// === Custom IDs (stable — old help messages stay clickable after a restart) ===
 const HELP_IDS = {
     SELECT: 'help_cat',
     SEARCH_BUTTON: 'help_search',
@@ -53,155 +71,86 @@ const FOOTER_TEXT = `Community Bot v${BOT_VERSION} — All-in-One`;
 const SEARCH_MAX_LINES = 20;
 
 /**
- * Help category catalog. `lines` = the category detail content (command lines).
+ * Help category catalog (v3.9.44 — order = usage priority).
+ * `lines` = the category detail content (command lines).
  * `short` = short description for the dropdown option (≤100 chars, guard-tested).
  */
 const HELP_CATEGORIES = [
     {
-        id: 'info',
-        emoji: '📋',
-        name: 'Information',
-        short: 'Help, product/category/message lists & configuration',
+        id: 'quickstart',
+        emoji: '🚀',
+        name: 'Quick Start',
+        short: 'New to the bot? Server setup order from scratch',
         lines: [
-            '• `/help` — open this help center (or `/help search:keyword`)',
-            '• `/list-products` — view all products',
-            '• `/list-categories` — view all ticket categories',
-            '• `/list-messages` — view all embed message texts',
-            '• `/config-show` — view all bot configuration'
+            '**New to this bot? Follow this order:**',
+            '1️⃣ `/set-role verified @Verified` — verified-member role',
+            '2️⃣ `/add-category` + `/add-product` — prepare the catalog',
+            '3️⃣ `/setup-ticket-panel` — mount the ticket panel',
+            '4️⃣ `/setup-verify` — verification for new members',
+            '5️⃣ `/set-channel server-log #log` — enable server log',
+            '💡 Then explore the other categories via the 📂 dropdown.'
         ]
     },
     {
-        id: 'panels',
-        emoji: '🏗️',
-        name: 'Ticket Panels (Multi-Panel)',
-        short: 'Verification panel & multi-panel ticket setup',
-        lines: [
-            '• `/setup-verify` — install the verification panel',
-            '• `/setup-ticket` — ticket panel (legacy)',
-            '• `/setup-ticket-panel` — full multi-panel setup:',
-            '   options: `title` `body` `color:#ff5733` `image` `thumbnail` `footer` `categories` `channel` `use_dropdown`',
-            '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel`',
-            '• `/set-verify-button` — customize the verify button',
-            '💡 Multi-panel = each panel has its own customization. Saved to panels.json.'
-        ]
-    },
-    {
-        id: 'categories',
-        emoji: '🎫',
-        name: 'Ticket Categories (CRUD)',
-        short: 'Add / edit / delete ticket categories',
-        lines: [
-            '• `/add-category id:jasa label:"Jasa" emoji:🎮 style:Success requires_key:false`',
-            '• `/update-category id:jasa label:"Jasa Premium" emoji:"🛠️"` — edit without deleting',
-            '• `/list-categories` — view all categories',
-            '• `/remove-category id:jasa` — delete a category (defaults are protected)',
-            '💡 v3.9.19: flexible behavior — category with products → dropdown, category without products → opens a ticket directly.'
-        ]
-    },
-    {
-        id: 'responder',
-        emoji: '💬',
-        name: 'Auto-Responder',
-        short: 'FAQ auto-reply when members send a trigger',
-        lines: [
-            '• `/add-responder` `/list-responder` `/remove-responder`',
-            '💡 Member sends a trigger → bot auto-replies. Great for FAQs.'
-        ]
-    },
-    {
-        id: 'automod',
+        id: 'moderation',
         emoji: '🛡️',
-        name: 'Anti-Spam & Auto-Mod',
-        short: 'Word blocklist, link whitelist, automatic actions',
+        name: 'Moderation',
+        short: 'Warn, timeout, kick, ban, purge — one place',
         lines: [
-            '• `/set-automod` `/automod-show` `/automod-toggle`',
-            '• `/add-word words:word1,word2 action:mute_10m` — add words (append)',
-            '• `/remove-word word:word` `/list-words` — delete/view words',
-            '• `/add-word words:Exempt_(allowed_word)` — whitelist a word against false positives',
-            '• `/add-link-whitelist` `/remove-link-whitelist`',
-            '💡 v3.9.23: per-word actions + whole-word matching ("asu" won\'t match "asus")'
-        ]
-    },
-    {
-        id: 'afk',
-        emoji: '💤',
-        name: 'AFK System',
-        short: 'Auto-reply when an AFK user is mentioned',
-        lines: ['• `/afk` `/afk-clear` `/afk-list`', '💡 The bot auto-replies when an AFK user is mentioned.']
-    },
-    {
-        id: 'leveling',
-        emoji: '📊',
-        name: 'Leveling System',
-        short: 'XP per message, auto-role on level up',
-        lines: [
-            '• `/setup-leveling` `/add-level-role` `/list-level-roles` `/remove-level-role`',
-            '• `/rank` `/leaderboard-level` (public)',
-            '💡 XP per message, level up → role auto-assigned.'
-        ]
-    },
-    {
-        id: 'roles',
-        emoji: '🎭',
-        name: 'Role Settings',
-        short: 'Set verified / admin / midman roles in config',
-        lines: [
-            '• `/set-role verified @role` — set a role (verified/unverified/admin/**midman**)',
-            '• `/remove-role verified` — remove the role from config'
-        ]
-    },
-    {
-        id: 'channels',
-        emoji: '📢',
-        name: 'Channel Settings & Ticket Auto-Split',
-        short: 'Set channels & the 3-way ticket auto-split',
-        lines: [
-            '• `/set-channel welcome #ch` — set welcome/goodbye/invoice/audit-log/transcript',
-            '• `/remove-channel welcome` — remove the channel from config',
-            '• `/set-channel transcript #ch` — auto-save ticket transcripts before close',
-            '',
-            '**🎫 Auto-Split:** tickets are split into 3 categories automatically:',
-            '• **`🎫 TRANSACTIONS`** — product tickets: key (🔑 Set Key) or non-key (📦 Deliver)',
-            '• **`🎫 SUPPORT`** — tickets in categories without products (help/report/claim_giveaway)',
-            '• **`🤝 ESCROW`** — escrow deal channel (created when a deal is opened)',
-            'Custom names: edit `data/config.json` (`ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`)'
-        ]
-    },
-    {
-        id: 'messages',
-        emoji: '✏️',
-        name: 'Embed Message Settings',
-        short: 'Edit welcome/goodbye/ticket texts + template vars',
-        lines: [
-            '• `/set-message ticketBody text...` (quick, 1-line)',
-            '• `/edit-message type:"Ticket Body"` → opens a multi-line modal editor',
-            '• `/reset-message ticketBody` / `/reset-message ALL`',
-            '',
-            '**Template vars:** `{server}` `{price_header}` `{price_list}` `{price_list:cat}` `{categories_list}`'
+            '**Violation history:**',
+            '• `/warn user reason` — warning (3=mute 1h, 5=mute 1d, 7=kick)',
+            '• `/warn-list user` — warn + sanction history · `/warn-remove` `/warn-clear`',
+            '**Direct actions:**',
+            '• `/timeout user minutes reason` — mute (max 40320 = 28 days) · `/untimeout`',
+            '• `/kick` remove · `/ban` block · `/unban` unblock',
+            '• `/purge amount:100 user?` — bulk delete messages (1-100)',
+            '💡 Auto-logged to `/warn-list` + server log. Higher roles are immune.'
         ]
     },
     {
         id: 'products',
         emoji: '📦',
         name: 'Products & Auto-Role',
-        short: 'Product CRUD, auto-assigned roles + expiry',
+        short: 'Product CRUD + role granted on purchase',
         lines: [
-            '• `/add-product` `/remove-product` `/list-products`',
-            '• `/update-product value:vip30 label:"VIP 30 Hari" price:"Rp 30.000"` — edit without deleting',
-            '• `/set-product-role` `/remove-product-role` `/list-product-roles`',
-            '💡 VIP role + auto-expire (days). You can mix key & non-key products (services).',
-            '💡 Non-key products (accounts, services)? `/add-product ... requires_key:false` → the ticket gets a **📦 Deliver Order** button (details sent via DM to the buyer + auto-role + invoice + stats).'
+            '• `/add-product value:vip30 label:"VIP 30 Days" price:"Rp 30.000"` — key product',
+            '• `/add-product ... requires_key:false` — service/account (details DM-ed to buyer)',
+            '• `/update-product value:vip30 label:"..."` — edit · `/remove-product` · `/list-products`',
+            '• `/set-product-role` — role on purchase (+ expiry) · `/remove-product-role` `/list-product-roles`'
         ]
     },
     {
         id: 'keys',
         emoji: '🔑',
         name: 'Key Manager',
-        short: 'Set product keys, list & clear user schedules',
+        short: 'Product key stock & member expiry schedule',
         lines: [
-            '• `/set-key user:@user value:vip30 key:ABCDE-12345`',
-            '• `/list-keys user:@user`',
-            '• `/clear-schedule user:@user clear_keys:true`'
+            '• `/set-key user:@user value:vip30 key:ABCDE-12345` — assign a product key',
+            '• `/list-keys user:@user` — member keys · `/clear-schedule user clear_keys:true` — clean up'
+        ]
+    },
+    {
+        id: 'panels',
+        emoji: '🎫',
+        name: 'Ticket Panels & Verification',
+        short: 'Mount ticket panels & member verification',
+        lines: [
+            '• `/setup-ticket-panel` — multi-category panel (options: `title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
+            '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
+            '• `/setup-verify` — new-member verification · `/set-verify-button` — customize the button',
+            '• `/setup-ticket` — legacy single-category panel'
+        ]
+    },
+    {
+        id: 'categories',
+        emoji: '🗂️',
+        name: 'Ticket Categories',
+        short: 'Category CRUD + 3-category auto-split',
+        lines: [
+            '• `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`',
+            '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories`',
+            '💡 With products → dropdown; without → creates a ticket directly.',
+            '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE (help/report) · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
         ]
     },
     {
@@ -210,88 +159,154 @@ const HELP_CATEGORIES = [
         name: 'Midman / Escrow',
         short: '3-party escrow deals + automatic fees',
         lines: [
-            '• `/set-role midman @role` — required before any deal can be opened',
-            '• `/set-midman-fee mode:percent value:5` — fee per deal (percent/flat, 0 = free)',
-            '• `/midman-deals` — view all active escrow deals on the server',
-            '💡 3-party escrow deal (buyer ⇄ seller + a middleman holds the funds). Open one via the **🤝 Escrow** button on the panel — 3 steps: item & price → pick buyer → pick seller, then both click **Agree to Deal**.'
+            '• `/set-role midman @role` — MUST be set before deals can open',
+            '• `/set-midman-fee mode:Percent value:5` — fee per deal (percent/flat, 0=free)',
+            '• `/midman-deals` — all active deals',
+            '💡 3-party escrow: buyer ⇄ seller, the midman holds the funds. Open via the **🤝 Escrow** button on the panel — 3 steps until both sides **Agree Deal**.'
         ]
     },
     {
-        id: 'selfrole',
+        id: 'logging',
+        emoji: '📜',
+        name: 'Logging & Channels',
+        short: 'Enable server-log, audit, transcript, welcome',
+        lines: [
+            '• `/set-channel server-log #ch` — message delete/edit, join/leave, bans, roles',
+            '• `/set-channel audit-log #ch` — admin actions · `transcript #ch` — ticket archive',
+            '• `/set-channel welcome/goodbye/invoice #ch` — greetings & invoices',
+            '• `/remove-channel type` — turn one off',
+            'ℹ️ Without `server-log`, server events are not recorded.'
+        ]
+    },
+    {
+        id: 'automod',
+        emoji: '🤖',
+        name: 'Anti-Spam & Auto-Mod',
+        short: 'Word blocklist, link whitelist, auto actions',
+        lines: [
+            '• `/set-automod` `/automod-show` `/automod-toggle` — enable & inspect',
+            '• `/add-word words:word1,word2 action:Mute_10_minutes` — words + sanction',
+            '• `/remove-word` `/list-words` · `/add-word type:Exempt_(word)` — whitelist',
+            '• `/add-link-whitelist` `/remove-link-whitelist` — allowed links',
+            '💡 Whole-word matching: "cat" does not match "category"'
+        ]
+    },
+    {
+        id: 'responder',
+        emoji: '💬',
+        name: 'Auto-Responder',
+        short: 'Auto-reply FAQ when members send a trigger',
+        lines: [
+            '• `/add-responder trigger:hello reply:...` — set up an auto-reply (great for FAQ)',
+            '• `/list-responder` · `/remove-responder` — view & delete'
+        ]
+    },
+    {
+        id: 'roles',
         emoji: '🎭',
-        name: 'Self-Role Panel',
-        short: 'Member-selectable role panels',
+        name: 'Roles & Self-Roles',
+        short: 'System roles + member-choice role panels',
         lines: [
-            '• `/setup-selfrole title:... type:button exclusive:false`',
-            '• `/selfrole-add` `/selfrole-remove` `/selfrole-list` `/selfrole-delete`',
-            '💡 `requires_role:@Verified` — conditional role'
+            '• `/set-role verified @role` — system roles (verified/unverified/admin/**midman**) · `/remove-role`',
+            '• `/setup-selfrole title:... type:button` — member-choice role panel',
+            '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
+            '💡 `requires_role:@Verified` — conditionally locked role'
         ]
     },
     {
-        id: 'tempvoice',
-        emoji: '🎤',
-        name: 'Temp Voice',
-        short: 'Automatic private voice on trigger-channel join',
+        id: 'leveling',
+        emoji: '📊',
+        name: 'Leveling',
+        short: 'XP per message + roles granted on level-up',
         lines: [
-            '• `/setup-tempvoice` / `/tempvoice-remove`',
-            '💡 Member joins the trigger channel → a private voice channel is created automatically'
+            '• `/setup-leveling` — enable XP per message',
+            '• `/add-level-role level:5 role:@VIP` — role on level-up · `/list-level-roles` `/remove-level-role`',
+            '• `/rank` — your XP · `/leaderboard-level` — top members'
         ]
     },
     {
-        id: 'announce',
-        emoji: '📢',
-        name: 'Announce, Embed & Backup',
-        short: 'Announcements, embed builder, data backups',
+        id: 'afk',
+        emoji: '💤',
+        name: 'AFK System',
+        short: 'Auto-reply when an AFK user is mentioned',
         lines: [
-            '• `/announce channel:#ch title:... description:...`',
-            '• `/send-message` `/embed-builder` `/embed-list` `/embed-cancel`',
-            '• `/backup-now` `/backup-list` `/restore-backup` (auto 24h, max 7)'
+            '• `/afk reason:...` — go AFK (bot auto-replies when mentioned)',
+            '• `/afk-clear` — come back · `/afk-list` — who is AFK'
         ]
     },
     {
         id: 'giveaway',
         emoji: '🎉',
-        name: 'Giveaway & Poll',
+        name: 'Giveaways & Polls',
         short: 'Create / manage giveaways & polls',
         lines: [
-            '• `/giveaway create channel:#ch prize:... winners:1 duration:60`',
-            '• `/giveaway list` `/giveaway end` `/giveaway reroll`',
-            '• `/poll create` `/poll list` `/poll close`'
+            '• `/giveaway create channel:#ch prize:... winners:1 duration:60` — start',
+            '• `/giveaway list` `/giveaway end` `/giveaway reroll` — manage',
+            '• `/poll create` `/poll list` `/poll close` — quick polls'
         ]
     },
     {
-        id: 'schedule',
-        emoji: '⏰',
-        name: 'Scheduled Announce & Warn',
-        short: 'Scheduled announcements & the warn system',
+        id: 'announce',
+        emoji: '📢',
+        name: 'Scheduled Announcements',
+        short: 'Send announcements now or scheduled',
         lines: [
-            '• `/announce-schedule channel:#ch at:30m recurring?:daily`',
-            '• `/announce-list` `/announce-cancel`',
-            '• `/warn` `/warn-list` `/warn-remove` `/warn-clear` (3=mute1h, 5=mute1d, 7=kick)'
+            '• `/announce channel:#ch title:... description:...` — send an announcement',
+            '• `/announce-schedule at:30m recurring:daily` — scheduled (once/recurring)',
+            '• `/announce-list` `/announce-cancel` — view & cancel schedules'
         ]
     },
     {
-        id: 'moderation',
-        emoji: '🛡️',
-        name: 'Moderation & Server Log',
-        short: 'Timeout, purge, kick, ban + server event log',
+        id: 'messages',
+        emoji: '✏️',
+        name: 'Messages & Embed Builder',
+        short: 'Edit system texts + send custom embeds',
         lines: [
-            '• `/timeout user duration` — mute in minutes (max 40320 = 28 days)',
-            '• `/untimeout` `/purge amount:100 user?` — lift mute · bulk delete',
-            '• `/kick` `/ban` `/unban` — recorded in `/warn-list`',
-            '• `/set-channel server-log #ch` — enable server event log',
-            '• 🗑️✏️ delete/edit · 📥📤 join/leave · 🔨 bans · 🎭 roles — logged'
+            '**System texts:** `/set-message ticketBody text...` · `/edit-message` (modal) · `/reset-message` · `/list-messages`',
+            '**Custom embeds:** `/send-message` (form) · `/embed-builder` · `/embed-list` `/embed-cancel`',
+            '💡 Vars: `{server}` `{price_header}` `{price_list}` `{price_list:cat}` `{categories_list}`'
+        ]
+    },
+    {
+        id: 'tempvoice',
+        emoji: '🎤',
+        name: 'Private Voice',
+        short: 'Auto voice channel when joining the trigger',
+        lines: [
+            '• `/setup-tempvoice` — mount the trigger channel · `/tempvoice-remove` — disable',
+            '💡 Join trigger → private voice auto-created + control panel (rename, lock, transfer)'
+        ]
+    },
+    {
+        id: 'backup',
+        emoji: '💾',
+        name: 'Backup & Maintenance',
+        short: 'Back up data, restore, reset configuration',
+        lines: [
+            '• `/backup-now` — back up now (auto every 24h, max 7 slots)',
+            '• `/backup-list` `/restore-backup` — view & restore',
+            '• `/reset-config` — ⚠️ DELETES ALL configuration (2-step confirm)'
         ]
     },
     {
         id: 'stats',
-        emoji: '📊',
-        name: 'Stats & More',
-        short: 'Server/user stats, audit log, config reset',
+        emoji: '📈',
+        name: 'Statistics',
+        short: 'Server stats, leaderboards, transactions',
         lines: [
-            '• `/stats` `/leaderboard metric:messages|vipPurchases|totalSpent` `/my-stats`',
-            '• `/set-channel audit-log #ch` — log admin actions',
-            '• `/reset-config` — ⚠️ DELETES ALL settings (2-step confirmation)'
+            '• `/stats` — server statistics (members, tickets, transactions)',
+            '• `/leaderboard metric:messages|vipPurchases|totalSpent` — rankings',
+            '• `/my-stats` — your personal transaction stats'
+        ]
+    },
+    {
+        id: 'info',
+        emoji: '📋',
+        name: 'Bot Information',
+        short: 'Help center & view all configuration',
+        lines: [
+            '• `/help` — the help center (or `/help search:keyword`)',
+            '• `/config-show` — view all bot configuration at once'
         ]
     }
 ];
@@ -307,7 +322,7 @@ function baseEmbed() {
 }
 
 /**
- * Count the embed's total characters the way Discord counts the 6000 limit
+ * Count total embed characters the way Discord counts the 6000 limit
  * (title + description + field name/value + footer + author).
  */
 function embedTotalChars(embed) {
@@ -326,7 +341,7 @@ function embedTotalChars(embed) {
 // === Embed builders ===
 
 /**
- * 🏠 Home — compact category index (no command listing).
+ * 🏠 Home — category index + common tasks (compact, no command listing).
  */
 function buildHomeEmbed(client, user) {
     const mention = user ? `${user}` : 'Admin';
@@ -339,9 +354,13 @@ function buildHomeEmbed(client, user) {
     return baseEmbed()
         .setTitle('🤖 COMMUNITY BOT — HELP')
         .setDescription(
-            `Hello ${mention}! You are verified as **Admin/Staff** (v${BOT_VERSION}).\n` +
-                `**${HELP_CATEGORIES.length} command categories** available.\n\n` +
-                `**Find a command fast:**\n` +
+            `Hello ${mention}! You are **Admin/Staff** — this is the bot control center (v${BOT_VERSION}), **${HELP_CATEGORIES.length} command categories**.\n\n` +
+                `**What do you need right now?**\n` +
+                `> 🛡️ Trouble with a member? → **Moderation** (warn/timeout/kick/ban)\n` +
+                `> 🛒 Setting up sales? → **Quick Start** · **Products** · **Midman/Escrow**\n` +
+                `> 👀 Want oversight? → **Logging & Channels**\n` +
+                `> 🎉 Quiet server? → **Giveaways & Polls** · **Leveling**\n\n` +
+                `**How to use:**\n` +
                 `> 1️⃣ Pick a category in the **📂** dropdown below\n` +
                 `> 2️⃣ Click **🔍 Search Commands** — type a keyword (e.g. \`key\`, \`escrow\`)\n` +
                 `> 3️⃣ Or run \`/help search:panel\` directly\n` +
@@ -367,19 +386,20 @@ function buildCategoryEmbed(client, categoryId) {
 }
 
 /**
- * 📖 All — the full command list (classic view).
- * Returns an array with 1 EmbedBuilder (array contract kept).
+ * 📖 All — full listing of ALL commands (classic view).
+ * Returns an array of 1 EmbedBuilder (array contract preserved).
  *
- * v3.9.40 REWRITE: within ONE message, the TOTAL of all embeds = 6000 chars —
- * the v3.9.39 "auto-split into 2 embeds" added NO budget at all (that path
- * was dead code — current content is 5.5K < 5.800 — and if the catalog grew,
- * splitting could actually make the total overshoot + embed 1/2 got the wrong
- * "Continuation" description). Now one embed with a guaranteed fit:
- *   - Guard 1: each field value is capped at 1024 (surrogate-safe truncation + note).
+ * v3.9.40 REWRITE: in ONE message, the TOTAL of all embeds = 6000 chars —
+ * the v3.9.39 "auto-split into 2 embeds" added no budget at all (that path
+ * was dead code — current content 5.4K < 5.800 — and if the catalog grew,
+ * splitting could actually overshoot the total + give embed 1/2 a bogus
+ * "continued" description). Now a single embed that ALWAYS fits:
+ *   - Guard 1: every field value capped at 1024 (surrogate-safe truncate + note).
  *   - Guard 2: max 25 fields (Discord; currently 20 categories).
- *   - Guard 3: if the total > budget (5.800), trailing categories are dropped
- *     and replaced with a note pointing to the 📂 dropdown / 🔍 Search — the
- *     message total NEVER exceeds 6.000, whatever the catalog size.
+ *   - Guard 3: if the total > budget (5.800), categories at the end are
+ *     dropped one by one + a replacement note pointing to the 📂 dropdown /
+ *     🔍 Search — the message total NEVER exceeds 6.000, whatever the size
+ *     of the catalog.
  */
 function buildAllEmbeds() {
     // Guard 1: field value ≤ 1024 — leave room for the truncation note.
@@ -388,7 +408,7 @@ function buildAllEmbeds() {
         if (text.length <= EMBED_LIMITS.FIELD_VALUE) return text;
         return truncateUtf8Safe(text, EMBED_LIMITS.FIELD_VALUE - 45) + '\n… +more lines not shown.';
     };
-    // Guard 2: slice to 25 — categories 26+ never reach addFields.
+    // Guard 2: slice 25 — the 26th+ category never reaches addFields.
     // (const: only mutated via pop, never reassigned.)
     const fields = HELP_CATEGORIES.slice(0, EMBED_LIMITS.FIELDS_COUNT).map(c => ({
         name: `${c.emoji} ${c.name}`,
@@ -401,15 +421,15 @@ function buildAllEmbeds() {
     const build = (fs, extra) =>
         baseEmbed()
             .setTitle('🤖 ALL COMMANDS')
-            .setDescription(`_Full command list (v${BOT_VERSION})._${extra || ''}`)
+            .setDescription(`_Full list of all commands (v${BOT_VERSION})._${extra || ''}`)
             .addFields(fs);
 
-    // Budget for ALL embeds in ONE message = 6.000 — 200 slack for note
-    // overhead + embedTotalChars accounting (title/footer are counted).
+    // Total budget of ALL embeds in one message = 6.000 — 200 slack for the
+    // note overhead + the embedTotalChars accounting (title/footer included).
     const BUDGET = EMBED_LIMITS.TOTAL_CHARS - 200;
     let dropped = 0;
     let embed = build(fields, '');
-    // Guard 3: drop trailing categories until the total fits (min 1 field).
+    // Guard 3: drop categories from the back until the total fits (min 1 field).
     while (fields.length > 1 && embedTotalChars(embed) > BUDGET) {
         fields.pop();
         dropped++;
@@ -422,8 +442,7 @@ function buildAllEmbeds() {
 
 /**
  * Split category lines into "blocks": a bullet (•) line + its continuation
- * lines (options/indent) so that when a command matches, its option lines
- * are shown too.
+ * lines (options/indents) so when a command matches, its options show too.
  */
 function buildBlocks(lines) {
     const blocks = [];
@@ -441,17 +460,17 @@ function buildBlocks(lines) {
 }
 
 /**
- * Search commands across all categories. Matching: case-insensitive substring
- * on command lines, or on category name/id/description (if the category NAME
- * matches, the WHOLE category is shown).
+ * Search commands across all categories. Match: case-insensitive substring
+ * in a command line, or the category name/id/description (when the category
+ * name matches, the WHOLE category is shown).
  * Returns { query, groups: [{ cat, blocks }], totalBlocks, truncated, emptyQuery }
  */
 function searchHelp(rawQuery) {
-    // v3.9.40 FIX: cap the input at 100 chars before processing. The slash
-    // registry option now also has max_length:100, but this builder serves
-    // TWO entry points (slash + modal) and old messages/modals can still come
-    // through — a single defensive cap closes every route. Without the cap, a
-    // multi-thousand-char query is echoed into the results embed
+    // v3.9.40 FIX: cap input at 100 chars before processing. The registry
+    // slash option now also has max_length:100, but this builder serves TWO
+    // entry points (slash + modal) and old modals/messages can still slip
+    // through — defensive at this single point closes every path. Without
+    // the cap, a thousands-char query gets echoed into the result embed
     // → description > 4096 → EmbedBuilder.setDescription throws (uncaught).
     const query = String(rawQuery || '')
         .slice(0, 100)
@@ -544,7 +563,7 @@ function buildSelectRow() {
         .setCustomId(HELP_IDS.SELECT)
         .setPlaceholder('📂 Pick a command category…')
         .addOptions(
-            // Guard: Discord max 25 options per select (currently 19 — if the
+            // Guard: Discord max 25 options per select (currently 20 — if the
             // catalog ever grows past 25, the helpNav test fails first).
             HELP_CATEGORIES.slice(0, DISCORD_LIMITS.SELECT_MENU_MAX_OPTIONS).map(
                 c =>

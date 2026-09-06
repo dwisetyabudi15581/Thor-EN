@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.44] — 2026-09-06
+
+### Changed — ✨ user request: "/warn lives under Scheduled Announce — please read & sync every feature and reorganize /help so it is easy to understand"
+
+**Complete /help catalog redesign — 20 categories ordered by usage priority:**
+
+- 🟢 **Main complaint fixed:** `/warn` `/warn-list` `/warn-remove` `/warn-clear` **moved to the Moderation category** (they used to sit under "Scheduled Announce & Warn" — illogical). Moderation is now one complete place: warn → timeout → kick → ban + purge, with the sanction ladder explained (3=mute 1h, 5=mute 1d, 7=kick).
+- 🟢 **New category 🚀 Quick Start** — a fresh-server setup order in 5 steps (`/set-role verified` → categories & products → ticket panel → verification → server-log). New admins no longer have to guess where to begin.
+- 🟢 **Structure reordered by how often things are used:** Quick Start → Moderation → Products → Keys → Panels → Categories → Escrow → Logging & Channels → Auto-Mod → Responder → Roles → Leveling → AFK → Giveaways → Announcements → Messages & Embeds → Voice → Backup → Stats → Info.
+- 🟢 **Previously messy categories cleaned up:**
+  - "Scheduled Announce & Warn" → **Scheduled Announcements** (pure announce, no warns).
+  - "Announce, Embed & Backup" → split into **Messages & Embed Builder** + **Backup & Maintenance** (backups & reset-config are not "announcements").
+  - "Stats & More" → pure **Statistics**; `audit-log` moved to **Logging & Channels**, `reset-config` moved to **Backup & Maintenance**.
+  - **`/set-channel` was previously scattered across 3 categories** → now one place: **Logging & Channels** (server-log, audit-log, transcript, welcome, goodbye, invoice + an explanation of each type).
+- 🟢 **New 🏠 home** — a "What do you need right now?" section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling) routes admins straight to the right category without reading everything.
+- 🟢 Every command now gets a **one-phrase explanation** — a new admin never has to guess a command's purpose from its name.
+- 🟢 **"📖 All Commands" budget stays safe** — all 20 categories still fit in 1 embed (5.686 of the 5.800-char budget; the old version was 5.752) — the category-drop guard stays inactive, nothing is hidden.
+- 🟢 Search follows the new structure automatically — `search:warn` now lands in **Moderation**; old category ids in still-open ephemeral messages remain safe to click (fallback to home, not a crash — the existing mechanism).
+- 🟢 +2 regression contract unit tests (total **459**): `/warn*` must live in Moderation & the announce category must not mention warn; Quick Start first + new categories (logging/backup/stats/info) mandatory.
+
 ## [3.9.43] — 2026-09-06
 
 ### Added — 🛡️ user request: "add a complete moderation package and a server log for message delete/edit and more"
