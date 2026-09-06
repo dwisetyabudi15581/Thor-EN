@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.45] — 2026-09-07
+
+### Fixed — 🔴 hotfix: every moderation command crashed at its first permission check ("TypeError: Cannot read properties of undefined (reading 'ManageMessages')")
+
+- 🔴 **Production error report:** `npm start` → `/purge` → `Interaction Error: TypeError: Cannot read properties of undefined (reading 'ManageMessages') at moderation.js:193` — with the same landmine under `/timeout` `/untimeout` `/kick` `/ban`.
+- 🔴 **Root cause:** `src/commands/moderation.js` (added in v3.9.43) destructured `PermissionFlagsBits` from `./_shared` — but `_shared.js` never imported or re-exported it. Destructuring a missing export is *silent*: the variable is simply `undefined` at require time, then detonates the first time a bot-permission check reads `.ManageMessages` / `.ModerateMembers` / `.KickMembers` / `.BanMembers`. One bug, six dead commands.
+- 🔴 **Why every QC gate waved it through (457 green tests, ESLint 0):** a missing export is not a syntax error and not an undefined *variable* (the binding exists), and no unit test executed the moderation permission-check path against the real module graph — the handler contract tests were static.
+- 🟢 **Fix (one line of export):** `_shared.js` now imports & re-exports `PermissionFlagsBits` from discord.js — the one-gateway `_shared` pattern stays intact, all six moderation commands work again.
+- 🟢 +2 regression unit tests (total **461**, `sharedExports.test.js`): **(A)** `_shared` must export the real discord.js `PermissionFlagsBits` (same object reference + the 5 bits moderation/midman use); **(B)** a whole-class safety net — every identifier destructured from `require(..._shared)` anywhere in `src/**` is cross-checked at test time against the runtime exports, so the *next* missing export fails in CI instead of crashing in production the first time a user runs the command.
+
 ## [3.9.44] — 2026-09-06
 
 ### Changed — ✨ user request: "/warn lives under Scheduled Announce — please read & sync every feature and reorganize /help so it is easy to understand"

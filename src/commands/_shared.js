@@ -10,6 +10,11 @@
 const {
     EmbedBuilder,
     MessageFlags,
+    // v3.9.45 hotfix: moderation.js destructures PermissionFlagsBits from here,
+    // but it was previously NOT exported → undefined at runtime → /purge /timeout
+    // /kick /ban crashed with "Cannot read properties of undefined (reading
+    // 'ManageMessages')". Now officially exported (one-gateway _shared pattern).
+    PermissionFlagsBits,
     ButtonBuilder,
     ButtonStyle,
     ActionRowBuilder,
@@ -127,6 +132,7 @@ module.exports = {
     // discord.js classes
     EmbedBuilder,
     MessageFlags,
+    PermissionFlagsBits,
     ButtonBuilder,
     ButtonStyle,
     ActionRowBuilder,

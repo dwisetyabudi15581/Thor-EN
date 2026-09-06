@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.44
+# 📖 Admin Guide — Thor Bot v3.9.45
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -976,10 +976,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.44) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.45) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.45** (2026-09-07) — 🔴 **hotfix: moderation commands crashed at their first permission check** (production error report: `/purge` → `TypeError: Cannot read properties of undefined (reading 'ManageMessages')`): `moderation.js` (v3.9.43) destructured `PermissionFlagsBits` from `_shared.js`, which never exported it — a *silent* `undefined` (a missing export does not throw at require time) that slipped past 457 green tests and clean ESLint. All of `/purge` `/timeout` `/untimeout` `/kick` `/ban` died before doing anything. Fix: `_shared.js` officially re-exports `PermissionFlagsBits`; +2 safety-net unit tests (total **461**) that cross-check every `_shared` destructure in `src/**` at test time — this whole bug class can never ship again.
 - **v3.9.44** (2026-09-06) — ✨ **complete /help catalog redesign** (user request: "/warn lives under Scheduled Announce — please sync every feature and reorganize /help so it is easy to understand"): **20 categories ordered by usage priority** (Quick Start → Moderation → Products → Keys → Panels → Categories → Escrow → Logging & Channels → Auto-Mod → ...); `/warn*` **moved to the Moderation category** (one place: warn → timeout → kick → ban + purge); new **🚀 Quick Start** category (fresh-server setup in 5 steps); messy categories cleaned up ("Scheduled Announce & Warn" → pure Scheduled Announcements; "Announce, Embed & Backup" split into Messages & Embed Builder + Backup & Maintenance; "Stats & More" → pure Statistics); `/set-channel`, previously scattered across 3 categories, now **in one place: Logging & Channels**; new 🏠 home with a "What do you need right now?" section; every command gets a one-phrase explanation; all 20 categories still fit in 1 All-Commands embed (5.686 / 5.800 chars — no drops); +2 regression contract unit tests (total **459**).
 - **v3.9.43** (2026-09-06) — 🛡️ **full moderation pack + server log** (user request: "add a complete moderation package and a server log for message delete/edit and more"): 6 new commands **`/timeout` `/untimeout` `/purge` `/kick` `/ban` `/unban`** (88 total) with two-way hierarchy guards (the moderator's AND the bot's roles must be higher than the target's — same level = rejected), Discord limits enforced on both sides (timeout max 28 days = 40320 minutes, purge 1–100 + messages older than 14 days skipped per the bulk API limit, ban message deletion 0–7 days), bot permissions checked up front with clear messages, best-effort reason DMs; actions are **not counted as warns** (modlog = actions, warns = violations — no double punishment) but render in `/warn-list` in a **"Moderation History"** section (a 0-warn user with moderation history still shows); the router now allows **non-admin moderators** holding the matching Discord permission (least privilege); **Server Log**: `message deleted` (content + executor via the audit log — including manual deletions from the Discord UI), `message edited` (before/after + link), `bulk purge`, `join/leave` (account age + manual kicks detected), `ban/unban` manual & via the bot, `role/nickname changes` — delivered to a new `server-log` channel (separate from audit-log; `/set-channel tipe:server-log`); the **GuildBans** intent enabled (without it the ban events never fire); +21 unit tests (moderation.test.js + serverLog.test.js, total 457).
 - **v3.9.42** (2026-09-05) — 🔔 behavior change per user request ("don't DM the voice owner, just tell them in the voice chat"): the **temp-voice new-owner notification** (auto-transfer when the owner leaves & manual transfer via the panel) is now posted in the **voice channel's own text chat** with a mention of the new owner (they still get pinged) — instead of a DM (which often failed silently because the user's DMs are closed / went unread); +3 anti-regression contract unit tests `voiceNotify.test.js`; 82 commands total, 436 unit tests.
@@ -1011,6 +1012,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.44
-**Last updated:** September 6, 2026
-**Bot version:** 3.9.44 · 88 slash commands · 459 unit tests
+**Document version:** v3.9.45
+**Last updated:** September 7, 2026
+**Bot version:** 3.9.45 · 88 slash commands · 461 unit tests
