@@ -23,6 +23,11 @@ const levelManager = require('../../data/levelManager');
 // Result: auto-responder, anti-spam, and AFK replies don't work.
 // This Set only warns once per server so the console doesn't get flooded.
 //
+// v3.9.46: only fires for genuinely suspicious messages — see
+// isContentlessByDesign() below. Native polls, Tenor GIFs and system
+// messages (join notifications, pins) used to trigger FALSE alarms even
+// when the intent was fully enabled.
+//
 // v3.9.17 FIX: periodic cleanup. Previously, the Set kept growing for the whole
 // process lifetime (for bots that frequently join/leave guilds). Now: cleanup every
 // 24 hours, removing guilds not detected for more than 24 hours.
@@ -52,6 +57,29 @@ function debugLogIntentMissing(message) {
     }
 }
 
+/**
+ * v3.9.46: pure helper — should this message legitimately have NO text?
+ * The intent-missing hint only fires when a message that SHOULD have text
+ * arrives with message.content === "". False-positive sources excluded
+ * (a message is legitimately text-less when it is):
+ *   - attachments/stickers only    (photo, file, sticker)          [pre-existing]
+ *   - components                   (bot UI message)                [pre-existing]
+ *   - embeds only                  (Tenor GIF picker = "gifv" embeds, link previews)
+ *   - a native Discord poll        (message.poll)
+ *   - a system message             (join notification, pin, channel rename — message.type !== 0)
+ */
+function isContentlessByDesign(message) {
+    return Boolean(
+        message.attachments?.size ||
+        message.stickers?.size ||
+        message.components?.length ||
+        message.embeds?.length ||
+        message.poll ||
+        message.system ||
+        message.type
+    );
+}
+
 async function onMessageCreate(message) {
     try {
         // v3.9.24 FIX: combined guard + webhook filter.
@@ -73,12 +101,13 @@ async function onMessageCreate(message) {
         if (process.env.GUILD_ID && message.guild.id !== process.env.GUILD_ID) return;
 
         // Detect whether the Message Content Intent isn't enabled yet.
-        // If another user's message is empty but isn't an attachment/sticker, most likely the intent is missing.
-        // Skip the warning if the message only contains attachments/stickers (they genuinely have no content).
-        if (!message.content) {
-            if (!message.attachments?.size && !message.stickers?.size && !message.components?.length) {
-                debugLogIntentMissing(message);
-            }
+        // A user message that arrived with empty content AND isn't "empty by
+        // design" most likely means the intent is missing. v3.9.46: the
+        // exclusion list is centralized in isContentlessByDesign() — previously
+        // native polls, Tenor GIFs and system messages (join notifications,
+        // pins) triggered FALSE alarms even when the intent was fully enabled.
+        if (!message.content && !isContentlessByDesign(message)) {
+            debugLogIntentMissing(message);
         }
 
         // Run the 4 community hooks. Order: automod first (if the message gets
@@ -403,5 +432,6 @@ async function hookLeveling(message) {
 
 module.exports = {
     name: Events.MessageCreate,
-    execute: onMessageCreate
+    execute: onMessageCreate,
+    isContentlessByDesign
 };

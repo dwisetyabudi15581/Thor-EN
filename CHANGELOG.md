@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.46] — 2026-09-09
+
+### Fixed — 🟡 the "Message Content Intent" console hint fired FALSE alarms even with the intent fully enabled
+
+- 🟡 **Production report:** `⚠️ [HINT] Message from thor064747 ... has empty content` appeared at startup while the bot was online and the intent was active. Proof the intent was on: `index.js` requests `GatewayIntentBits.MessageContent` in the IDENTIFY payload — with the portal toggle OFF, discord.js crashes at login (`Privileged intent provided is not enabled or whitelisted`), so an online bot means an enabled intent.
+- 🟡 **Root cause:** the hint's trigger only excluded attachments/stickers/components. Legitimately text-less messages slipped through and were misdiagnosed: **native Discord polls** (`message.poll`), **Tenor GIF-picker messages** (a "gifv" embed with no content), and **system messages** (join notifications, pins — `message.type !== 0`). One such message from a member → the admin is told to "fix" a portal setting that is already correct.
+- 🟢 **Fix:** the exclusion list is centralized in a pure, exported helper `isContentlessByDesign(message)` (attachments, stickers, components, embeds, poll, system, non-DEFAULT type). The hint now only fires for a message that genuinely should have text but arrived empty — a real intent problem.
+- 🟢 +3 regression unit tests (total **464**, `messageContentHint.test.js`): pure helper coverage for all 7 sources; end-to-end `execute()` with a stubbed `console.warn` (poll/gif/system/attachment → 0 warnings); and the old contract intact — a plain empty message still warns exactly once per guild per 24h.
+
 ## [3.9.45] — 2026-09-07
 
 ### Fixed — 🔴 hotfix: every moderation command crashed at its first permission check ("TypeError: Cannot read properties of undefined (reading 'ManageMessages')")
