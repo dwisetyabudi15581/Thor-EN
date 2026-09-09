@@ -18,6 +18,15 @@
  * (guildMemberAdd tracking only records joins since v3.2 — older members showed
  * "not recorded" even though Discord knows their join date).
  *
+ * v3.9.49 (user report: "member tracked & member live — if they do the same
+ * thing, make it one"): the duplicate member fields are GONE — ONE "Members"
+ * field (the live count straight from Discord). "Avg Messages/Member" now
+ * divides by the LIVE member count too, so the number matches what the embed
+ * shows. v3.9.49 also fixes WHY "total revenue doesn't update": Indonesian
+ * price suffixes ("25rb"/"2jt") were mis-parsed to near-zero amounts, and
+ * unparseable product prices were accepted silently (see products.js +
+ * statsManager.parsePrice).
+ *
  * Note: the permission check for /leaderboard & /my-stats (public commands)
  *          lives in the router (src/commands/index.js). This domain file doesn't
  *          need to repeat that check.
@@ -34,6 +43,11 @@ const {
 
 // v3.9.47: live "open tickets" counter for the /stats overview.
 const { getActiveTicketCount } = require('../data/ticketManager');
+
+// v3.9.49: /boosters — live booster list + tracked history. The embed is built
+// in boostHandler (single source of truth — same builders the live event uses).
+const { buildBoostersEmbed } = require('../bot/boostHandler');
+const { getRecentEvents: getRecentBoostEvents } = require('../data/boostManager');
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -61,29 +75,56 @@ module.exports = async function (interaction) {
             .setColor(0x5865f2)
             .addFields(
                 // Row 1 — live data (verifiable in Discord at any moment)
-                { name: '👥 Members (live)', value: `${liveMembers}`, inline: true },
+                { name: '👥 Members', value: `${liveMembers}`, inline: true },
                 { name: '🎫 Open Tickets', value: `${activeTickets}`, inline: true },
                 { name: '🚀 Server Boosts', value: boostText, inline: true },
                 // Row 2 — tracked activity (from stats.json, since v3.2)
                 { name: '💬 Messages Tracked', value: `${stats.totalMessages.toLocaleString('en-US')}`, inline: true },
-                { name: '👤 Members Tracked', value: `${stats.totalUsers}`, inline: true },
                 {
-                    name: '📈 Avg Messages/User',
-                    value: stats.totalUsers > 0 ? `${Math.round(stats.totalMessages / stats.totalUsers)}` : '0',
+                    name: '📈 Avg Messages/Member',
+                    value: liveMembers > 0 ? `${Math.round(stats.totalMessages / liveMembers)}` : '0',
                     inline: true
                 },
+                { name: '🎁 Giveaways Won', value: `${stats.totalGiveawaysWon}`, inline: true },
                 // Row 3 — tracked transactions (ticket orders + escrow deals)
                 { name: '🛒 Transactions', value: `${stats.totalPurchases}`, inline: true },
-                { name: '💰 Total Revenue', value: `Rp ${stats.totalRevenue.toLocaleString('en-US')}`, inline: true },
-                { name: '🎁 Giveaways Won', value: `${stats.totalGiveawaysWon}`, inline: true }
+                { name: '💰 Total Revenue', value: `Rp ${stats.totalRevenue.toLocaleString('en-US')}`, inline: true }
             )
             .setFooter({
-                text: 'Members/boosts/tickets = live from Discord • messages & transactions tracked since v3.2'
+                text: 'Members/boosts/tickets = live from Discord • messages & transactions tracked since v3.2 • revenue = ticket + escrow sales'
             })
             .setTimestamp();
         // v3.9.47: server icon when available (personal touch, null-safe).
         const icon = typeof guild.iconURL === 'function' ? guild.iconURL() : null;
         if (icon) embed.setThumbnail(icon);
+        return safeEditReply(interaction, { embeds: [embed] });
+    }
+
+    // ====================================================
+    // === /boosters (v3.9.49) ===
+    // ====================================================
+    if (interaction.commandName === 'boosters') {
+        await interaction.deferReply();
+        const guild = interaction.guild;
+
+        // Fetch the full member list so premiumSinceTimestamp is accurate for
+        // EVERY member (the cache only holds members the bot has seen since the
+        // last restart). GuildMembers intent is required — an online bot proves
+        // it is enabled. Fallback: the cache (with a warning in the console).
+        try {
+            await guild.members.fetch();
+        } catch (err) {
+            console.warn(
+                `⚠️ /boosters: could not fetch the full member list (${err.message}) — using the in-memory cache instead. `
+            );
+        }
+
+        const boosters = [...guild.members.cache.values()]
+            .filter(m => !m.user?.bot && m.premiumSinceTimestamp)
+            .sort((a, b) => (a.premiumSinceTimestamp || 0) - (b.premiumSinceTimestamp || 0));
+
+        const recent = getRecentBoostEvents(guild.id, 5);
+        const embed = buildBoostersEmbed(guild, boosters, recent);
         return safeEditReply(interaction, { embeds: [embed] });
     }
 

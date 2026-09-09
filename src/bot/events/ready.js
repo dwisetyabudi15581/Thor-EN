@@ -41,6 +41,7 @@ async function onReady(client) {
     // deleted, or its ID came from another server. Previously the bot was SILENT
     // both at startup AND when a member actually joined — now both speak up.
     // /test-welcome does the deeper check (permissions + live preview).
+    // v3.9.49: server-booster joined the same check (boost notifications).
     try {
         const { getConfig } = require('../../data/configManager');
         const config = getConfig();
@@ -50,11 +51,16 @@ async function onReady(client) {
               ? client.guilds.cache.first()
               : null;
         if (guild) {
-            for (const key of ['welcome', 'goodbye']) {
+            const CHANNEL_LABELS = {
+                welcome: 'welcome messages',
+                goodbye: 'goodbye messages',
+                'server-booster': 'boost notifications'
+            };
+            for (const key of Object.keys(CHANNEL_LABELS)) {
                 const id = config.channels[key];
                 if (!id) {
                     console.warn(
-                        `⚠️ The ${key} channel is NOT set — ${key} messages are OFF. Fix: /set-channel ${key} #channel`
+                        `⚠️ The ${key} channel is NOT set — ${CHANNEL_LABELS[key]} are OFF. Fix: /set-channel ${key} #channel`
                     );
                 } else if (!guild.channels.cache.get(id)) {
                     console.warn(
@@ -67,6 +73,62 @@ async function onReady(client) {
         }
     } catch (err) {
         console.warn('⚠️ Startup welcome/goodbye check failed:', err.message);
+    }
+
+    // === 1d. v3.9.49: booster offline catch-up ===
+    // Boosts that started/ended while the bot was offline were invisible before
+    // this. Reconcile the live state (guild members cache) against boosts.json,
+    // then send ONE consolidated catch-up embed to the server-booster channel
+    // when anything actually changed (no spam: one embed, not one per member).
+    try {
+        const guild = GUILD_ID
+            ? client.guilds.cache.get(GUILD_ID)
+            : client.guilds.cache.size > 0
+              ? client.guilds.cache.first()
+              : null;
+        if (guild) {
+            // Members cache is empty right after login — fetch the roster first
+            // so premiumSinceTimestamp is known for EVERY member, not just the
+            // ones the bot happens to have cached.
+            try {
+                await guild.members.fetch();
+            } catch (fetchErr) {
+                console.warn(`⚠️ Booster reconcile: member fetch failed (${fetchErr.message}) — using the cache only.`);
+            }
+            const boostManager = require('../../data/boostManager');
+            const { added, removed } = boostManager.reconcileBoosters(guild);
+            if (added.length > 0 || removed.length > 0) {
+                const lines = [];
+                if (added.length > 0) lines.push(`🚀 New booster(s) while the bot was offline: ${added.map(id => `<@${id}>`).join(' ')}`);
+                if (removed.length > 0) lines.push(`💔 Stopped boosting while the bot was offline: ${removed.map(id => `<@${id}>`).join(' ')}`);
+                console.log(`🚀 Booster catch-up: ${added.length} added, ${removed.length} removed since the last run.`);
+                const { getConfig } = require('../../data/configManager');
+                const boostChId = getConfig().channels['server-booster'];
+                const boostCh = boostChId ? guild.channels.cache.get(boostChId) : null;
+                if (boostCh && typeof boostCh.send === 'function') {
+                    try {
+                        const { EmbedBuilder } = require('discord.js');
+                        await boostCh.send({
+                            embeds: [
+                                new EmbedBuilder()
+                                    .setTitle('🚀 BOOST CATCH-UP')
+                                    .setDescription(
+                                        `Boost changes that happened while the bot was offline:\n\n${lines.join('\n')}`
+                                    )
+                                    .setColor(0xf472b6)
+                                    .setTimestamp()
+                            ]
+                        });
+                    } catch (sendErr) {
+                        console.warn(`⚠️ Failed to send the boost catch-up message: ${sendErr.message}`);
+                    }
+                }
+            } else {
+                console.log(`✅ Boosters in sync (${guild.premiumSubscriptionCount ?? 0} boost(s), level ${guild.premiumTier ?? 0}).`);
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ Startup booster reconcile failed:', err.message);
     }
 
     // v3.9.24 FIX: order reversed — register commands to the guild FIRST, then clean

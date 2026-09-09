@@ -95,3 +95,48 @@ test('parsePrice: mixed dot + comma (EU/ID format)', () => {
     // "1.234,56" → EU format → 1234.56 → Math.round → 1235
     assert.strictEqual(parsePrice('1.234,56'), 1235);
 });
+
+// ============ v3.9.49 — Indonesian suffixes (user report: "total revenue doesn't update") ============
+// "25rb" used to record Rp 25 instead of Rp 25.000 — every sale added a
+// near-invisible amount, so the revenue looked frozen.
+
+test('parsePrice v3.9.49: rb suffix = ribu (×1.000)', () => {
+    assert.strictEqual(parsePrice('25rb'), 25000);
+    assert.strictEqual(parsePrice('Rp 25rb'), 25000);
+    assert.strictEqual(parsePrice('Rp 25 rb'), 25000);
+    assert.strictEqual(parsePrice('150rb'), 150000);
+    // The USER-REPORT scenario end-to-end: revenue now moves by the right amount.
+    assert.strictEqual(parsePrice('100rb'), 100000);
+});
+
+test('parsePrice v3.9.49: jt/juta suffix = juta (×1.000.000)', () => {
+    assert.strictEqual(parsePrice('2jt'), 2000000);
+    assert.strictEqual(parsePrice('2 juta'), 2000000);
+    assert.strictEqual(parsePrice('Rp1.5juta'), 1500000);
+    // Longest-first: "juta" wins over the "jt" prefix ambiguity.
+    assert.strictEqual(parsePrice('3juta'), 3000000);
+});
+
+test('parsePrice v3.9.49: legacy formats unchanged (no regression)', () => {
+    assert.strictEqual(parsePrice('25000'), 25000);
+    assert.strictEqual(parsePrice('25.000'), 25000);
+    assert.strictEqual(parsePrice('25k'), 25000);
+    assert.strictEqual(parsePrice('2.5M'), 2500000);
+    assert.strictEqual(parsePrice('murah'), 0); // still unparseable → 0
+});
+
+test('parsePriceNumber v3.9.49 (midman): escrow now accepts rb/jt/juta', () => {
+    const mm = require('../../src/data/midmanManager');
+    // Before: 0 = deal creation blocked with a confusing "invalid price".
+    assert.strictEqual(mm.parsePriceNumber('25rb'), 25000);
+    assert.strictEqual(mm.parsePriceNumber('2jt'), 2000000);
+    assert.strictEqual(mm.parsePriceNumber('2juta'), 2000000);
+    assert.strictEqual(mm.parsePriceNumber('Rp 25 rb'), 25000);
+    // Strictness preserved: suffix + separators is still rejected (10x-price guard).
+    assert.strictEqual(mm.parsePriceNumber('1.5rb'), 0);
+    assert.strictEqual(mm.parsePriceNumber('1,5jt'), 0);
+    // Legacy formats unchanged.
+    assert.strictEqual(mm.parsePriceNumber('25.000'), 25000);
+    assert.strictEqual(mm.parsePriceNumber('100k'), 100000);
+    assert.strictEqual(mm.parsePriceNumber('2.5'), 0);
+});

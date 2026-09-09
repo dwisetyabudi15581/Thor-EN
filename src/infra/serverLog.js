@@ -38,7 +38,11 @@ const SERVER_LOG_EVENTS = {
     BAN_ADD: { color: 0xed4245, title: '🔨 Member Banned' },
     BAN_REMOVE: { color: 0x57f287, title: '♻️ Ban Revoked' },
     ROLE_UPDATE: { color: 0xfee75c, title: '🎭 Member Roles Changed' },
-    NICK_UPDATE: { color: 0x992d22, title: '📝 Nickname Changed' }
+    NICK_UPDATE: { color: 0x992d22, title: '📝 Nickname Changed' },
+    // v3.9.49: server booster add/remove (detected via guildMemberUpdate
+    // premium_since diff — recorded even when no server-booster channel is set).
+    BOOST_ADD: { color: 0xf472b6, title: '🚀 Boost Started' },
+    BOOST_REMOVE: { color: 0x95a5a6, title: '💔 Boost Ended' }
 };
 
 /**

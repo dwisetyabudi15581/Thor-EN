@@ -604,7 +604,11 @@ module.exports = async function (interaction) {
                             `• Goodbye: ${fmt(config.channels.goodbye, '#')}`,
                             `• Invoice: ${fmt(config.channels.invoice, '#')}`,
                             `• Audit Log: ${fmt(config.channels['audit-log'], '#')}`,
-                            `• Ticket Transcript: ${fmt(config.channels.transcript, '#')}`
+                            `• Ticket Transcript: ${fmt(config.channels.transcript, '#')}`,
+                            // v3.9.49: server-log was missing from this view since
+                            // v3.9.43 (set-able but invisible) + the new booster channel.
+                            `• Server Log: ${fmt(config.channels['server-log'], '#')}`,
+                            `• Server Booster: ${fmt(config.channels['server-booster'], '#')}`
                         ].join('\n')
                     ),
                     inline: false

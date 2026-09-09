@@ -315,7 +315,8 @@ function calcTotals(priceNum, fee) {
 
 /**
  * Parse a price from modal input. Accepts: "100000", "100.000", "100,000",
- * "100k", "1m", "Rp100.000". Returns 0 if invalid.
+ * "100k", "1m", "Rp100.000" + v3.9.49 Indonesian suffixes "25rb", "2jt",
+ * "2juta". Returns 0 if invalid.
  *
  * v3.9.38 FIX: decimals no longer "slip through" as extra digits (10x price bug).
  *   - With a k/m suffix: the remaining input must NOT contain `.`/`,` ("1.5m"
@@ -334,13 +335,27 @@ function parsePriceNumber(input) {
         .replace(/rp\.?/g, '')
         .replace(/\s/g, '');
     let multiplier = 1;
-    const hasSuffix = s.endsWith('k') || s.endsWith('m');
-    if (s.endsWith('k')) {
+    // v3.9.49: Indonesian suffixes (longest first so 'juta' wins over 'jt').
+    // Previously "25rb"/"2jt" → 0 (deal creation rejected with a confusing
+    // "invalid price" while the SHOP-side parsePrice understood nothing either).
+    let hasSuffix = true;
+    if (s.endsWith('juta')) {
+        multiplier = 1000000;
+        s = s.slice(0, -4);
+    } else if (s.endsWith('jt')) {
+        multiplier = 1000000;
+        s = s.slice(0, -2);
+    } else if (s.endsWith('rb')) {
+        multiplier = 1000;
+        s = s.slice(0, -2);
+    } else if (s.endsWith('k')) {
         multiplier = 1000;
         s = s.slice(0, -1);
     } else if (s.endsWith('m')) {
         multiplier = 1000000;
         s = s.slice(0, -1);
+    } else {
+        hasSuffix = false;
     }
     // v3.9.38 FIX: validate separators BEFORE stripping — see the JSDoc above.
     if (/[.,]/.test(s)) {

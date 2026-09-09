@@ -72,7 +72,7 @@ function getCommands() {
         // so admins only have to remember ONE channel command.
         {
             name: 'set-channel',
-            description: 'Set channels (invoice / welcome / goodbye / audit-log / server-log / transcript)',
+            description: 'Set channels (invoice / welcome / goodbye / audit-log / server-log / transcript / server-booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -86,6 +86,7 @@ function getCommands() {
                         { name: 'Goodbye', value: 'goodbye' },
                         { name: 'Audit Log (logs admin actions)', value: 'audit-log' },
                         { name: 'Server Log (message delete/edit, join/leave, bans)', value: 'server-log' },
+                        { name: 'Server Booster (boost notifications)', value: 'server-booster' },
                         { name: 'Ticket Transcript (auto-saved on close)', value: 'transcript' }
                     ]
                 },
@@ -614,6 +615,7 @@ function getCommands() {
                         { name: 'Goodbye', value: 'goodbye' },
                         { name: 'Audit Log', value: 'audit-log' },
                         { name: 'Server Log', value: 'server-log' },
+                        { name: 'Server Booster', value: 'server-booster' },
                         { name: 'Ticket Transcript', value: 'transcript' }
                     ]
                 }
@@ -1132,6 +1134,12 @@ function getCommands() {
         {
             name: 'my-stats',
             description: 'View your personal stats (public — regular members can use it)'
+        },
+        // v3.9.49: server booster list — who is boosting right now (live from
+        // Discord) + recent boost/stop history (tracked in boosts.json).
+        {
+            name: 'boosters',
+            description: 'List the current server boosters + recent boost history (public)'
         },
 
         // === POLL SYSTEM ===

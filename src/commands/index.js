@@ -30,7 +30,8 @@
  *   - giveaway                           → giveaway.js
  *   - warn, warn-list, warn-remove,
  *     warn-clear                         → warn.js
- *   - stats, leaderboard, my-stats       → stats.js
+ *   - stats, leaderboard, my-stats,
+ *     boosters                        → stats.js
  *   - poll                               → poll.js
  *   - setup-tempvoice, tempvoice-remove  → tempvoice.js
  *   - send-message                       → send-message.js
@@ -187,6 +188,8 @@ const COMMAND_TO_DOMAIN = {
     stats: 'stats',
     leaderboard: 'stats',
     'my-stats': 'stats',
+    // v3.9.49: server booster list (live + history)
+    boosters: 'stats',
 
     // poll
     poll: 'poll',
@@ -253,7 +256,7 @@ const COMMAND_TO_DOMAIN = {
 
 // Commands that regular members (non-admins) may use.
 // v3.9.13: added afk, afk-clear, rank, leaderboard-level (public community features)
-const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'afk', 'afk-clear', 'rank', 'leaderboard-level'];
+const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'boosters', 'afk', 'afk-clear', 'rank', 'leaderboard-level'];
 
 // v3.9.43: moderation commands — usable by non-admin moderators as long as
 // they hold the matching Discord permission (role hierarchy is still checked
@@ -314,5 +317,7 @@ async function routeCommand(interaction) {
 // happened to /update-category & /update-product before this fix).
 routeCommand.COMMAND_TO_DOMAIN = COMMAND_TO_DOMAIN;
 routeCommand.DOMAIN_HANDLERS = DOMAIN_HANDLERS;
+// v3.9.49: exported for contract tests (public-command list must stay in sync).
+routeCommand.PUBLIC_COMMANDS = PUBLIC_COMMANDS;
 
 module.exports = routeCommand;

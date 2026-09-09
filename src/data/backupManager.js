@@ -58,7 +58,12 @@ const FILES_TO_BACKUP = [
     // previously broke ALL active escrow deals (buyers/sellers locked
     // forever because the meta was gone). Caught by the guard test "live files must
     // be backed up" as soon as deals.json existed in data/.
-    'deals.json'
+    'deals.json',
+    // v3.9.49: boosts.json — server booster history. Without it, restore-backup
+    // would silently lose the whole boost history (who boosted, streaks,
+    // totalBoosts) while live boosters still exist — /boosters "Recent
+    // Activity" would go empty for events the bot itself once announced.
+    'boosts.json'
 ];
 
 // v3.9.10: helper to resolve data file paths (to the data/ folder).

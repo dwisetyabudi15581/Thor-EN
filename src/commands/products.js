@@ -7,7 +7,26 @@
  * Behavior: manage products + auto-role mapping per product.
  */
 
-const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply } = require('./_shared');
+const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply, parsePriceNum } = require('./_shared');
+
+/**
+ * v3.9.49 (user report: "total revenue doesn't update"): validate a product
+ * price BEFORE it is saved. A price string the bot cannot parse (e.g. "murah",
+ * "negosiasi", "25rp2") used to be accepted silently — every later sale then
+ * recorded parsePrice(price) = Rp 0 into stats/leaderboard, and the revenue
+ * never moved. Returns null when valid (free prices "0"/"free"/"gratis" are
+ * allowed), or an error message string when invalid.
+ */
+function priceValidationError(price) {
+    const raw = String(price || '').trim();
+    const FREE = ['0', 'free', 'gratis'];
+    if (FREE.includes(raw.toLowerCase())) return null; // explicitly free — OK
+    if (parsePriceNum(raw) > 0) return null; // parses to a positive amount — OK
+    return (
+        `❌ The price \`${raw}\` cannot be read as an amount — it would record **Rp 0** into the stats/revenue on every sale.\n` +
+        `✅ Accepted formats: \`25000\` · \`25.000\` · \`Rp 25.000\` · \`25rb\` · \`25k\` · \`2jt\` · \`2juta\` · \`free\``
+    );
+}
 
 module.exports = async function (interaction) {
     const embeds = new Embeds(interaction.client);
@@ -38,6 +57,10 @@ module.exports = async function (interaction) {
         // defensively, and the saved config is capped too so it stays tidy.
         const safeLabel = label.slice(0, 80);
         const safePrice = price.slice(0, 100);
+
+        // v3.9.49 FIX: reject a price that would silently record Rp 0 revenue.
+        const priceErr = priceValidationError(safePrice);
+        if (priceErr) return safeEditReply(interaction, { content: priceErr });
 
         if (config.products.some(p => p.value === value)) {
             return safeEditReply(interaction, { content: `❌ A product with value \`${value}\` already exists.` });
@@ -86,8 +109,15 @@ module.exports = async function (interaction) {
             details: `Add product: **${label}** (\`${value}\`) — ${price}${durationInfo}${catInfo}`,
             guildId: interaction.guild.id
         });
+        // v3.9.49: show how the price will be counted in /stats revenue — so a
+        // format mistake is visible at setup time, not after N invisible sales.
+        const priceNum = parsePriceNum(safePrice);
+        const revenueNote =
+            priceNum > 0
+                ? `\n💰 Counted in stats as: **Rp ${priceNum.toLocaleString('en-US')}** per sale (ticket + escrow transactions)`
+                : '';
         return safeEditReply(interaction, {
-            content: `✅ Product added: **${label}** — ${price}${durationInfo}\n📦 Category: \`${finalCategory}\` | 🔑 Requires Key: ${finalRequiresKey ? 'Yes' : 'No'}`
+            content: `✅ Product added: **${label}** — ${price}${durationInfo}${revenueNote}\n📦 Category: \`${finalCategory}\` | 🔑 Requires Key: ${finalRequiresKey ? 'Yes' : 'No'}`
         });
     }
 
@@ -259,6 +289,9 @@ module.exports = async function (interaction) {
             changes.push(`label: \`${before.label}\` → \`${product.label}\``);
         }
         if (newPrice !== null) {
+            // v3.9.49 FIX: same guard as /add-product — reject unparseable prices.
+            const priceErr = priceValidationError(newPrice);
+            if (priceErr) return safeEditReply(interaction, { content: priceErr });
             product.price = newPrice;
             changes.push(`price: \`${before.price}\` → \`${newPrice}\``);
         }

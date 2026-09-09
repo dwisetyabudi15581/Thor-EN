@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.48
+# 📖 Admin Guide — Thor Bot v3.9.49
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -47,7 +47,7 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **89 slash commands** must appear
+- In Discord, type `/` — all **90 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
 > 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in (the **🚀 Quick Start** category holds a 5-step fresh-server setup order), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. All navigation happens inside one ephemeral message — it never floods the channel.
@@ -81,6 +81,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 /set-channel invoice #testimonials
 /set-channel audit-log #audit-log
 /set-channel transcript #transcript
+/set-channel server-booster #boosters
 ```
 
 **Explanation:**
@@ -90,6 +91,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `invoice` — the transaction testimonial channel (filled in automatically on every Set Key / Deliver Order / Order Successful — **once per ticket**, never duplicated)
 - `audit-log` — the channel where the bot records ALL admin actions (63 action types; automatically retried once if delivery fails due to rate limits/network)
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
+- `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off.
 
 > 💡 Since v3.9.30 every channel is configured through **one command**, `/set-channel` — including transcript (previously a separate command, `/set-transcript-channel`). Remove one with `/remove-channel <type>`.
 
@@ -879,7 +881,14 @@ Shows all backups, including the `pre-restore_*` safety backups (if you have eve
 
 The bot needs access to `message.content`. Without that intent, Discord delivers the content as an **empty string** → triggers never match.
 
-**How to fix:**
+### Total revenue doesn't move when I sell (v3.9.49 fixed the causes)
+
+- **Indonesian price suffixes are now parsed correctly:** `25rb` = Rp 25.000, `2jt` / `2juta` = Rp 2.000.000 — before v3.9.49, `25rb` recorded only Rp 25 per sale (the revenue looked frozen).
+- **`/add-product` now rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently.
+- Check existing products with `/list-products` — fix a badly-formatted price with `/update-product value:... price:25.000`.
+- Revenue counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked — that's the one remaining gap that can make the number "not match" your books.
+
+**How to fix the intent:**
 
 1. Open https://discord.com/developers/applications
 2. Select your bot
@@ -988,10 +997,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.48) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.49) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.49** (2026-09-10) — ✨ **user request: Server Booster feature** + 🐛 **user report: "the stats still don't match — revenue doesn't update, and member tracked vs member live"**. Boosters: boost add/remove is detected from the `guildMemberUpdate` premium_since diff (Discord has no dedicated boost event) → pink `🚀 NEW SERVER BOOST!` / gray `💔 BOOST ENDED` embeds to the new **server-booster channel** (`/set-channel tipe:server-booster`), always recorded in the server log, history persisted in `boosts.json` (backed up + restored), **offline catch-up** in one consolidated embed at startup, and a new public **`/boosters`** command (90 total) listing the live roster (earliest supporter first) + recent boost history. Stats fixes: 🔴 Indonesian price suffixes were silently mis-parsed — `25rb` recorded **Rp 25** per sale instead of Rp 25.000 (revenue looked frozen) — both price parsers now understand `rb`/`jt`/`juta`; `/add-product` & `/update-product` now **reject unparseable prices** and show the amount that will be counted per sale; the duplicate "Members (live)" + "Members Tracked" fields merged into **one `👥 Members`** (live count, average divides by it); `/config-show` now lists the server-log channel (missing since v3.9.43) + the new booster channel. +15 unit tests (total **518**).
 - **v3.9.48** (2026-09-09) — 🐛 **user report: "there's a bug — the Welcome doesn't appear"**. Investigation: the welcome code path was proven WORKING (end-to-end simulation with the real modules — join → unverified role + embed + server log, leave → goodbye embed); the real bug was **diagnosability**: when the welcome/goodbye channel was not set / deleted / from another server, the bot logged NOTHING at startup AND NOTHING when a member actually joined. Fix: every skip now logs the cause + the fix command; **new `/test-welcome`** (89 commands) diagnoses the whole chain (config → channel exists → bot permissions) and sends a **live preview** built by the same embed builders the real event uses; startup validates the configuration; a join from another guild (GUILD_ID mismatch) is visible. +17 unit tests (total **503**).
 - **v3.9.47** (2026-09-09) — ✨ **user request: auto-responder match modes + accurate stats**. Auto-responder: a trigger used to only fire at the START of a message — trigger `beli` never matched "bagaimana cara beli". Every responder now has a match mode (new `/add-responder` option `match_mode`): **contains** (default, also for legacy entries — the trigger matches as a WHOLE WORD anywhere in the message: `beli` answers "bagaimana cara beli"/"mau beli?" but NOT "belian"/"membeli") or **exact** (legacy start-of-message behavior). Bonus fix: a responder on cooldown no longer aborts the scan — an overlapping second trigger can still reply. Stats (user report: "the stats don't match"): `/stats` now leads with LIVE data from Discord (real member count, boost tier+count, open tickets) followed by clearly-labeled tracked activity; "VIP Purchases" renamed to **Transactions** (it counts ticket orders + escrow deals); `/my-stats` shows the REAL join date from the member object instead of "not recorded" for pre-v3.2 members. +22 unit tests (total **486**).
 - **v3.9.46** (2026-09-09) — 🟡 **fixed: the "Message Content Intent" console hint fired FALSE alarms** (production report: the hint appeared at startup while the bot was online and the intent was active — an online bot *proves* the intent is on, since discord.js crashes at login if the portal toggle is off): the hint's filter only excluded attachments/stickers/components, so legitimately text-less messages were misdiagnosed — **native polls** (`message.poll`), **Tenor GIF-picker messages** (gifv embeds), **system messages** (join notifications, pins). Fix: the exclusions are centralized in the exported helper `isContentlessByDesign()`; the hint now only fires for a message that genuinely should have text but arrived empty. +3 regression unit tests (total **464**).
@@ -1027,6 +1037,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.48
-**Last updated:** September 9, 2026
-**Bot version:** 3.9.48 · 89 slash commands · 503 unit tests
+**Document version:** v3.9.49
+**Last updated:** September 10, 2026
+**Bot version:** 3.9.49 · 90 slash commands · 518 unit tests

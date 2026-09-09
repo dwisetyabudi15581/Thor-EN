@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.49] — 2026-09-10
+
+### Added — ✨ user request: "server boosters — know who boosts + send it to a server booster channel"
+
+**Server Booster feature (new):**
+
+- 🟢 **Boost add/remove detection:** Discord fires NO dedicated boost event — the bot derives it from the `guildMemberUpdate` `premium_since` diff (null → date = boost added, date → null = boost ended). Every boost sends a pink celebration embed (`🚀 NEW SERVER BOOST!` + mention + since date + server level) and every stop a gray one (`💔 BOOST ENDED`) to the **server-booster channel** — set it with `/set-channel tipe:server-booster #channel`.
+- 🟢 **NEW `/boosters` command** (90 commands total, public): the live booster list straight from Discord (fetches the full roster — earliest supporter first, bots excluded, each with their boost date) + server level & boost count + a tracked "Recent Boost Activity" section. Empty state included ("no active boosters yet 🌱").
+- 🟢 **`boostManager` (boosts.json):** persistent booster history per user (current streak, all-time `totalBoosts`, last event) — knowing who boosted survives restarts; **offline catch-up**: on startup the live state is reconciled against the history (fetches the member roster first), and missed changes are announced in ONE consolidated catch-up embed (anti-spam) + recorded in the server log (`BOOST_ADD` / `BOOST_REMOVE` event types) even when no booster channel is set.
+- 🟢 Boost events also enter the **server log** (independent of the booster channel) + `boosts.json` is now backed up by `/backup-now` & restore-able.
+- 🟢 v3.9.48 diagnosability pattern extended: booster channel not set / deleted → console warning with the exact fix command; send failures name the channel + permissions to check; `ready.js` startup check now covers `server-booster` alongside welcome/goodbye.
+
+### Fixed — 🐛 user report: "the server stats still don't match — total revenue doesn't update, and member tracked vs member live: if they do the same thing, make it one"
+
+- 🔴 **Total revenue barely moved — Indonesian price suffixes were silently mis-parsed:** `25rb` recorded **Rp 25** instead of **Rp 25.000** (the trailing `rb` was never stripped, `parseFloat` only picked the leading digits) — every sale added a near-invisible amount, so the revenue looked frozen. `parsePrice` (shop/tickets) and `parsePriceNumber` (escrow deals) now understand `rb`/`jt`/`juta` (`25rb` → 25.000, `2jt`/`2juta` → 2.000.000, `Rp 25 rb` → 25.000), longest-suffix first; legacy formats are unchanged, and the escrow strictness stays (suffix + separators like `1.5rb` is still rejected — the 10x-price guard).
+- 🟡 **Product prices were never validated:** `/add-product price:murah` was accepted silently, and every later sale recorded Rp 0 into stats/leaderboard. Both `/add-product` and `/update-product` now reject an unparseable price with the accepted-format list, and the add confirmation shows how the price will be counted (`💰 Counted in stats as: Rp 25.000 per sale`) — a format mistake is visible at setup time, not after N invisible sales.
+- 🟢 **One member field, not two:** "Members (live)" + "Members Tracked" merged into a single `👥 Members` (the live count from Discord), and "Avg Messages/Member" now divides by the LIVE count so the numbers match what the embed shows. Footer clarifies what revenue counts (ticket + escrow sales).
+- 🟢 `/config-show` Channels section: **server-log was missing since v3.9.43** (set-able but invisible) — now shown, together with the new server-booster channel.
+- 🟢 +15 unit tests (total 518): `boosters.test.js` (11 — boostManager state/idempotency/reconcile both directions, pure embed builders, live event end-to-end add/remove/silent, channel-not-set warning with the fix command, `/boosters` command end-to-end incl. sorting/bots/empty state, registry + router + PUBLIC + server-log + help-catalog + backup contracts) + `parsePrice` rb/jt/juta cases with the user-report scenario + no-regression guards + midman strictness; statsDisplay updated for the merged member field.
+
 ## [3.9.48] — 2026-09-09
 
 ### Changed — 🐛 user report: "there's a bug — the Welcome doesn't appear"

@@ -356,7 +356,21 @@ function parsePrice(priceStr) {
     if (!priceStr) return 0;
     let s = String(priceStr).toLowerCase().replace(/rp\.?/g, '').replace(/\s/g, '');
     let multiplier = 1;
-    if (s.endsWith('k')) {
+    // v3.9.49 FIX (user report: "total revenue doesn't update"): Indonesian
+    // suffixes were SILENTLY mis-parsed — "25rb" kept the trailing 'rb', and
+    // parseFloat picked up only the leading digits → 25 recorded instead of
+    // 25.000, so every sale added a near-invisible amount to the revenue.
+    // Order matters: 'juta' before 'jt' (longest first).
+    if (s.endsWith('juta')) {
+        multiplier = 1000000;
+        s = s.slice(0, -4);
+    } else if (s.endsWith('jt')) {
+        multiplier = 1000000;
+        s = s.slice(0, -2);
+    } else if (s.endsWith('rb')) {
+        multiplier = 1000;
+        s = s.slice(0, -2);
+    } else if (s.endsWith('k')) {
         multiplier = 1000;
         s = s.slice(0, -1);
     } else if (s.endsWith('m')) {

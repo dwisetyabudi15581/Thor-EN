@@ -113,7 +113,7 @@ const HELP_CATEGORIES = [
         name: 'Products & Auto-Role',
         short: 'Product CRUD + role granted on purchase',
         lines: [
-            '• `/add-product value:vip30 label:"VIP 30 Days" price:"Rp 30.000"` — key product',
+            '• `/add-product value:vip30 label:"VIP 30D" price:"Rp 30.000"` — key product',
             '• `/add-product ... requires_key:false` — service/account (details DM-ed to buyer)',
             '• `/update-product value:vip30 label:"..."` — edit · `/remove-product` · `/list-products`',
             '• `/set-product-role` — role on purchase (+ expiry) · `/remove-product-role` `/list-product-roles`'
@@ -137,7 +137,7 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/setup-ticket-panel` — multi-category panel (options: `title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
-            '• `/setup-verify` — new-member verification · `/set-verify-button` — customize the button',
+            '• `/setup-verify` — new-member verification · `/set-verify-button` — button style',
             '• `/setup-ticket` — legacy single-category panel'
         ]
     },
@@ -173,7 +173,7 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/set-channel server-log #ch` — deletes, edits, joins, bans',
             '• `audit-log #ch` — admin actions · `transcript #ch` — ticket archive',
-            '• `/set-channel welcome/goodbye/invoice #ch` — greetings & invoices',
+            '• `/set-channel welcome/goodbye/invoice/server-booster #ch`',
             '• `/test-welcome` — diagnose welcome/goodbye + live preview',
             '• `/remove-channel type` — turn one off',
             'ℹ️ No `server-log` set = no event records.'
@@ -198,7 +198,7 @@ const HELP_CATEGORIES = [
         name: 'Auto-Responder',
         short: 'Auto-reply FAQ when a message contains a trigger',
         lines: [
-            '• `/add-responder trigger:beli reply:...` — auto-reply to any message with "beli"',
+            '• `/add-responder trigger:beli reply:...` — auto-reply to "beli" anywhere',
             '• `match_mode:contains|exact` — word anywhere, or message start',
             '• `/list-responder` · `/remove-responder` — view & delete'
         ]
@@ -244,7 +244,7 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/giveaway create channel:#ch prize:... winners:1 duration:60` — start',
             '• `/giveaway list` `/giveaway end` `/giveaway reroll` — manage',
-            '• `/poll create` `/poll list` `/poll close` — quick polls'
+            '• `/poll create` `/poll list` `/poll close` — polls'
         ]
     },
     {
@@ -253,7 +253,7 @@ const HELP_CATEGORIES = [
         name: 'Scheduled Announcements',
         short: 'Send announcements now or scheduled',
         lines: [
-            '• `/announce channel:#ch title:... description:...` — send an announcement',
+            '• `/announce channel:#ch title:... description:...` — announcement',
             '• `/announce-schedule at:30m recurring:daily` — scheduled (once/recurring)',
             '• `/announce-list` `/announce-cancel` — view & cancel schedules'
         ]
@@ -294,9 +294,10 @@ const HELP_CATEGORIES = [
         id: 'stats',
         emoji: '📈',
         name: 'Statistics',
-        short: 'Live server stats, leaderboards, personal stats',
+        short: 'Live server stats, boosters, leaderboards',
         lines: [
-            '• `/stats` — live server stats (members, boosts, tickets) + tracked activity',
+            '• `/stats` — live server stats + tracked activity',
+            '• `/boosters` — who is boosting now + recent boost history',
             '• `/leaderboard metric:messages|vipPurchases|totalSpent` — rankings',
             '• `/my-stats` — your messages, transactions, wins & join date'
         ]

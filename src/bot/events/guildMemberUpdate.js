@@ -1,22 +1,31 @@
 /**
- * Event: guildMemberUpdate — log role & nickname changes (v3.9.43).
+ * Event: guildMemberUpdate — log role & nickname changes (v3.9.43) +
+ * SERVER BOOST add/remove detection (v3.9.49).
  *
  * Why it matters in a trading server:
  *   - Role changes = access status changes (verified → revoked, or someone
  *     gaining a "reseller" role out of nowhere without the owner knowing).
  *   - Nickname changes = scammers changing identity so their track record
  *     in vouches/warn-lists becomes hard to match.
+ *   - Boost changes (v3.9.49) = who is supporting the server right now —
+ *     Discord fires NO dedicated boost event, so the add/remove is derived
+ *     here from the premium_since diff (null → date = boost added,
+ *     date → null = boost removed).
  *
  * Guards:
- *   - oldMember can be PARTIAL (not cached) → old roles/nickname are
- *     unavailable; skip per-section (role diff needs oldMember.roles,
- *     nickname diff needs oldMember.nickname — partials have both undefined).
- *   - Bot members → skip (role changes during bot startup/tools = noise).
+ *   - oldMember can be PARTIAL (not cached) → old roles/nickname/premium info
+ *     are unavailable; skip per-section (role diff needs oldMember.roles,
+ *     nickname diff needs oldMember.nickname, boost diff needs
+ *     oldMember.premiumSinceTimestamp — partials have all undefined).
+ *   - Bot members → skip (role changes during bot startup/tools = noise;
+ *     bots cannot boost anyway).
  *   - No change → skip.
  */
 
 const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
+// v3.9.49: boost notifications (server-booster channel + server log + history).
+const { onBoostChange } = require('../boostHandler');
 
 async function onEvent(oldMember, newMember) {
     try {
@@ -26,6 +35,19 @@ async function onEvent(oldMember, newMember) {
 
         const hasOldState = !!(oldMember && oldMember.roles && oldMember.roles.cache);
         const user = newMember.user;
+
+        // === 0. Boost diff (v3.9.49) — checked FIRST so a boost that comes with
+        // a role change (the auto Booster role) doesn't shadow it. oldMember
+        // partial → premiumSinceTimestamp undefined → cannot compare → skip. ===
+        if (hasOldState && oldMember.premiumSinceTimestamp !== newMember.premiumSinceTimestamp) {
+            const wasBoosting = oldMember.premiumSinceTimestamp !== null && oldMember.premiumSinceTimestamp !== undefined;
+            const isBoosting = newMember.premiumSinceTimestamp !== null && newMember.premiumSinceTimestamp !== undefined;
+            if (!wasBoosting && isBoosting) {
+                await onBoostChange(newMember, 'add', null);
+            } else if (wasBoosting && !isBoosting) {
+                await onBoostChange(newMember, 'remove', oldMember.premiumSinceTimestamp);
+            }
+        }
 
         // === 1. Role diff (needs the old state cached) ===
         if (hasOldState) {

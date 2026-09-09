@@ -101,15 +101,22 @@ test('USER REPORT /stats: live member count, boosts, tickets + tracked activity'
     const fields = fieldMap(embed);
 
     // Live data straight from the guild object — verifiable against Discord.
-    assert.strictEqual(fields['👥 Members (live)'], '123');
+    assert.strictEqual(fields['👥 Members'], '123');
     assert.strictEqual(fields['🎫 Open Tickets'], '2');
     assert.strictEqual(fields['🚀 Server Boosts'], 'Level 2 (5 boosts)');
 
     // Tracked activity from stats.json — seeded above.
     assert.strictEqual(fields['💬 Messages Tracked'], '3');
-    assert.strictEqual(fields['👤 Members Tracked'], '1');
     assert.strictEqual(fields['🛒 Transactions'], '2');
     assert.strictEqual(fields['💰 Total Revenue'], 'Rp 20,000');
+
+    // v3.9.49 (user report: "member tracked & member live — if they do the same
+    // thing, make it one"): exactly ONE member field (the live count) + the
+    // average divides by the LIVE member count so the numbers are consistent.
+    const names = (embed.data.fields || []).map(f => f.name);
+    assert.strictEqual(names.filter(n => /member/i.test(n) && !/avg/i.test(n)).length, 1, `exactly one member field: ${names.join(' | ')}`);
+    assert.ok(!names.includes('👤 Members Tracked'), 'the duplicate Members Tracked field must be gone');
+    assert.strictEqual(fields['📈 Avg Messages/Member'], `${Math.round(3 / 123)}`);
 
     // The title names the server; the icon is attached when available.
     assert.match(embed.data.title, /SERVER STATS — Test Server/);
@@ -146,7 +153,7 @@ test('/stats edge: no boosts → "None"; no icon → no thumbnail field', async 
     const embed = interaction.__replies[0].embeds[0];
     const fields = fieldMap(embed);
     assert.strictEqual(fields['🚀 Server Boosts'], 'None');
-    assert.strictEqual(fields['👥 Members (live)'], '7');
+    assert.strictEqual(fields['👥 Members'], '7');
     assert.strictEqual(embed.data.thumbnail, undefined, 'iconURL() null → no thumbnail');
 });
 

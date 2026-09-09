@@ -420,7 +420,10 @@ test('router contract: test-welcome routes to the config domain', () => {
 test('ready.js contract: startup speaks up when the welcome channel is not configured', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'bot', 'events', 'ready.js'), 'utf8');
     // The startup check must cover BOTH keys and name the fix command.
-    assert.ok(src.includes("'welcome'"), 'welcome checked at startup');
-    assert.ok(src.includes("'goodbye'"), 'goodbye checked at startup');
+    // v3.9.49: the keys moved into CHANNEL_LABELS (unquoted object keys) + the
+    // server-booster channel joined the same check.
+    assert.match(src, /welcome:\s*'welcome messages'/, 'welcome checked at startup');
+    assert.match(src, /goodbye:\s*'goodbye messages'/, 'goodbye checked at startup');
+    assert.match(src, /'server-booster':\s*'boost notifications'/, 'server-booster checked at startup (v3.9.49)');
     assert.match(src, /\/set-channel \$\{key\} #channel/);
 });

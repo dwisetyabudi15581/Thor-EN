@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.48** · 89 slash commands · 503 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.49** · 90 slash commands · 518 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -48,7 +48,8 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 ### 📊 Leveling & Stats
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
-- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity, transactions & revenue. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
+- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity, transactions & revenue (Indonesian price formats `25rb`/`2jt` understood, product prices validated at setup). Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
+- **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history).
 
 ### 🎭 And More
 
@@ -135,9 +136,10 @@ Slash commands register instantly to the guild set in `GUILD_ID`. For developmen
 7. `/set-channel invoice #channel` — the invoice/testimonial channel
 8. `/set-channel audit-log #channel` — the audit log channel
 9. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
-10. `/setup-verify` — install the verification panel
-11. `/setup-ticket` — install the ticket panel
-12. `/config-show` — verify all settings
+10. `/set-channel server-booster #channel` — boost notifications (optional — `/boosters` works without it)
+11. `/setup-verify` — install the verification panel
+12. `/setup-ticket` — install the ticket panel
+13. `/config-show` — verify all settings
 
 The complete guide — including product examples, custom categories, and daily operations — is here: **[docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)**.
 
@@ -196,6 +198,10 @@ If the bot console shows a warning like `⚠️ [HINT] Message from ... has empt
 ### Welcome / goodbye message doesn't appear
 
 Run **`/test-welcome tipe:welcome`** — it diagnoses every link in the chain (channel configured? channel still exists? bot permissions in it?) and sends a live preview. Since v3.9.48 the bot also **says why** in the console on every join that gets skipped (channel not set / not found / send failed), and checks the configuration at startup. The GuildMembers intent is not the cause here — an online bot proves it is ON (a disabled privileged intent crashes the login).
+
+### Total revenue doesn't move when I sell
+
+Since v3.9.49: the price parsers understand Indonesian suffixes (`25rb` = 25.000, `2jt`/`2juta` = 2.000.000) and `/add-product` **rejects** a price it cannot read (with the accepted-format list) — a wrong format can no longer record Rp 0 per sale silently. Check your existing products with `/list-products`: if a price was recorded in a bad format, fix it with `/update-product`. Revenue counts ticket orders + escrow completions (price + fee) processed **through the bot** — manual sales outside tickets/deals are not tracked.
 
 For full troubleshooting (tickets, roles, stats, backups, etc.): **[docs/ADMIN_GUIDE.md → Section 9](./docs/ADMIN_GUIDE.md)**.
 
