@@ -7,6 +7,17 @@
  *
  * v3.9.4: scoped per guild — previously unfiltered.
  *
+ * v3.9.47 (user report: "stats don't match"): /stats used to show ONLY the
+ * numbers accumulated in stats.json — "Total Member Tracked" (only members the
+ * bot has recorded, ≠ the real member count), "Total VIP Purchases" (label said
+ * VIP, but it counts ALL transactions: ticket orders + escrow deals), and no
+ * live server data at all — so the embed rarely matched what the admin sees in
+ * Discord. Now /stats leads with LIVE data straight from Discord (real member
+ * count, boost tier + count, open tickets) followed by clearly-labeled tracked
+ * activity, and /my-stats shows the REAL join date from the member object
+ * (guildMemberAdd tracking only records joins since v3.2 — older members showed
+ * "not recorded" even though Discord knows their join date).
+ *
  * Note: the permission check for /leaderboard & /my-stats (public commands)
  *          lives in the router (src/commands/index.js). This domain file doesn't
  *          need to repeat that check.
@@ -21,6 +32,9 @@ const {
     safeEditReply
 } = require('./_shared');
 
+// v3.9.47: live "open tickets" counter for the /stats overview.
+const { getActiveTicketCount } = require('../data/ticketManager');
+
 module.exports = async function (interaction) {
     // ====================================================
     // === /stats ===
@@ -29,24 +43,47 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         // v3.9.4: scoped per guild — previously getServerStats() was unfiltered.
         const stats = getServerStatsAll(interaction.guild.id);
+
+        // v3.9.47: LIVE server data from the guild object (always current —
+        // no cache, no tracking gaps). This is the part the admin can verify
+        // against Discord itself: real member count, boosts, open tickets.
+        const guild = interaction.guild;
+        const liveMembers = guild.memberCount;
+        const activeTickets = getActiveTicketCount(guild.id);
+        const boostText =
+            guild.premiumTier && guild.premiumTier > 0
+                ? `Level ${guild.premiumTier} (${guild.premiumSubscriptionCount ?? 0} boosts)`
+                : 'None';
+
         const embed = new EmbedBuilder()
-            .setTitle('📊 SERVER STATS')
-            .setDescription('Aggregate stats of all member activity.')
+            .setTitle(`📊 SERVER STATS — ${guild.name}`)
+            .setDescription('Live server data from Discord + member activity tracked by the bot.')
             .setColor(0x5865f2)
             .addFields(
-                { name: '👥 Total Member Tracked', value: `${stats.totalUsers}`, inline: true },
-                { name: '💬 Total Messages', value: `${stats.totalMessages.toLocaleString('en-US')}`, inline: true },
-                { name: '🛒 Total VIP Purchases', value: `${stats.totalPurchases}`, inline: true },
-                { name: '💰 Total Revenue', value: `Rp ${stats.totalRevenue.toLocaleString('en-US')}`, inline: true },
-                { name: '🎉 Total Giveaway Won', value: `${stats.totalGiveawaysWon}`, inline: true },
+                // Row 1 — live data (verifiable in Discord at any moment)
+                { name: '👥 Members (live)', value: `${liveMembers}`, inline: true },
+                { name: '🎫 Open Tickets', value: `${activeTickets}`, inline: true },
+                { name: '🚀 Server Boosts', value: boostText, inline: true },
+                // Row 2 — tracked activity (from stats.json, since v3.2)
+                { name: '💬 Messages Tracked', value: `${stats.totalMessages.toLocaleString('en-US')}`, inline: true },
+                { name: '👤 Members Tracked', value: `${stats.totalUsers}`, inline: true },
                 {
                     name: '📈 Avg Messages/User',
                     value: stats.totalUsers > 0 ? `${Math.round(stats.totalMessages / stats.totalUsers)}` : '0',
                     inline: true
-                }
+                },
+                // Row 3 — tracked transactions (ticket orders + escrow deals)
+                { name: '🛒 Transactions', value: `${stats.totalPurchases}`, inline: true },
+                { name: '💰 Total Revenue', value: `Rp ${stats.totalRevenue.toLocaleString('en-US')}`, inline: true },
+                { name: '🎁 Giveaways Won', value: `${stats.totalGiveawaysWon}`, inline: true }
             )
-            .setFooter({ text: 'Data from stats.json — tracking since bot v3.2' })
+            .setFooter({
+                text: 'Members/boosts/tickets = live from Discord • messages & transactions tracked since v3.2'
+            })
             .setTimestamp();
+        // v3.9.47: server icon when available (personal touch, null-safe).
+        const icon = typeof guild.iconURL === 'function' ? guild.iconURL() : null;
+        if (icon) embed.setThumbnail(icon);
         return safeEditReply(interaction, { embeds: [embed] });
     }
 
@@ -99,18 +136,24 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         // v3.9.4: scoped per guild — previously getStats() was unfiltered.
         const stats = getUserStats(interaction.guild.id, interaction.user.id);
+
+        // v3.9.47: the REAL join date comes from the Discord member object
+        // (always accurate, works for members who joined before v3.2 tracking).
+        // stats.joinedAt is only a fallback for exotic cases (e.g. partial member).
+        const realJoinedTs = interaction.member?.joinedTimestamp ?? stats.joinedAt;
+
         const embed = new EmbedBuilder()
             .setTitle(`📊 STATS — ${interaction.user.tag}`)
             .setDescription('Your activity stats on this server.')
             .setColor(0x57f287)
             .addFields(
                 { name: '💬 Messages', value: `${stats.messages.toLocaleString('en-US')}`, inline: true },
-                { name: '🛒 VIP Purchases', value: `${stats.vipPurchases}`, inline: true },
+                { name: '🛒 Transactions', value: `${stats.vipPurchases}`, inline: true },
                 { name: '💰 Total Spent', value: `Rp ${stats.totalSpent.toLocaleString('en-US')}`, inline: true },
                 { name: '🎉 Giveaway Won', value: `${stats.giveawaysWon}`, inline: true },
                 {
-                    name: '📅 Joined Tracking',
-                    value: stats.joinedAt ? `<t:${Math.floor(stats.joinedAt / 1000)}:R>` : 'not recorded',
+                    name: '📅 Joined This Server',
+                    value: realJoinedTs ? `<t:${Math.floor(realJoinedTs / 1000)}:R>` : 'unknown',
                     inline: true
                 },
                 {

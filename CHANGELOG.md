@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.47] — 2026-09-09
+
+### Changed — ✨ user request: "trigger 'beli' must also answer 'bagaimana cara beli' — and let me choose between exact and contains matching" + "the stats don't match"
+
+**Auto-Responder match modes:**
+
+- 🟡 **User report:** a trigger only fired when the message STARTED with it — trigger `beli` never matched `bagaimana cara beli`. Every responder now has a `matchMode`, and `/add-responder` gained a `match_mode` option:
+  - **Contains (default, also applied to legacy entries without the field):** the trigger matches as a **whole word anywhere in the message** — `beli` fires on `bagaimana cara beli` / `mau beli?` — but NOT on `belian` / `membeli`. Word boundaries are letter/digit aware (`\p{L}\p{N}` via a Unicode regex, with all trigger metacharacters escaped), so longer words that merely CONTAIN the trigger as a substring don't cause false alarms. Multi-word triggers (`cara beli`) work, and message whitespace is collapsed so doubled spaces still match.
+  - **Start of message (exact):** the legacy prefix behavior — `!sosmed` matches `!sosmed halo` but not `oi !sosmed halo`.
+- 🟢 The add/list confirmations now show the match mode per entry (with the `beli` example in the hint), and `/list-responder` displays it per line.
+- 🟢 Cooldown fix along the way: a responder on cooldown no longer aborts the whole scan (`return null`) — the loop continues, so an overlapping second trigger (e.g. `beli` + `cara beli` in one message) can still reply.
+
+**Stats accuracy (user report: "the stats don't match"):**
+
+- 🟡 `/stats` used to show only accumulated `stats.json` numbers: "Total Member Tracked" (only members the bot recorded — ≠ the real member count) and "Total VIP Purchases" (label said VIP, but it counts ALL transactions: ticket orders + escrow deals) — with no live server data, so the embed rarely matched what the admin sees in Discord. Now `/stats` leads with **live data straight from the guild object** (real member count, boost tier + count, open tickets via the new `ticketManager.getActiveTicketCount()`) followed by clearly-labeled tracked activity, the server name in the title, and the server icon as thumbnail. "VIP Purchases" renamed to **Transactions**.
+- 🟡 `/my-stats` showed "Joined Tracking: not recorded" for everyone who joined before v3.2 — the embed now shows the REAL join date from `interaction.member.joinedTimestamp` (with the tracked value as a fallback for partial members).
+- 🟢 `/help` catalog: the Statistics + Auto-Responder categories now describe what the commands actually do (the responder category also documents `match_mode`); the All-Commands embed was re-measured to stay under the 5,800-char budget with all 20 categories intact (5.777 used).
+- 🟢 +22 unit tests (total **486**): `responderMatchMode.test.js` (14) — pure matcher (contains/word-boundary/exact/multi-word/regex-escape/invalid input), storage defaults, legacy-entry migration, the user's exact scenario, cooldown interplay incl. the continue-scan fix, registry contract; `statsDisplay.test.js` (8) — end-to-end `/stats` & `/my-stats` via the real command module with a stubbed interaction (live fields, transaction label rename regression, boost/ticket/join-date edges, guild-scoped ticket count, residue cleanup).
+
 ## [3.9.46] — 2026-09-09
 
 ### Fixed — 🟡 the "Message Content Intent" console hint fired FALSE alarms even with the intent fully enabled

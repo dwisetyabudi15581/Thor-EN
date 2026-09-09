@@ -6,7 +6,13 @@
  *   "<guildId>": [
  *     {
  *       "id": "resp_<timestamp>_<rand>",
- *       "trigger": "!sosmed",           // case-insensitive, exact match at the start of the message
+ *       "trigger": "beli",              // case-insensitive
+ *       "matchMode": "contains",        // v3.9.47: "contains" | "exact"
+ *                                        //   contains (DEFAULT, incl. legacy entries): the trigger
+ *                                        //     matches as a WHOLE WORD anywhere in the message —
+ *                                        //     "beli" matches "bagaimana cara beli", NOT "belian"
+ *                                        //   exact (legacy behavior): the message must START with
+ *                                        //     the trigger ("!sosmed" matches "!sosmed halo")
  *       "reply": "Instagram: @chronos\nTikTok: @chronos",
  *       "replyType": "text",            // "text" | "embed"
  *       "createdBy": "userId",
@@ -22,6 +28,18 @@
  * }
  *
  * v3.9.13: generic community bot feature.
+ *
+ * v3.9.47: match modes (user request). Old behavior: a trigger only fired when
+ * the message STARTED with it — trigger "beli" never matched "bagimana cara beli".
+ * Now every responder has a matchMode:
+ *   - "contains" (default, also applied to legacy entries without the field —
+ *      this is the behavior the admin asked for): whole-word match anywhere in
+ *      the message. Word boundaries are letter/digit aware (\p{L}\p{N}), so
+ *      "beli" matches "bagaimana cara beli" / "mau beli?" but NOT "belian"/
+ *      "membeli" — no false alarms from longer words that merely CONTAIN the
+ *      trigger as a substring.
+ *   - "exact": the legacy prefix behavior — message == trigger, or trigger
+ *      followed by a space/newline ("!sosmed" matches "!sosmed halo").
  */
 
 const fs = require('fs');
@@ -29,6 +47,51 @@ const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
 const filePath = path.join(__dirname, '..', '..', 'data', 'responders.json');
+
+// v3.9.47: escape all regex metacharacters so triggers like "!sos.med" are
+// treated as literal text when the contains mode builds its word-boundary regex.
+function escapeRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * v3.9.47: pure matcher — does this message match this trigger under this mode?
+ * Exported for unit tests. Inputs are lowercased INTERNALLY so the helper is
+ * safe for any caller (case-insensitive by contract).
+ *
+ * @param {string} message      the message content (any case)
+ * @param {string} trig         the trigger (any case)
+ * @param {string} [matchMode]  'contains' (default) | 'exact'
+ * @returns {boolean}
+ */
+function messageMatchesTrigger(message, trig, matchMode) {
+    if (typeof message !== 'string' || typeof trig !== 'string' || !trig) return false;
+
+    const lowerMessage = message.toLowerCase();
+    const lowerTrig = trig.toLowerCase();
+
+    if (matchMode === 'exact') {
+        // Legacy behavior: the message must START with the trigger.
+        return (
+            lowerMessage === lowerTrig ||
+            lowerMessage.startsWith(lowerTrig + ' ') ||
+            lowerMessage.startsWith(lowerTrig + '\n')
+        );
+    }
+
+    // contains (default): the trigger appears as a WHOLE WORD anywhere.
+    // Whitespace is collapsed so multi-word triggers ("cara beli") also match
+    // messages with doubled spaces. A "word" boundary is anything that is not
+    // a letter/digit/underscore — punctuation ("beli?", "beli!") counts as a
+    // boundary, while glued letters ("belian", "membeli") do NOT match.
+    const normalizedMsg = lowerMessage.trim().replace(/\s+/g, ' ');
+    const normalizedTrig = lowerTrig.trim().replace(/\s+/g, ' ');
+    const re = new RegExp(
+        `(^|[^\\p{L}\\p{N}_])${escapeRegExp(normalizedTrig)}([^\\p{L}\\p{N}_]|$)`,
+        'u'
+    );
+    return re.test(normalizedMsg);
+}
 
 // v3.9.26: read-through cache (panelManager pattern). findMatch is called in
 // messageCreate PER MESSAGE — previously 1 sync readFileSync per message even
@@ -95,6 +158,10 @@ function addResponder(guildId, data) {
     const entry = {
         id: genId(),
         trigger,
+        // v3.9.47: match mode — 'contains' (default: whole word anywhere in the
+        // message) or 'exact' (message must start with the trigger). Explicitly
+        // normalized: anything that isn't 'exact' is stored as 'contains'.
+        matchMode: data.matchMode === 'exact' ? 'exact' : 'contains',
         reply: data.reply,
         replyType: data.replyType === 'embed' ? 'embed' : 'text',
         createdBy: data.createdBy,
@@ -128,10 +195,15 @@ function removeResponder(guildId, trigger) {
 
 /**
  * Find the responder that matches a message.
- * Matches when the message starts with the trigger (case-insensitive).
+ * v3.9.47: matching honors each responder's matchMode —
+ *   - 'exact'    : the message starts with the trigger (legacy behavior)
+ *   - 'contains' : the trigger appears as a whole word anywhere in the message
+ *     (default, including legacy entries stored before v3.9.47)
  *
  * Per-user cooldown: user A who just triggered doesn't block user B from
- * getting a reply.
+ * getting a reply. v3.9.47: a responder on cooldown no longer aborts the scan
+ * (previously `return null`) — the loop CONTINUES so an overlapping second
+ * trigger (e.g. "beli" + "cara beli") can still reply.
  *
  * @param {string} guildId
  * @param {string} messageContent
@@ -142,31 +214,26 @@ function findMatch(guildId, messageContent, userId) {
     const responders = getGuildResponders(guildId);
     if (responders.length === 0) return null;
 
-    const lower = messageContent.toLowerCase();
+    const lower = String(messageContent || '').toLowerCase();
     const now = Date.now();
 
     for (const r of responders) {
         const trig = r.trigger.toLowerCase();
-        // Match when the message == trigger, OR the trigger is followed by a
-        // space/newline (e.g. "!sosmed" matches "!sosmed hello")
-        if (lower === trig || lower.startsWith(trig + ' ') || lower.startsWith(trig + '\n')) {
-            // Check the per-user cooldown. cooldownMs = 0 means the cooldown is off.
-            // v3.9.38 FIX: `??` (not `||`) so 0 stays 0 — previously 0 silently
-            // became 3000, so the "disable cooldown" option never worked.
-            const cooldownMs = r.cooldownMs ?? 3000;
-            if (cooldownMs > 0 && userId && r.userCooldowns && r.userCooldowns[userId]) {
-                const lastFired = r.userCooldowns[userId];
-                if (now - lastFired < cooldownMs) {
-                    return null; // this user is still on cooldown, skip
-                }
-            } else if (cooldownMs > 0 && !userId && r.lastFiredAt) {
-                // Fallback: if the caller doesn't pass userId, use the old global cooldown
-                if (now - r.lastFiredAt < cooldownMs) {
-                    return null;
-                }
+        if (!messageMatchesTrigger(lower, trig, r.matchMode)) continue;
+
+        // Check the per-user cooldown. cooldownMs = 0 means the cooldown is off.
+        // v3.9.38 FIX: `??` (not `||`) so 0 stays 0 — previously 0 silently
+        // became 3000, so the "disable cooldown" option never worked.
+        const cooldownMs = r.cooldownMs ?? 3000;
+        if (cooldownMs > 0) {
+            const lastFired = userId
+                ? r.userCooldowns?.[userId]
+                : r.lastFiredAt; // fallback: old global cooldown when no userId
+            if (lastFired && now - lastFired < cooldownMs) {
+                continue; // this user is still on cooldown — try the next responder
             }
-            return r;
         }
+        return r;
     }
     return null;
 }
@@ -203,5 +270,7 @@ module.exports = {
     removeResponder,
     findMatch,
     markUsed,
-    invalidateCache
+    invalidateCache,
+    // v3.9.47: pure matcher exported for unit tests
+    messageMatchesTrigger
 };

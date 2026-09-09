@@ -3,7 +3,17 @@
  * Slash commands: /add-responder, /list-responder, /remove-responder
  *
  * v3.9.13: Auto-Responder system.
- * Admin sets a trigger keyword → the bot auto-replies when a member sends a message starting with the trigger.
+ * Admin sets a trigger keyword → the bot auto-replies when a member sends a
+ * message containing the trigger.
+ *
+ * v3.9.47: match modes (user request). Old behavior: the trigger only fired at
+ * the START of the message — trigger "beli" never matched "bagaimana cara beli".
+ * Now /add-responder has a `match_mode` option:
+ *   - Contains (default): the trigger matches as a WHOLE WORD anywhere in the
+ *     message — "beli" fires on "bagaimana cara beli", "mau beli?" — but NOT
+ *     on "belian"/"membeli" (word boundary, no false alarms from longer words).
+ *   - Start of message (exact): the legacy behavior — the message must begin
+ *     with the trigger ("!sosmed" matches "!sosmed halo").
  */
 
 // v3.9.24: merge 2 duplicate _shared requires into 1.
@@ -24,6 +34,9 @@ module.exports = async function (interaction) {
         const reply = normalizeNewlines(interaction.options.getString('reply'));
         const replyType = interaction.options.getString('reply_type') || 'text';
         const cooldown = interaction.options.getInteger('cooldown');
+        // v3.9.47: how the trigger matches a message — 'contains' (whole word
+        // anywhere, the new default) or 'exact' (message must start with it).
+        const matchMode = interaction.options.getString('match_mode') === 'exact' ? 'exact' : 'contains';
 
         // Validate that cooldown isn't negative. 0 = disable the cooldown.
         if (cooldown !== null && cooldown < 0) {
@@ -36,6 +49,7 @@ module.exports = async function (interaction) {
             trigger,
             reply,
             replyType,
+            matchMode,
             cooldownMs: cooldown !== null ? cooldown * 1000 : 3000, // 0 = disabled, null = default 3s
             createdBy: interaction.user.id,
             createdByTag: interaction.user.tag
@@ -49,9 +63,18 @@ module.exports = async function (interaction) {
             action: 'ADD_RESPONDER',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Add responder: trigger \`${result.responder.trigger}\` → "${reply.slice(0, 80)}${reply.length > 80 ? '...' : ''}"`,
+            details: `Add responder: trigger \`${result.responder.trigger}\` (${matchMode}) → "${reply.slice(0, 80)}${reply.length > 80 ? '...' : ''}"`,
             guildId: interaction.guild.id
         });
+
+        // v3.9.47: the confirmation explains the match mode with a concrete example
+        // so the admin understands exactly when the bot will reply.
+        const matchHint =
+            matchMode === 'exact'
+                ? `💡 A member sends a message **starting with** \`${result.responder.trigger}\` → the bot auto-replies.`
+                : `💡 A member sends any message **containing** the word \`${result.responder.trigger}\` ` +
+                  `(e.g. "bagaimana cara ${result.responder.trigger}") → the bot auto-replies. ` +
+                  `Only whole words match — "${result.responder.trigger}an" style longer words won't trigger it.`;
 
         return safeEditReply(interaction, {
             content:
@@ -59,8 +82,9 @@ module.exports = async function (interaction) {
                 `🔤 Trigger: \`${result.responder.trigger}\`\n` +
                 `💬 Reply: ${reply.slice(0, 200)}${reply.length > 200 ? '...' : ''}\n` +
                 `📝 Type: ${replyType}\n` +
+                `🎯 Match: ${matchMode === 'exact' ? 'start of message (exact)' : 'contains (whole word, anywhere in the message)'}\n` +
                 `⏱️ Cooldown: ${result.responder.cooldownMs / 1000}s\n\n` +
-                `💡 A member sends a message starting with \`${result.responder.trigger}\` → the bot auto-replies.`
+                matchHint
         });
     }
 
@@ -78,7 +102,9 @@ module.exports = async function (interaction) {
         const lines = responders
             .map((r, i) => {
                 const replyPreview = r.reply.length > 60 ? r.reply.slice(0, 60) + '...' : r.reply;
-                return `\`${i + 1}.\` \`${r.trigger}\` → ${replyPreview} *(used ${r.useCount}x)*`;
+                // v3.9.47: show the match mode per entry
+                const mode = r.matchMode === 'exact' ? 'start' : 'contains';
+                return `\`${i + 1}.\` \`${r.trigger}\` → ${replyPreview} *(${mode} • used ${r.useCount}x)*`;
             })
             .join('\n');
 

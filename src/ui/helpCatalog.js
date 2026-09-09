@@ -195,9 +195,10 @@ const HELP_CATEGORIES = [
         id: 'responder',
         emoji: '💬',
         name: 'Auto-Responder',
-        short: 'Auto-reply FAQ when members send a trigger',
+        short: 'Auto-reply FAQ when a message contains a trigger',
         lines: [
-            '• `/add-responder trigger:hello reply:...` — set up an auto-reply (great for FAQ)',
+            '• `/add-responder trigger:beli reply:...` — auto-reply to any message with "beli"',
+            '• `match_mode:contains|exact` — word anywhere, or message start',
             '• `/list-responder` · `/remove-responder` — view & delete'
         ]
     },
@@ -292,11 +293,11 @@ const HELP_CATEGORIES = [
         id: 'stats',
         emoji: '📈',
         name: 'Statistics',
-        short: 'Server stats, leaderboards, transactions',
+        short: 'Live server stats, leaderboards, personal stats',
         lines: [
-            '• `/stats` — server statistics (members, tickets, transactions)',
+            '• `/stats` — live server stats (members, boosts, tickets) + tracked activity',
             '• `/leaderboard metric:messages|vipPurchases|totalSpent` — rankings',
-            '• `/my-stats` — your personal transaction stats'
+            '• `/my-stats` — your messages, transactions, wins & join date'
         ]
     },
     {

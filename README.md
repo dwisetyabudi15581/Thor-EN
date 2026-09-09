@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.46** · 88 slash commands · 464 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.47** · 88 slash commands · 486 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -42,13 +42,13 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 ### 💬 Auto-Responder & AFK
 
-- Keyword triggers (`!sosmed`, `!jadwal`, ...) → automatic reply as plain text or an embed, with a per-user cooldown.
+- Keyword triggers (`beli`, `!sosmed`, ...) → automatic reply as plain text or an embed, with a per-user cooldown. Two match modes (v3.9.47): **contains** (default — the trigger matches as a whole word anywhere in the message, e.g. `beli` answers "bagaimana cara beli") or **exact** (the message must start with the trigger).
 - AFK system: auto-reply when mentioned, auto-clear when the user returns, `/afk-list` for admins.
 
 ### 📊 Leveling & Stats
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
-- Server stats & leaderboards: messages, purchases, totalSpent, giveawaysWon.
+- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity, transactions & revenue. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
 
 ### 🎭 And More
 
@@ -80,7 +80,7 @@ Thor/
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 464 unit tests (node:test)
+├── tests/unit/                   # 486 unit tests (node:test)
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js

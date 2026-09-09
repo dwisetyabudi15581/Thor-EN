@@ -941,6 +941,26 @@ async function closeTicket(channel, closer, isSuccess) {
     }
 }
 
+/**
+ * v3.9.47: count ACTIVE tickets for a guild (used by /stats).
+ * tickets.json only holds metadata for tickets that are still open — meta is
+ * removed when the channel is deleted (closeTicket) — so counting entries
+ * scoped to this guild = currently open tickets. Legacy entries with no
+ * guildId (pre-v3.9.8) can't be scoped and are not counted.
+ *
+ * @param {string} guildId
+ * @returns {number}
+ */
+function getActiveTicketCount(guildId) {
+    if (!guildId) return 0;
+    const all = loadTickets();
+    let count = 0;
+    for (const meta of Object.values(all)) {
+        if (meta && meta.guildId === guildId) count++;
+    }
+    return count;
+}
+
 module.exports = {
     createTicket,
     closeTicket,
@@ -953,6 +973,8 @@ module.exports = {
     removeTicketMeta,
     resolveTicketType,
     classifyProduct,
+    // v3.9.47: live "open tickets" counter for /stats
+    getActiveTicketCount,
     // v3.9.38 FIX (FIX 3): product lookup helper by meta (used by ticket.js
     // + closeTicket, and the hardeningV38Ticket unit test).
     resolveProduct

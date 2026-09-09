@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.46
+# 📖 Admin Guide — Thor Bot v3.9.47
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -680,15 +680,20 @@ The bot disables all the buttons + shows the final results.
 
 ### Auto-Responder
 
-The bot replies automatically when a member types a trigger at the start of a message (case-insensitive).
+The bot replies automatically when a member's message matches a trigger (case-insensitive). Two match modes (v3.9.47):
+
+- **Contains** (default) — the trigger matches as a **whole word anywhere in the message**: trigger `beli` answers `bagaimana cara beli`, `mau beli?` — but NOT `belian` / `membeli` (no false alarms from longer words). Responders created before v3.9.47 automatically behave as contains too.
+- **Start of message (exact)** — the legacy behavior: the message must begin with the trigger (`!sosmed` matches `!sosmed hello`, not `hello !sosmed`).
 
 ```
-/add-responder trigger:"!sosmed" reply:"Instagram: ig.com/ourserver\nYouTube: yt.com/@ourserver" reply_type:embed
+/add-responder trigger:"beli" reply:"Silakan ketik /tiket untuk order!" match_mode:contains
+/add-responder trigger:"!sosmed" reply:"Instagram: ig.com/ourserver\nYouTube: yt.com/@ourserver" reply_type:embed match_mode:exact
 /list-responder
-/remove-responder trigger:"!sosmed"
+/remove-responder trigger:"beli"
 ```
 
 - `reply_type`: `text` (plain) or `embed`
+- `match_mode`: `contains` (whole word anywhere, default) or `exact` (start of message)
 - Supports `\n` for multi-line
 - Default 3-second per-user cooldown (configurable per responder, `0` = disabled)
 - Max 50 responders per guild
@@ -881,7 +886,7 @@ The bot needs access to `message.content`. Without that intent, Discord delivers
 6. Click **Save Changes**
 7. **Restart the bot** (`npm start`)
 
-Also check `/list-responder` to make sure the responder is registered. Triggers are case-insensitive and must sit at the start of the message (`!sosmed` matches `!sosmed hello`, but not `hello !sosmed`).
+Also check `/list-responder` to make sure the responder is registered. Triggers are case-insensitive. By default (`match_mode:contains`) the trigger matches as a whole word anywhere in the message — `beli` answers "bagaimana cara beli" but NOT "belian"; choose `match_mode:exact` if the message must start with the trigger (`!sosmed` matches `!sosmed hello`, not `hello !sosmed`).
 
 ### The auto-responder cooldown feels long
 
@@ -900,12 +905,13 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 - Check that the bot has `Send Messages` + `Embed Links` + `View Audit Log` in that channel
 - The audit log is automatically retried once if delivery fails due to rate limits/network
 
-### Stats not updating
+### Stats not updating / numbers don't match
 
-- Stats are cached in memory and flushed every 30 seconds — wait a moment, then check again
+- `/stats` shows **live data first** (members, boosts, open tickets — straight from Discord, always current), then tracked activity (messages, transactions, revenue). The tracked part is cached in memory and flushed every 30 seconds — wait a moment, then check again
 - If the bot just restarted, old stats are still in `stats.json`
 - After a backup restore, the stats cache is reloaded automatically
-- Check `/stats` for server-wide aggregates, `/my-stats` for personal ones
+- "Members Tracked" only counts members the bot has recorded (v3.2+ tracking) — the REAL member count is the "Members (live)" field
+- Check `/stats` for the server overview, `/my-stats` for personal stats (messages, transactions, wins, real join date)
 
 ### Tickets can't be created
 
@@ -976,10 +982,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.46) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.47) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.47** (2026-09-09) — ✨ **user request: auto-responder match modes + accurate stats**. Auto-responder: a trigger used to only fire at the START of a message — trigger `beli` never matched "bagaimana cara beli". Every responder now has a match mode (new `/add-responder` option `match_mode`): **contains** (default, also for legacy entries — the trigger matches as a WHOLE WORD anywhere in the message: `beli` answers "bagaimana cara beli"/"mau beli?" but NOT "belian"/"membeli") or **exact** (legacy start-of-message behavior). Bonus fix: a responder on cooldown no longer aborts the scan — an overlapping second trigger can still reply. Stats (user report: "the stats don't match"): `/stats` now leads with LIVE data from Discord (real member count, boost tier+count, open tickets) followed by clearly-labeled tracked activity; "VIP Purchases" renamed to **Transactions** (it counts ticket orders + escrow deals); `/my-stats` shows the REAL join date from the member object instead of "not recorded" for pre-v3.2 members. +22 unit tests (total **486**).
 - **v3.9.46** (2026-09-09) — 🟡 **fixed: the "Message Content Intent" console hint fired FALSE alarms** (production report: the hint appeared at startup while the bot was online and the intent was active — an online bot *proves* the intent is on, since discord.js crashes at login if the portal toggle is off): the hint's filter only excluded attachments/stickers/components, so legitimately text-less messages were misdiagnosed — **native polls** (`message.poll`), **Tenor GIF-picker messages** (gifv embeds), **system messages** (join notifications, pins). Fix: the exclusions are centralized in the exported helper `isContentlessByDesign()`; the hint now only fires for a message that genuinely should have text but arrived empty. +3 regression unit tests (total **464**).
 - **v3.9.45** (2026-09-07) — 🔴 **hotfix: moderation commands crashed at their first permission check** (production error report: `/purge` → `TypeError: Cannot read properties of undefined (reading 'ManageMessages')`): `moderation.js` (v3.9.43) destructured `PermissionFlagsBits` from `_shared.js`, which never exported it — a *silent* `undefined` (a missing export does not throw at require time) that slipped past 457 green tests and clean ESLint. All of `/purge` `/timeout` `/untimeout` `/kick` `/ban` died before doing anything. Fix: `_shared.js` officially re-exports `PermissionFlagsBits`; +2 safety-net unit tests (total **461**) that cross-check every `_shared` destructure in `src/**` at test time — this whole bug class can never ship again.
 - **v3.9.44** (2026-09-06) — ✨ **complete /help catalog redesign** (user request: "/warn lives under Scheduled Announce — please sync every feature and reorganize /help so it is easy to understand"): **20 categories ordered by usage priority** (Quick Start → Moderation → Products → Keys → Panels → Categories → Escrow → Logging & Channels → Auto-Mod → ...); `/warn*` **moved to the Moderation category** (one place: warn → timeout → kick → ban + purge); new **🚀 Quick Start** category (fresh-server setup in 5 steps); messy categories cleaned up ("Scheduled Announce & Warn" → pure Scheduled Announcements; "Announce, Embed & Backup" split into Messages & Embed Builder + Backup & Maintenance; "Stats & More" → pure Statistics); `/set-channel`, previously scattered across 3 categories, now **in one place: Logging & Channels**; new 🏠 home with a "What do you need right now?" section; every command gets a one-phrase explanation; all 20 categories still fit in 1 All-Commands embed (5.686 / 5.800 chars — no drops); +2 regression contract unit tests (total **459**).
@@ -1013,6 +1020,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.46
+**Document version:** v3.9.47
 **Last updated:** September 9, 2026
-**Bot version:** 3.9.46 · 88 slash commands · 464 unit tests
+**Bot version:** 3.9.47 · 88 slash commands · 486 unit tests

@@ -275,7 +275,11 @@ async function hookAutoMod(message) {
 
 /**
  * Hook 2: Auto-Responder
- * If the message starts with a trigger keyword (e.g. "!sosmed"), the bot auto-replies.
+ * The message matches a trigger keyword → the bot auto-replies.
+ * v3.9.47: two match modes per responder (see responderManager) —
+ * 'contains' (default: the trigger appears as a whole word anywhere, e.g.
+ * trigger "beli" matches "bagaimana cara beli") or 'exact' (the message
+ * must start with the trigger, e.g. "!sosmed halo").
  */
 async function hookAutoResponder(message) {
     // Pass the userId so the cooldown is per-user (not global per-trigger)

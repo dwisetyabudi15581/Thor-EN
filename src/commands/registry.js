@@ -1242,6 +1242,18 @@ function getCommands() {
                     description: 'Cooldown in seconds (anti-spam, default: 3, 0 = off)',
                     required: false,
                     min_value: 0
+                },
+                {
+                    // v3.9.47: how the trigger matches a message. Default = contains
+                    // (whole word anywhere, e.g. trigger "beli" matches "bagaimana cara beli").
+                    type: 3,
+                    name: 'match_mode',
+                    description: 'How the trigger matches a message (default: Contains)',
+                    required: false,
+                    choices: [
+                        { name: 'Contains — anywhere in the message', value: 'contains' },
+                        { name: 'Start of message — exact', value: 'exact' }
+                    ]
                 }
             ]
         },
