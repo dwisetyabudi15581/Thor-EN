@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.47
+# 📖 Admin Guide — Thor Bot v3.9.48
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -47,7 +47,7 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **88 slash commands** must appear
+- In Discord, type `/` — all **89 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
 > 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in (the **🚀 Quick Start** category holds a 5-step fresh-server setup order), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. All navigation happens inside one ephemeral message — it never floods the channel.
@@ -92,6 +92,8 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
 
 > 💡 Since v3.9.30 every channel is configured through **one command**, `/set-channel` — including transcript (previously a separate command, `/set-transcript-channel`). Remove one with `/remove-channel <type>`.
+
+> 🧪 **Verify it works immediately (v3.9.48):** run `/test-welcome tipe:welcome` (or `tipe:goodbye`) — the bot checks the whole chain (channel configured → still exists → bot permissions) and sends a **live preview** of the exact embed a new member would receive. No need to wait for a real member to join.
 
 ### Step 3: Install the Verification Panel
 
@@ -863,9 +865,13 @@ Shows all backups, including the `pre-restore_*` safety backups (if you have eve
 
 ### Welcome/Goodbye not sent
 
+**Run `/test-welcome tipe:welcome` first** — it pinpoints the broken link (channel not set / deleted / bot permissions) and previews the embed.
+
 - Check that `config.channels.welcome` / `config.channels.goodbye` are set (via `/config-show`)
 - Check that the bot has `Send Messages` + `Embed Links` in that channel
 - Check that the channel still exists (not deleted)
+- Since v3.9.48 the console **says why** on every skipped join/leave (channel not set / not found / send failed) and validates the configuration at startup — read the bot console
+- The GuildMembers intent is NOT the cause when the bot is online (a disabled privileged intent crashes the login instead of running silently)
 
 ### Auto-responder / anti-spam / AFK mention reply not working
 
@@ -982,10 +988,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.47) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.48) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.48** (2026-09-09) — 🐛 **user report: "there's a bug — the Welcome doesn't appear"**. Investigation: the welcome code path was proven WORKING (end-to-end simulation with the real modules — join → unverified role + embed + server log, leave → goodbye embed); the real bug was **diagnosability**: when the welcome/goodbye channel was not set / deleted / from another server, the bot logged NOTHING at startup AND NOTHING when a member actually joined. Fix: every skip now logs the cause + the fix command; **new `/test-welcome`** (89 commands) diagnoses the whole chain (config → channel exists → bot permissions) and sends a **live preview** built by the same embed builders the real event uses; startup validates the configuration; a join from another guild (GUILD_ID mismatch) is visible. +17 unit tests (total **503**).
 - **v3.9.47** (2026-09-09) — ✨ **user request: auto-responder match modes + accurate stats**. Auto-responder: a trigger used to only fire at the START of a message — trigger `beli` never matched "bagaimana cara beli". Every responder now has a match mode (new `/add-responder` option `match_mode`): **contains** (default, also for legacy entries — the trigger matches as a WHOLE WORD anywhere in the message: `beli` answers "bagaimana cara beli"/"mau beli?" but NOT "belian"/"membeli") or **exact** (legacy start-of-message behavior). Bonus fix: a responder on cooldown no longer aborts the scan — an overlapping second trigger can still reply. Stats (user report: "the stats don't match"): `/stats` now leads with LIVE data from Discord (real member count, boost tier+count, open tickets) followed by clearly-labeled tracked activity; "VIP Purchases" renamed to **Transactions** (it counts ticket orders + escrow deals); `/my-stats` shows the REAL join date from the member object instead of "not recorded" for pre-v3.2 members. +22 unit tests (total **486**).
 - **v3.9.46** (2026-09-09) — 🟡 **fixed: the "Message Content Intent" console hint fired FALSE alarms** (production report: the hint appeared at startup while the bot was online and the intent was active — an online bot *proves* the intent is on, since discord.js crashes at login if the portal toggle is off): the hint's filter only excluded attachments/stickers/components, so legitimately text-less messages were misdiagnosed — **native polls** (`message.poll`), **Tenor GIF-picker messages** (gifv embeds), **system messages** (join notifications, pins). Fix: the exclusions are centralized in the exported helper `isContentlessByDesign()`; the hint now only fires for a message that genuinely should have text but arrived empty. +3 regression unit tests (total **464**).
 - **v3.9.45** (2026-09-07) — 🔴 **hotfix: moderation commands crashed at their first permission check** (production error report: `/purge` → `TypeError: Cannot read properties of undefined (reading 'ManageMessages')`): `moderation.js` (v3.9.43) destructured `PermissionFlagsBits` from `_shared.js`, which never exported it — a *silent* `undefined` (a missing export does not throw at require time) that slipped past 457 green tests and clean ESLint. All of `/purge` `/timeout` `/untimeout` `/kick` `/ban` died before doing anything. Fix: `_shared.js` officially re-exports `PermissionFlagsBits`; +2 safety-net unit tests (total **461**) that cross-check every `_shared` destructure in `src/**` at test time — this whole bug class can never ship again.
@@ -1020,6 +1027,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.47
+**Document version:** v3.9.48
 **Last updated:** September 9, 2026
-**Bot version:** 3.9.47 · 88 slash commands · 486 unit tests
+**Bot version:** 3.9.48 · 89 slash commands · 503 unit tests

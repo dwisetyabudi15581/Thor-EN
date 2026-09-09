@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.47** · 88 slash commands · 486 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.48** · 89 slash commands · 503 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -131,12 +131,13 @@ Slash commands register instantly to the guild set in `GUILD_ID`. For developmen
 3. `/set-role unverified @role` — the default role for new members
 4. `/set-channel welcome #channel` — the welcome channel
 5. `/set-channel goodbye #channel` — the goodbye channel
-6. `/set-channel invoice #channel` — the invoice/testimonial channel
-7. `/set-channel audit-log #channel` — the audit log channel
-8. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
-9. `/setup-verify` — install the verification panel
-10. `/setup-ticket` — install the ticket panel
-11. `/config-show` — verify all settings
+6. `/test-welcome tipe:welcome` — verify the welcome works (diagnostics + live preview)
+7. `/set-channel invoice #channel` — the invoice/testimonial channel
+8. `/set-channel audit-log #channel` — the audit log channel
+9. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
+10. `/setup-verify` — install the verification panel
+11. `/setup-ticket` — install the ticket panel
+12. `/config-show` — verify all settings
 
 The complete guide — including product examples, custom categories, and daily operations — is here: **[docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)**.
 
@@ -191,6 +192,10 @@ The most common cause: the **Message Content Intent** is not enabled.
 4. Save Changes → restart the bot
 
 If the bot console shows a warning like `⚠️ [HINT] Message from ... has empty content`, the intent is indeed not active yet.
+
+### Welcome / goodbye message doesn't appear
+
+Run **`/test-welcome tipe:welcome`** — it diagnoses every link in the chain (channel configured? channel still exists? bot permissions in it?) and sends a live preview. Since v3.9.48 the bot also **says why** in the console on every join that gets skipped (channel not set / not found / send failed), and checks the configuration at startup. The GuildMembers intent is not the cause here — an online bot proves it is ON (a disabled privileged intent crashes the login).
 
 For full troubleshooting (tickets, roles, stats, backups, etc.): **[docs/ADMIN_GUIDE.md → Section 9](./docs/ADMIN_GUIDE.md)**.
 

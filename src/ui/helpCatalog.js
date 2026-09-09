@@ -171,11 +171,12 @@ const HELP_CATEGORIES = [
         name: 'Logging & Channels',
         short: 'Enable server-log, audit, transcript, welcome',
         lines: [
-            '• `/set-channel server-log #ch` — message delete/edit, join/leave, bans, roles',
-            '• `/set-channel audit-log #ch` — admin actions · `transcript #ch` — ticket archive',
+            '• `/set-channel server-log #ch` — deletes, edits, joins, bans',
+            '• `audit-log #ch` — admin actions · `transcript #ch` — ticket archive',
             '• `/set-channel welcome/goodbye/invoice #ch` — greetings & invoices',
+            '• `/test-welcome` — diagnose welcome/goodbye + live preview',
             '• `/remove-channel type` — turn one off',
-            'ℹ️ Without `server-log`, server events are not recorded.'
+            'ℹ️ No `server-log` set = no event records.'
         ]
     },
     {

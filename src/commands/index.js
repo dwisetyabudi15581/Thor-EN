@@ -11,7 +11,8 @@
  *     set-role, set-channel, set-message,
  *     remove-role, remove-channel,
  *     list-messages, reset-message,
- *     reset-config, config-show          → config.js
+ *     reset-config, config-show,
+ *     edit-message, test-welcome        → config.js
  *   - add-product, remove-product,
  *     list-products, set-product-role,
  *     remove-product-role,
@@ -122,6 +123,8 @@ const COMMAND_TO_DOMAIN = {
     'config-show': 'config',
     // v3.9.12: modal editor for message config
     'edit-message': 'config',
+    // v3.9.48: welcome/goodbye diagnostics + live preview
+    'test-welcome': 'config',
 
     // v3.9.32: midman/escrow
     'set-midman-fee': 'midman',

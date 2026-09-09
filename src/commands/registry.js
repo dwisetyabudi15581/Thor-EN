@@ -93,6 +93,28 @@ function getCommands() {
             ]
         },
 
+        // v3.9.48: diagnose + preview the welcome/goodbye embed without waiting
+        // for a real member join — the direct answer to "why doesn't the welcome
+        // appear?" (checks config, channel existence, bot permissions + sends a
+        // live preview embed to the current channel).
+        {
+            name: 'test-welcome',
+            description: 'Diagnose & preview the welcome/goodbye embed (find out why it does not appear)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 3,
+                    name: 'tipe',
+                    description: 'Which one to test',
+                    required: true,
+                    choices: [
+                        { name: 'Welcome', value: 'welcome' },
+                        { name: 'Goodbye', value: 'goodbye' }
+                    ]
+                }
+            ]
+        },
+
         // === SET MESSAGE ===
         {
             name: 'set-message',

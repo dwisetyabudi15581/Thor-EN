@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.48] — 2026-09-09
+
+### Changed — 🐛 user report: "there's a bug — the Welcome doesn't appear"
+
+**Welcome & Goodbye diagnostics (silent failures now speak):**
+
+- 🟡 **Investigation result:** the welcome code path was proven WORKING (end-to-end simulation with the real modules: join → role + embed + server log, leave → goodbye embed). The real bug was **diagnosability**: when the welcome channel was not set / deleted / from another server, the bot logged NOTHING at startup AND NOTHING when a member actually joined — the admin had zero clues, and no way to test without a real member joining.
+- 🟢 **`memberHandler`:** every skip reason now logs an actionable line — channel not set → `Fix: /set-channel welcome #channel`; channel not found → same + "deleted, or the ID belongs to another server"; send failure → names the channel + the exact permissions to check (Send Messages + Embed Links). Successes are logged too (`👋 Welcome sent for X in #channel`) so the flow is visible.
+- 🟢 **NEW `/test-welcome` command** (89 commands total): the direct answer to "why doesn't it appear?" — diagnoses every link in the chain (config → channel exists → bot permissions View/Send/Embed in that channel), notes that Join/Leave events are active (an online bot proves the GuildMembers intent is ON — a disabled privileged intent crashes the login instead), and **sends a live preview embed** to the current channel built by the SAME `buildWelcomeEmbed`/`buildGoodbyeEmbed` the real event uses (preview can never drift from reality). `tipe:welcome|goodbye`.
+- 🟢 **`ready.js` startup check:** warns when the welcome/goodbye channel is not set, or the ID doesn't exist in the guild (with the fix command); confirms with one line each when configured — misconfigurations surface at boot, not at the next random join.
+- 🟢 **`guildMemberAdd`/`guildMemberRemove`:** a member event from another guild (GUILD_ID mismatch) is now VISIBLE (was a silent return — a join in a second guild looked exactly like "welcome is broken").
+- 🟢 Embed builders extracted (`buildWelcomeEmbed` / `buildGoodbyeEmbed`, exported) — single source of truth shared by the live event and the `/test-welcome` preview.
+- 🟢 `/help` catalog: Logging & Channels documents `/test-welcome`; All-Commands embed re-measured within the 5.800 budget with all 20 categories intact (5.793 used).
+- 🟢 +17 unit tests (`welcomeDiagnostics.test.js`, total 503): pure builders, end-to-end join/leave happy paths (real modules + stubs), every silent-failure warning, the GUILD_ID guard visibility, `/test-welcome` end-to-end via the real command module (healthy / not set / ghost ID / missing permission / goodbye), registry + router + ready.js contracts.
+
 ## [3.9.47] — 2026-09-09
 
 ### Changed — ✨ user request: "trigger 'beli' must also answer 'bagaimana cara beli' — and let me choose between exact and contains matching" + "the stats don't match"

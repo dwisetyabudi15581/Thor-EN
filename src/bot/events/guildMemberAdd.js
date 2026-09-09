@@ -19,7 +19,14 @@ async function onEvent(member) {
         // v3.9.26 (single-guild hardening): ignore members from other guilds.
         // memberHandler uses the global config (roles.unverified, channels.welcome) —
         // in a second guild those IDs are invalid → role/channel lookups fail + warn spam.
-        if (process.env.GUILD_ID && member.guild?.id && member.guild.id !== process.env.GUILD_ID) return;
+        // v3.9.48: this skip is now VISIBLE (was a silent return — a member joined
+        // in the other guild and the admin could not tell why no welcome appeared).
+        if (process.env.GUILD_ID && member.guild?.id && member.guild.id !== process.env.GUILD_ID) {
+            console.warn(
+                `⚠️ Ignored a member join from another guild (ID: ${member.guild.id}) — GUILD_ID is set to a different server. Welcome messages only run in the GUILD_ID guild.`
+            );
+            return;
+        }
         await onMemberAdd(member);
 
         // v3.9.43: server log join (best effort — must never break the welcome).

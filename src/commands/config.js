@@ -2,11 +2,12 @@
  * Domain: config
  * Slash commands: /setup-verify, /setup-ticket, /set-role, /set-channel,
  *                 /set-message, /remove-role, /remove-channel, /list-messages,
- *                 /reset-message, /reset-config, /config-show
+ *                 /reset-message, /reset-config, /config-show, /test-welcome
  *
  * Split from handlers/commandHandler.js (v3.9.9 refactor).
  * Behavior: manage bot config (roles, channels, messages) + set up verification/ticket panels.
  * v3.9.30: /set-transcript-channel (panels) merged into /set-channel tipe:transcript.
+ * v3.9.48: /test-welcome — diagnose + preview the welcome/goodbye embed.
  */
 
 const {
@@ -15,6 +16,7 @@ const {
     ButtonStyle,
     ActionRowBuilder,
     MessageFlags,
+    PermissionFlagsBits,
     getConfig,
     saveConfig,
     setField,
@@ -29,6 +31,10 @@ const {
     getSessionsByUser,
     EMBED_LIMITS
 } = require('./_shared');
+
+// v3.9.48: /test-welcome previews the embed via the SAME builders the live
+// event uses (memberHandler) — the preview can never drift from the real thing.
+const { buildWelcomeEmbed, buildGoodbyeEmbed } = require('../bot/memberHandler');
 
 // v3.9.12: ModalBuilder for /edit-message
 // v3.9.30: ChannelType for /set-channel validation (all types need a text channel)
@@ -296,6 +302,68 @@ module.exports = async function (interaction) {
             guildId: interaction.guild.id
         });
         return safeEditReply(interaction, { content: `✅ Role **${tipe}** set to ${role} (\`${role.id}\`)` });
+    }
+
+    // === TEST WELCOME (v3.9.48) ===
+    // The direct answer to "why doesn't the welcome appear?": checks every link
+    // in the chain (config → channel exists → bot permissions) and sends a LIVE
+    // preview of the exact embed a new member would receive — built by the same
+    // buildWelcomeEmbed/buildGoodbyeEmbed the real event uses (no drift possible).
+    if (interaction.commandName === 'test-welcome') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const tipe = interaction.options.getString('tipe'); // 'welcome' | 'goodbye'
+        const me = interaction.guild.members.me;
+        const configuredId = config.channels[tipe];
+
+        // --- diagnose every link in the chain ---
+        const lines = [];
+        let channel = null;
+        if (!configuredId) {
+            lines.push(`❌ **${tipe} channel: not set** → fix with \`/set-channel ${tipe} #channel\``);
+        } else {
+            channel = interaction.guild.channels.cache.get(configuredId);
+            if (!channel) {
+                lines.push(
+                    `❌ **${tipe} channel: not found** (ID \`${configuredId}\`) — deleted, or the ID belongs to another server → re-set with \`/set-channel ${tipe} #channel\``
+                );
+            } else {
+                lines.push(`✅ **${tipe} channel:** ${channel} (\`${channel.id}\`)`);
+                if (me) {
+                    const perms = channel.permissionsFor(me);
+                    const canSend = perms?.has?.(PermissionFlagsBits.SendMessages) ?? false;
+                    const canEmbed = perms?.has?.(PermissionFlagsBits.EmbedLinks) ?? false;
+                    const canView = perms?.has?.(PermissionFlagsBits.ViewChannel) ?? true;
+                    lines.push(
+                        `${canView ? '✅' : '❌'} View Channel · ${canSend ? '✅' : '❌'} Send Messages · ${canEmbed ? '✅' : '❌'} Embed Links (bot permissions in that channel)`
+                    );
+                    if (!canSend || !canEmbed) {
+                        lines.push('→ fix: Server Settings → that channel → add the bot → enable **Send Messages** + **Embed Links**');
+                    }
+                }
+            }
+        }
+        // The event itself only fires because the bot is online with the
+        // GuildMembers intent — an online bot proves the intent is ON (a disabled
+        // privileged intent crashes the login, it never runs silently).
+        lines.push('ℹ️ Member Join/Leave events: ✅ active (the bot is online with the GuildMembers intent)');
+
+        // --- live preview: the EXACT embed a new member gets ---
+        // interaction.member plays the role of "the member who just joined".
+        const embed = tipe === 'welcome' ? buildWelcomeEmbed(interaction.member, config) : buildGoodbyeEmbed(interaction.member, config);
+        let previewNote;
+        try {
+            await interaction.channel.send({
+                content: tipe === 'welcome' ? `<@${interaction.user.id}>` : undefined,
+                embeds: [embed]
+            });
+            previewNote = `🧪 Preview sent to **this channel** — the real ${tipe} goes to ${channel ? channel : 'the channel you set'}. It uses your own data as the "new member".`;
+        } catch (sendErr) {
+            previewNote = `⚠️ Preview could NOT be sent to this channel: ${sendErr.message}\nCheck the bot's Send Messages + Embed Links permissions HERE too — the ${tipe} channel likely has the same problem.`;
+        }
+
+        return safeEditReply(interaction, {
+            content: `${lines.join('\n')}\n\n${previewNote}`
+        });
     }
 
     // === SET CHANNEL ===

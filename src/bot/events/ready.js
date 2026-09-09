@@ -36,6 +36,39 @@ const GUILD_ID = process.env.GUILD_ID || null;
 async function onReady(client) {
     console.log(`✅ Bot online as ${client.user.tag}`);
 
+    // === 1c. v3.9.48: welcome/goodbye startup check ===
+    // The #1 "welcome doesn't appear" report = the channel was never set, was
+    // deleted, or its ID came from another server. Previously the bot was SILENT
+    // both at startup AND when a member actually joined — now both speak up.
+    // /test-welcome does the deeper check (permissions + live preview).
+    try {
+        const { getConfig } = require('../../data/configManager');
+        const config = getConfig();
+        const guild = GUILD_ID
+            ? client.guilds.cache.get(GUILD_ID)
+            : client.guilds.cache.size > 0
+              ? client.guilds.cache.first()
+              : null;
+        if (guild) {
+            for (const key of ['welcome', 'goodbye']) {
+                const id = config.channels[key];
+                if (!id) {
+                    console.warn(
+                        `⚠️ The ${key} channel is NOT set — ${key} messages are OFF. Fix: /set-channel ${key} #channel`
+                    );
+                } else if (!guild.channels.cache.get(id)) {
+                    console.warn(
+                        `⚠️ The ${key} channel (ID ${id}) does not exist in "${guild.name}" — deleted, or the ID belongs to another server. Fix: /set-channel ${key} #channel`
+                    );
+                } else {
+                    console.log(`✅ ${key} channel configured: #${guild.channels.cache.get(id).name} (ID ${id})`);
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ Startup welcome/goodbye check failed:', err.message);
+    }
+
     // v3.9.24 FIX: order reversed — register commands to the guild FIRST, then clean
     // up global commands. Previously the global wipe ran first; if guild
     // registration failed afterwards, the bot had ZERO commands everywhere until

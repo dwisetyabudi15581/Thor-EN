@@ -15,7 +15,13 @@ const { logServerEvent, findAuditExecutor } = require('../../infra/serverLog');
 async function onEvent(member) {
     try {
         // v3.9.26 (single-guild hardening): ignore members from other guilds.
-        if (process.env.GUILD_ID && member.guild?.id && member.guild.id !== process.env.GUILD_ID) return;
+        // v3.9.48: this skip is now VISIBLE (was a silent return).
+        if (process.env.GUILD_ID && member.guild?.id && member.guild.id !== process.env.GUILD_ID) {
+            console.warn(
+                `⚠️ Ignored a member leave from another guild (ID: ${member.guild.id}) — GUILD_ID is set to a different server. Goodbye messages only run in the GUILD_ID guild.`
+            );
+            return;
+        }
         await onMemberRemove(member);
 
         // v3.9.43: server log leave/kick (best effort).
