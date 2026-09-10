@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.52] — 2026-09-10
+
+### Changed — 📖 user request: "update /help too so everything is in sync"
+
+- 🟢 **`/help` now documents the new stats features in the category detail views.** A category can carry an optional `detail` block that renders ONLY in the 📂 category view — richer usage docs without touching the 📖 All Commands embed (its budget had 7 characters of slack — 5.793/5.800 — so a detail leak would have silently dropped the last category from the full listing) or the 🔍 Search index (which scans the compact `lines`). Categories without a `detail` block render byte-identically to before.
+- 🟢 **Statistics category:** how to actually use the v3.9.51 live counters — `/serverstats setup` (creates the "📊 SERVER STATS" category at the top + the 5 display-only voice channels), `remove` / `refresh`, the auto-update triggers (join/leave, boost add/remove, channel & role create/delete), the rate-limit safety (2 renames per channel per 10 min — throttled + self-heal), the deleted-counter warning + auto-disable, and the boost-notification flow (pink embed → `/set-channel server-booster #ch`, always recorded in the server log + `/boosters` history).
+- 🟢 **Quick Start:** an optional-extras line points fresh setups at `/serverstats setup` and the boost-announcement channel. **Logging & Channels:** the `server-booster` channel row now explains the auto-announcement behavior.
+- 🟢 +8 unit tests (total **549**): `helpDetail.test.js` — stats detail documents setup/remove/refresh + counters + rate limit + boost guidance, quickstart/logging detail present, All-Commands embed excludes detail text and keeps all 20 categories within the 5800 budget, categories without detail render exactly as before, every category description ≤ 4096, search scans lines only (command findable, detail-only phrase never leaks).
+
 ## [3.9.51] — 2026-09-10
 
 ### Added — ✨ user request: "a live server-stats feature like the ServerStats bots"

@@ -89,6 +89,12 @@ const HELP_CATEGORIES = [
             '4️⃣ `/setup-verify` — verification for new members',
             '5️⃣ `/set-channel server-log #log` — enable server log',
             '💡 Then explore the other categories via the 📂 dropdown.'
+        ],
+        // v3.9.52: optional extras listed only in the category detail view —
+        // NOT in `lines` (the All-Commands embed budget has ~7 chars of slack).
+        detail: [
+            '',
+            '🎯 Nice extras once the basics run: `/serverstats setup` — live member/boost counters at the top of the channel list · `/set-channel server-booster #ch` — boost announcements.'
         ]
     },
     {
@@ -177,6 +183,11 @@ const HELP_CATEGORIES = [
             '• `/test-welcome` — diagnose welcome/goodbye + live preview',
             '• `/remove-channel type` — turn one off',
             'ℹ️ No `server-log` set = no event records.'
+        ],
+        // v3.9.52: boost announcements explained (category detail view only).
+        detail: [
+            '',
+            '🚀 Boost add/remove is auto-announced to the `server-booster` channel as a pink embed, and is ALWAYS recorded in the server log (BOOST_ADD / BOOST_REMOVE) + boost history — even when the channel is not set.'
         ]
     },
     {
@@ -304,6 +315,18 @@ const HELP_CATEGORIES = [
             '• `/boosters` — current boosters + history',
             '• `/leaderboard` — rankings (messages/spending/wins)',
             '• `/my-stats` — your messages & transactions'
+        ],
+        // v3.9.52 (user request: "update /help too so everything is in sync"):
+        // extended usage for the NEW stats features — category detail view only.
+        detail: [
+            '',
+            '**Live counter channels (like the ServerStats bots):**',
+            '• `/serverstats setup` — creates the "📊 SERVER STATS" category at the TOP of the channel list + 5 display-only voice channels: 👥 Members · 🤖 Bots · 🚀 Boosts · 🎭 Roles · 📺 Channels — the numbers in the channel NAMES update live',
+            '• `/serverstats remove` — delete the whole category · `/serverstats refresh` — force one immediate update',
+            '💡 Auto-updates on member join/leave, boost add/remove, channel & role create/delete — rate-limit safe (Discord allows only 2 renames per channel / 10 min, so updates are throttled and self-heal every ~5 min). A deleted counter warns you; if ALL counters are deleted the feature auto-disables.',
+            '',
+            '**Boost notifications:**',
+            '• A member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel server-booster #ch`) and always recorded in the server log + `/boosters` history'
         ]
     },
     {
@@ -383,9 +406,13 @@ function buildHomeEmbed(client, user) {
 function buildCategoryEmbed(client, categoryId) {
     const cat = findCategory(categoryId);
     if (!cat) return null;
+    // v3.9.52: optional `detail` lines render ONLY in this category view —
+    // richer usage docs without touching the budget-critical All-Commands
+    // embed (which renders only the compact `lines`) or Search (also lines).
+    const description = [...cat.lines, ...(cat.detail || [])].join('\n');
     return baseEmbed()
         .setTitle(`${cat.emoji} ${cat.name}`)
-        .setDescription(cat.lines.join('\n'))
+        .setDescription(description)
         .addFields({
             name: '↩️ Navigation',
             value: 'Switch categories via the 📂 dropdown · Click **🏠 Main Menu** to go back · **🔍 Search Commands** to search.'

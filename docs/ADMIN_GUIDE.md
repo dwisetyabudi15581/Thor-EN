@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.51
+# 📖 Admin Guide — Thor Bot v3.9.52
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -47,10 +47,10 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **90 slash commands** must appear
+- In Discord, type `/` — all **91 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
-> 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in (the **🚀 Quick Start** category holds a 5-step fresh-server setup order), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. All navigation happens inside one ephemeral message — it never floods the channel.
+> 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in (the **🚀 Quick Start** category holds a 5-step fresh-server setup order), 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. Since **v3.9.52** the 📂 category views can carry **extended `detail` documentation** (e.g. Statistics explains `/serverstats setup`/`remove`/`refresh` + the boost notification flow) — the 📖 All Commands listing stays compact so it always fits one embed. All navigation happens inside one ephemeral message — it never floods the channel.
 
 ---
 
@@ -1009,10 +1009,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.51) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.52) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.52** (2026-09-10) — 📖 **user request: "update /help too so everything is in sync"**. Categories in `/help` can now carry a **`detail` block** — extended usage documentation that renders **only in the 📂 category detail view** (the 📖 All Commands embed and 🔍 Search keep the compact lines, so the full-listing budget — 7 chars of slack — is untouched and no category can silently drop). **Statistics** now explains the live counters properly: `/serverstats setup` / `remove` / `refresh`, the auto-update triggers (join/leave, boost, channel & role changes), the rate-limit safety, the deleted-counter warning + auto-disable, and the boost-notification flow (`/set-channel server-booster #ch` → pink embed + server log + `/boosters` history). **Quick Start** gained an optional-extras line (`/serverstats setup` + the boost channel) and **Logging & Channels** explains the boost auto-announcement. +8 unit tests (total **549**).
 - **v3.9.51** (2026-09-10) — ✨ **user request: live server stats like the ServerStats bots** + ✂️ **user request: "just delete the total revenue feature"**. New **`/serverstats`** command (91 total, admin): `setup` creates a `📊 SERVER STATS` category at the top of the channel list with 5 display-only channels whose NAMES are live counters (`👥 Members`, `🤖 Bots`, `🚀 Boosts`, `🎭 Roles`, `📺 Channels` — @everyone denied Connect), `remove` deletes them, `refresh` forces an update. Auto-update on member/boost/role/channel changes (4 new event files) via the 60s scheduler, rate-limit safe (change detection = zero API calls when unchanged; 5-min per-channel cooldown = exactly Discord's 2 renames/10 min; dirty-driven so a join burst = 1 refresh); 5-min catch-up tick self-heals missed events; deleted channels warn with the fix command and auto-disable when all are gone; partial-failure rollback; startup sync for offline changes; `serverstats.json` backed up + restored. `/stats`: **Total Revenue removed** (repeated confusion — personal spending stays in `/my-stats` + `/leaderboard`). +18 unit tests (total **541**).
 - **v3.9.50** (2026-09-10) — 🐛 **user report: "I set the price as 3$ USD | Rp. 25.000" — revenue still barely moved**. 🔴 Dual-currency prices recorded **Rp 3** per sale: `parseFloat` stopped at the `$` and the Rupiah half was never read. Both price parsers now read the amount attached to the `Rp` marker directly — `3$ USD | Rp. 25.000` → **Rp 25.000** per sale (pipe or not, Rp first or USD first, suffixes included). 🟡 USD-only prices (`$3`, `3 usd`) are now **rejected** with a hint to include the Rupiah amount (revenue is in Rupiah; no currency conversion). 🟢 `/update-product` now shows `💰 counted in stats: Rp 25.000 per sale` when the price changes (same visibility as `/add-product`). Escrow strictness preserved (`3$ | Rp 1.5rb` still rejected). +5 unit tests (total **523**).
 - **v3.9.49** (2026-09-10) — ✨ **user request: Server Booster feature** + 🐛 **user report: "the stats still don't match — revenue doesn't update, and member tracked vs member live"**. Boosters: boost add/remove is detected from the `guildMemberUpdate` premium_since diff (Discord has no dedicated boost event) → pink `🚀 NEW SERVER BOOST!` / gray `💔 BOOST ENDED` embeds to the new **server-booster channel** (`/set-channel tipe:server-booster`), always recorded in the server log, history persisted in `boosts.json` (backed up + restored), **offline catch-up** in one consolidated embed at startup, and a new public **`/boosters`** command (90 total) listing the live roster (earliest supporter first) + recent boost history. Stats fixes: 🔴 Indonesian price suffixes were silently mis-parsed — `25rb` recorded **Rp 25** per sale instead of Rp 25.000 (revenue looked frozen) — both price parsers now understand `rb`/`jt`/`juta`; `/add-product` & `/update-product` now **reject unparseable prices** and show the amount that will be counted per sale; the duplicate "Members (live)" + "Members Tracked" fields merged into **one `👥 Members`** (live count, average divides by it); `/config-show` now lists the server-log channel (missing since v3.9.43) + the new booster channel. +15 unit tests (total **518**).
@@ -1051,6 +1052,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.51
+**Document version:** v3.9.52
 **Last updated:** September 10, 2026
-**Bot version:** 3.9.51 · 91 slash commands · 541 unit tests
+**Bot version:** 3.9.52 · 91 slash commands · 549 unit tests
