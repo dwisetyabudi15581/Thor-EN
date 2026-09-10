@@ -342,6 +342,10 @@ function getServerStats(guildId) {
 
 /**
  * Parse a price string into a number. Handles "Rp 25.000", "25000", "25.000", "25k", "2.5M"
+ * and — since v3.9.54 — ANY currency marker: "$3", "€25", "¥1000", "₩25,000", "25 usd",
+ * "IDR 30.000"... The bot is currency-AGNOSTIC: it records the numeric amount
+ * in whatever currency the admin prices their products. Dual-currency strings
+ * ("3$ USD | Rp. 25.000") still record the Rupiah half (v3.9.50 behavior).
  *
  * P2-13 FIX: before, `.replace(/\./g, '').replace(/,/g, '.')` was ambiguous:
  *   - "25,000" (US thousands) → "25.000" → parseFloat → 25 (WRONG, should be 25000)
@@ -360,8 +364,7 @@ function parsePrice(priceStr) {
     // price recorded **Rp 3** per sale and the revenue looked frozen AGAIN.
     // Stats are denominated in Rupiah: when an 'rp' marker exists, read the
     // amount attached to it directly (pipe, separators and the USD half are
-    // ignored). A USD-only string (no 'rp') cannot be converted reliably → 0
-    // (priceValidationError explains the accepted formats).
+    // ignored).
     if (/rp/.test(s)) {
         const m = s.match(/rp\.?\s*([0-9][0-9.,]*\s*(?:juta|jt|rb|k|m)?)/);
         if (m) {
@@ -371,10 +374,22 @@ function parsePrice(priceStr) {
             // strip the marker and parse what remains.
             s = s.replace(/rp\.?/g, '');
         }
-    } else if (/\$|usd/.test(s)) {
-        // USD-only ("$3", "3 usd"): there is no Rupiah amount to record —
-        // returning 0 lets the validation layer ask for the Rp half.
-        return 0;
+    } else if (/[|$€£¥₩₱₹₫฿]|\b(?:usd|eur|gbp|jpy|krw|php|inr|vnd|thb|myr|sgd|idr|aud|cad|chf)\b/.test(s)) {
+        // v3.9.54 (user request: "the bot will be used by people outside
+        // Indonesia too — make it work for everyone"): ANY currency marker is
+        // now accepted, not just Rp. The bot records the NUMERIC amount in
+        // whatever currency the admin prices their products (no conversion).
+        // Markers are stripped and the FIRST amount wins ("$3 | €2" → 3);
+        // Rp keeps its dedicated branch above so dual-currency strings still
+        // record the Rupiah half (v3.9.50 behavior, unchanged).
+        s = s
+            .replace(/[|$€£¥₩₱₹₫฿]/g, ' ')
+            .replace(/\b(?:usd|eur|gbp|jpy|krw|php|inr|vnd|thb|myr|sgd|idr|aud|cad|chf)\b/g, ' ');
+        // First amount (k/m suffix must be ATTACHED to avoid grabbing a word:
+        // "buy 3 monkeys for $5" → 3, not "3 m" → 3000).
+        const m = s.match(/[0-9][0-9.,]*(?:\s*(?:juta|jt|rb)|[km])?/);
+        if (!m) return 0; // a marker with no amount ("usd") → unparseable
+        s = m[0];
     }
     s = s.replace(/\s/g, '');
     let multiplier = 1;

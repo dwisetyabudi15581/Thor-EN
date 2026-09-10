@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.54] — 2026-09-10
+
+### Changed — 🌍 user request: "the bot will be used by people outside Indonesia too — remove the Rupiah-only stuff (or use your own idea)"
+
+- 🟢 **Prices are now currency-AGNOSTIC: ANY currency marker is accepted** — `$3`, `€25`, `£ 20`, `¥1000`, `₩25,000`, `₱500`, `₹99`, `25 usd`, `IDR 30.000`, `3 eur`, … plus all the existing formats (`25000`, `25.000`, `25,000`, `Rp 30.000`, `30rb`, `3jt`). The bot records the **numeric amount** in whatever currency the admin prices their products — no conversion, no rejection. Dual-currency strings (`3$ USD | Rp 25.000`) still record the **Rp half** (v3.9.50 behavior, unchanged); when no Rp half exists the **first amount** wins (`$3 | €2` → 3). Applies to BOTH price parsers: `statsManager.parsePrice` (products/stats) and `midmanManager.parsePriceNumber` (escrow deals — the v3.9.50 "USD-only → rejected" branch is gone). Design choice (instead of deleting prices entirely): deleting the price system would also kill 💰 Total Spent / Top Spender stats — going currency-agnostic keeps every existing feature working for every country.
+- 🟢 **USD-only prices are no longer rejected by `/add-product` & `/update-product`** — `priceValidationError` now accepts any currency; the error message (for genuinely unparseable strings) lists international examples (`$3` · `€25` · `Rp 30.000` · `30rb`). The confirmations show `💰 Counted in stats as: **25,000** per sale` — plain number, no hardcoded `Rp` prefix.
+- 🟢 **`/my-stats` "Total Spent" and `/leaderboard` "Top Spender" show plain locale numbers** (no hardcoded `Rp` prefix) — correct for servers pricing in ANY currency. Buyers still see the admin's exact `label` + `price` text in the ticket panel (always was currency-agnostic).
+- 🟢 **Escrow displays are currency-agnostic:** `midmanManager.formatRupiah` renamed to **`formatMoney`** (plain locale number, e.g. `95,000` instead of `Rp95,000`) — all ~20 display sites (deal board, WAITING_PAYMENT instructions, fee examples, audit details) updated. Escrow keeps its whole-amount strictness (`$2.5` → rejected as ambiguous; `$25,000` / `€2.500` → fine).
+- 🟢 **`/help` FAQ rewritten (Products & Escrow categories):** "Price format?" now answers "ANY currency works" with international examples instead of "USD-only is rejected: stats are in Rupiah"; the escrow fee FAQ no longer says stats are in Rupiah. Slash-option descriptions (`/add-product price`, `/update-product price`, `/set-midman-fee`) now show mixed-currency examples.
+
 ## [3.9.53] — 2026-09-10
 
 ### Added — ⚙️ user request: "give /serverstats options for which counters to show"

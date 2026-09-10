@@ -15,7 +15,7 @@
  *     "sellerAgreed": false,
  *     "observers":  ["123..."],  // v3.9.34: additional (non-participant) members in the deal channel
  *     "item":       "Akun ML Mythic",
- *     "priceNum":   100000,     // deal price in rupiah (number)
+ *     "priceNum":   100000,     // deal price (number — v3.9.54: currency-agnostic, the admin's pricing currency)
  *     "priceText":  "Rp100.000",
  *     "fee":        5000,       // middleman fee (computed when the deal is created)
  *     "feeMode":    "percent",  // v3.9.33: fee mode snapshot at deal creation
@@ -49,7 +49,7 @@
  * that did NOT write the terms must approve them".
  *
  * Pure functions (canTransition, nextState, actorAllowed, calcFee,
- * calcTotals, parsePriceNumber, formatRupiah, applyAgreement,
+ * calcTotals, parsePriceNumber, formatMoney, applyAgreement,
  * canAddObserver, addObserver, removeObserver) follow the
  * classifyProduct() v3.9.28 pattern: extracted so they can be unit-tested
  * without mocking Discord.
@@ -273,10 +273,10 @@ function actorAllowed(event, roles) {
  * capped at the deal price (a flat fee may exceed the price; /set-midman-fee
  * already limits the max percent to 90% as a sanity guard on the command side).
  *
- * @param {number} priceNum - deal price (rupiah)
+ * @param {number} priceNum - deal price (amount, the admin's pricing currency)
  * @param {string} feeMode - 'percent' | 'flat'
  * @param {number} feeValue - percent (e.g. 5 = 5%) or flat amount
- * @returns {number} fee amount in rupiah
+ * @returns {number} fee amount
  */
 function calcFee(priceNum, feeMode, feeValue) {
     const price = Number(priceNum) || 0;
@@ -324,7 +324,7 @@ function calcTotals(priceNum, fee) {
  *   - Without a suffix: `.`/`,` are only valid as THOUSANDS separators — format
  *     `^\d{1,3}([.,]\d{3})*$` with a CONSISTENT separator type ("1.000.000"
  *     and "1,000,000" valid; "2.5", "1.000,000", "100000." invalid → 0).
- *     Escrow deal prices are always whole rupiah.
+ *     Escrow deal prices are always whole amounts (currency-agnostic, v3.9.54).
  */
 function parsePriceNumber(input) {
     if (typeof input === 'number') return input > 0 ? Math.floor(input) : 0;
@@ -333,8 +333,7 @@ function parsePriceNumber(input) {
         .toLowerCase()
         .trim();
     // v3.9.50 FIX: dual-currency prices ("3$ USD | Rp. 25.000") — read the
-    // Rupiah half directly (the stats/escrow currency). USD-only (no 'rp') → 0:
-    // escrow is denominated in Rupiah, and no reliable conversion exists.
+    // Rupiah half directly (legacy behavior kept for existing servers).
     if (/rp/.test(s)) {
         const m = s.match(/rp\.?\s*([0-9][0-9.,]*\s*(?:juta|jt|rb|k|m)?)/);
         if (m) {
@@ -342,8 +341,19 @@ function parsePriceNumber(input) {
         } else {
             s = s.replace(/rp\.?/g, '');
         }
-    } else if (/\$|usd/.test(s)) {
-        return 0;
+    } else if (/[|$€£¥₩₱₹₫฿]|\b(?:usd|eur|gbp|jpy|krw|php|inr|vnd|thb|myr|sgd|idr|aud|cad|chf)\b/.test(s)) {
+        // v3.9.54 (user request: "the bot will be used by people outside
+        // Indonesia too"): ANY currency marker is accepted — escrow is
+        // currency-AGNOSTIC, the deal amount is in whatever currency the
+        // parties typed (no conversion). Markers are stripped; the FIRST
+        // amount wins ("$3 | €2" → 3). Rp keeps its dedicated branch above
+        // so dual-currency strings still record the Rupiah half.
+        s = s
+            .replace(/[|$€£¥₩₱₹₫฿]/g, ' ')
+            .replace(/\b(?:usd|eur|gbp|jpy|krw|php|inr|vnd|thb|myr|sgd|idr|aud|cad|chf)\b/g, ' ');
+        const m = s.match(/[0-9][0-9.,]*(?:\s*(?:juta|jt|rb)|[km])?/);
+        if (!m) return 0; // a marker with no amount ("usd") → invalid
+        s = m[0];
     }
     s = s
         .replace(/rp\.?/g, '')
@@ -385,11 +395,13 @@ function parsePriceNumber(input) {
 }
 
 /**
- * Format rupiah: 95000 → "Rp95,000" (en-US locale).
+ * v3.9.54 (user request: international users): format a deal amount as a
+ * plain locale number — currency-AGNOSTIC (no "Rp" prefix). 95000 → "95,000".
+ * The currency is whatever the deal parties typed; the bot never converts.
  */
-function formatRupiah(n) {
+function formatMoney(n) {
     const num = Number(n) || 0;
-    return 'Rp' + num.toLocaleString('en-US');
+    return num.toLocaleString('en-US');
 }
 
 /**
@@ -519,7 +531,7 @@ module.exports = {
     calcFee,
     calcTotals,
     parsePriceNumber,
-    formatRupiah,
+    formatMoney,
     // constants
     STATES,
     TRANSITIONS,

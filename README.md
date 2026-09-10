@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.53** · 91 slash commands · 551 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.54** · 91 slash commands · 552 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -202,7 +202,7 @@ Run **`/test-welcome tipe:welcome`** — it diagnoses every link in the chain (c
 
 ### Total revenue doesn't move when I sell
 
-**The aggregate "Total Revenue" line was REMOVED from `/stats` in v3.9.51** (user request — it was never going to match manual bookkeeping). Personal spending per member is still tracked and visible in `/my-stats` ("Total Spent") and `/leaderboard` ("Top Spender"). Since v3.9.49/50 the price parsers understand Indonesian suffixes (`25rb` = 25.000, `2jt`/`2juta` = 2.000.000), dual-currency (`3$ USD | Rp. 25.000` records **Rp 25.000 per sale**), and `/add-product` **rejects** an unreadable price (with the accepted-format list) — so what IS tracked is recorded correctly. Personal spending counts ticket orders + escrow completions (price + fee) processed **through the bot** — manual sales outside tickets/deals are not tracked.
+**The aggregate "Total Revenue" line was REMOVED from `/stats` in v3.9.51** (user request — it was never going to match manual bookkeeping). Personal spending per member is still tracked and visible in `/my-stats` ("Total Spent") and `/leaderboard` ("Top Spender"). Since v3.9.49/50 the price parsers understand Indonesian suffixes (`25rb` = 25.000, `2jt`/`2juta` = 2.000.000) and dual-currency (`3$ USD | Rp. 25.000` records **Rp 25.000 per sale**); since **v3.9.54 prices are currency-AGNOSTIC** — ANY marker works (`$3`, `€25`, `¥1000`, `₩25,000`, `25 usd`, `IDR 30.000`…), USD-only is no longer rejected, and `/add-product` **rejects** only genuinely unreadable strings (with the accepted-format list) — so what IS tracked is recorded correctly. Stats and escrow show plain locale numbers (no hardcoded `Rp`). Personal spending counts ticket orders + escrow completions (price + fee) processed **through the bot** — manual sales outside tickets/deals are not tracked.
 
 For full troubleshooting (tickets, roles, stats, backups, etc.): **[docs/ADMIN_GUIDE.md → Section 9](./docs/ADMIN_GUIDE.md)**.
 

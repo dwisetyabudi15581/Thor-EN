@@ -57,11 +57,11 @@ module.exports = async function (interaction) {
         const examplePrice = 100000;
         const exampleFee = mm.calcFee(examplePrice, mode, value);
         const exampleTotals = mm.calcTotals(examplePrice, exampleFee);
-        const feeLabel = mode === 'percent' ? `**${value}%** of the deal price` : `**${mm.formatRupiah(value)}** flat per deal`;
+        const feeLabel = mode === 'percent' ? `**${value}%** of the deal price` : `**${mm.formatMoney(value)}** flat per deal`;
         return safeEditReply(interaction, {
             content:
                 `✅ Escrow fee set: ${feeLabel} — the fee is **ADDED on top of the price** (not deducted from the seller's funds).\n` +
-                `💡 Example: a **${mm.formatRupiah(examplePrice)}** deal → fee **${mm.formatRupiah(exampleTotals.midmanKeeps)}** → the buyer transfers **${mm.formatRupiah(exampleTotals.buyerPays)}**, the seller receives **${mm.formatRupiah(exampleTotals.sellerGets)}** (in full).\n` +
+                `💡 Example: a **${mm.formatMoney(examplePrice)}** deal → fee **${mm.formatMoney(exampleTotals.midmanKeeps)}** → the buyer transfers **${mm.formatMoney(exampleTotals.buyerPays)}**, the seller receives **${mm.formatMoney(exampleTotals.sellerGets)}** (in full).\n` +
                 `The fee applies to NEW deals (in-flight deals keep the fee from when they were created).`
         });
     }
@@ -83,7 +83,7 @@ module.exports = async function (interaction) {
             return (
                 `<#${d.channelId}> — **${stateLabel}**\n` +
                 `┣ 🛒 <@${d.buyerId}> ⇄ 🏷️ <@${d.sellerId}>\n` +
-                `┗ 📦 ${String(d.item).slice(0, 60)} • ${mm.formatRupiah(totals.buyerPays)} (price ${mm.formatRupiah(totals.sellerGets)} + fee ${mm.formatRupiah(totals.midmanKeeps)}) • ${age}h ago`
+                `┗ 📦 ${String(d.item).slice(0, 60)} • ${mm.formatMoney(totals.buyerPays)} (price ${mm.formatMoney(totals.sellerGets)} + fee ${mm.formatMoney(totals.midmanKeeps)}) • ${age}h ago`
             );
         });
 

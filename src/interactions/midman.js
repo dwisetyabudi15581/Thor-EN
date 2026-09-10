@@ -92,7 +92,7 @@ const STATE_DESCRIPTIONS = {
         'Cancelling now is safe (funds have not moved yet).',
     WAITING_PAYMENT: deal =>
         '**🛒 Buyer** — transfer the **Total Payment** to the middleman, then post the transfer proof in this channel.\n' +
-        `💳 Total: **${mm.formatRupiah(deal.priceNum + deal.fee)}** (price ${mm.formatRupiah(deal.priceNum)} + fee ${mm.formatRupiah(deal.fee)}).\n` +
+        `💳 Total: **${mm.formatMoney(deal.priceNum + deal.fee)}** (price ${mm.formatMoney(deal.priceNum)} + fee ${mm.formatMoney(deal.fee)}).\n` +
         '**🛡️ Middleman** — verify the funds have actually arrived, then click **✅ Funds Received**.\n' +
         'Only after this may the seller send the goods.',
     WAITING_DELIVERY:
@@ -100,7 +100,7 @@ const STATE_DESCRIPTIONS = {
         '**🛒 Buyer** — check the goods; once they match, click **✅ Goods Delivered**.',
     WAITING_RELEASE: deal =>
         '**🛡️ Middleman** — transfer the **FULL** amount to the seller (do NOT deduct anything), then click **💸 Release to Seller**.\n' +
-        `🏷️ Seller receives: **${mm.formatRupiah(deal.priceNum)}** • 🧾 Middleman fee (left in your hands): **${mm.formatRupiah(deal.fee)}**.\n` +
+        `🏷️ Seller receives: **${mm.formatMoney(deal.priceNum)}** • 🧾 Middleman fee (left in your hands): **${mm.formatMoney(deal.fee)}**.\n` +
         'The invoice & transcript are saved automatically when the deal closes.',
     DISPUTE:
         '**🚨 Deal FROZEN** — no funds or goods may change hands.\n' +
@@ -121,18 +121,18 @@ function boardEmbed(deal, config) {
     const totals = mm.calcTotals(deal.priceNum, deal.fee);
     const feeLabel =
         deal.feeMode === 'percent'
-            ? `${mm.formatRupiah(deal.fee)} (${deal.feeValue}%)`
-            : mm.formatRupiah(deal.fee);
+            ? `${mm.formatMoney(deal.fee)} (${deal.feeValue}%)`
+            : mm.formatMoney(deal.fee);
     return new EmbedBuilder()
         .setTitle('🤝 DEAL BOARD — ESCROW')
         .setDescription(desc)
         .setColor(mm.STATES[deal.state]?.color || 0x2ecc71)
         .addFields(
             { name: '📦 Item', value: String(deal.item).slice(0, 1000), inline: false },
-            { name: '💰 Deal Price', value: mm.formatRupiah(deal.priceNum), inline: true },
+            { name: '💰 Deal Price', value: mm.formatMoney(deal.priceNum), inline: true },
             { name: '🧾 Middleman Fee', value: feeLabel, inline: true },
-            { name: '💳 Total Paid by Buyer', value: `**${mm.formatRupiah(totals.buyerPays)}** (price + fee)`, inline: true },
-            { name: '🏷️ Received by Seller', value: `${mm.formatRupiah(totals.sellerGets)} — full amount, no deductions`, inline: true },
+            { name: '💳 Total Paid by Buyer', value: `**${mm.formatMoney(totals.buyerPays)}** (price + fee)`, inline: true },
+            { name: '🏷️ Received by Seller', value: `${mm.formatMoney(totals.sellerGets)} — full amount, no deductions`, inline: true },
             { name: '🛒 Buyer', value: `<@${deal.buyerId}>`, inline: true },
             { name: '🏷️ Seller', value: `<@${deal.sellerId}>`, inline: true },
             { name: '🛡️ Middleman', value: config.roles.midman ? `<@&${config.roles.midman}>` : '_not set_', inline: true },
@@ -428,7 +428,7 @@ function memberSelectRow() {
 /** Item+price summary for the ephemeral message header of each step. */
 function pendingSummary(pending) {
     const buyerPart = pending.buyerId ? `\n🛒 Buyer: **<@${pending.buyerId}>**` : '';
-    return `🧾 Item: **${pending.item}** • 💰 Price: **${mm.formatRupiah(pending.priceNum)}**${buyerPart}`;
+    return `🧾 Item: **${pending.item}** • 💰 Price: **${mm.formatMoney(pending.priceNum)}**${buyerPart}`;
 }
 
 /**
@@ -722,7 +722,7 @@ async function handlePickSeller(interaction) {
         observers: [],
         item,
         priceNum,
-        priceText: mm.formatRupiah(priceNum),
+        priceText: mm.formatMoney(priceNum),
         fee,
         // v3.9.33: fee snapshot at deal creation (board display & history
         // consistency — config changes don't affect a running deal).
@@ -847,7 +847,7 @@ async function handlePickSeller(interaction) {
         actorId: creator.id,
         actorTag: creator.tag,
         details:
-            `Escrow deal created by <@${creator.id}> — Item: **${item}** • Price: ${mm.formatRupiah(priceNum)} • Fee: ${mm.formatRupiah(fee)} • Total paid by buyer: ${mm.formatRupiah(priceNum + fee)} • Buyer: <@${buyerId}> • Seller: <@${sellerId}>`,
+            `Escrow deal created by <@${creator.id}> — Item: **${item}** • Price: ${mm.formatMoney(priceNum)} • Fee: ${mm.formatMoney(fee)} • Total paid by buyer: ${mm.formatMoney(priceNum + fee)} • Buyer: <@${buyerId}> • Seller: <@${sellerId}>`,
         guildId: guild.id
     });
 
@@ -897,9 +897,9 @@ async function finalizeDeal(channel, deal, closer, endState, config) {
                     userId: deal.buyerId,
                     productName: `🤝 Escrow: ${deal.item}`,
                     // v3.9.33: the additive fee breakdown is recorded in the transcript too.
-                    price: `${mm.formatRupiah(deal.priceNum + deal.fee)} (price ${mm.formatRupiah(
+                    price: `${mm.formatMoney(deal.priceNum + deal.fee)} (price ${mm.formatMoney(
                         deal.priceNum
-                    )} + fee ${mm.formatRupiah(deal.fee)})`,
+                    )} + fee ${mm.formatMoney(deal.fee)})`,
                     category: 'midman'
                 },
                 closer,
@@ -918,7 +918,7 @@ async function finalizeDeal(channel, deal, closer, endState, config) {
                 channel,
                 deal.buyerId,
                 `🤝 Escrow: ${deal.item}`,
-                mm.formatRupiah(deal.priceNum + deal.fee),
+                mm.formatMoney(deal.priceNum + deal.fee),
                 closer
             );
         } catch (invoiceErr) {
@@ -1064,17 +1064,17 @@ async function handleEvent(interaction, event) {
             if (event === 'join') {
                 await channel.send(
                     '🤝 **Buyer & seller have BOTH agreed** — item & price are **LOCKED**.\n' +
-                        `🛒 <@${deal.buyerId}> — transfer **${mm.formatRupiah(deal.priceNum + deal.fee)}** to the middleman, then post the transfer proof in this channel.`
+                        `🛒 <@${deal.buyerId}> — transfer **${mm.formatMoney(deal.priceNum + deal.fee)}** to the middleman, then post the transfer proof in this channel.`
                 );
             }
             if (event === 'fundin') {
                 await channel.send(
-                    `💰 Funds **${mm.formatRupiah(deal.priceNum + deal.fee)}** (price + fee) confirmed received by **${interaction.user.tag}**.\n🏷️ <@${deal.sellerId}>, please send the goods. Chat in this channel serves as proof of delivery.`
+                    `💰 Funds **${mm.formatMoney(deal.priceNum + deal.fee)}** (price + fee) confirmed received by **${interaction.user.tag}**.\n🏷️ <@${deal.sellerId}>, please send the goods. Chat in this channel serves as proof of delivery.`
                 );
             }
             if (event === 'release') {
                 await channel.send(
-                    `💸 **${interaction.user.tag}** released **${mm.formatRupiah(deal.priceNum)}** to <@${deal.sellerId}> (full amount, no deductions).\n🧾 The middleman fee **${mm.formatRupiah(deal.fee)}** stays with the middleman.`
+                    `💸 **${interaction.user.tag}** released **${mm.formatMoney(deal.priceNum)}** to <@${deal.sellerId}> (full amount, no deductions).\n🧾 The middleman fee **${mm.formatMoney(deal.fee)}** stays with the middleman.`
                 );
             }
             if (event === 'received') {
@@ -1105,7 +1105,7 @@ async function handleEvent(interaction, event) {
             action: `MIDMAN_${event.toUpperCase()}`,
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Deal <#${deal.channelId}> (${deal.item} — ${mm.formatRupiah(deal.priceNum)}) → ${mm.STATES[deal.state]?.label || deal.state}`,
+            details: `Deal <#${deal.channelId}> (${deal.item} — ${mm.formatMoney(deal.priceNum)}) → ${mm.STATES[deal.state]?.label || deal.state}`,
             guildId: deal.guildId
         }).catch(() => {});
 

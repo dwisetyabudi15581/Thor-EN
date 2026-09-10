@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.53
+# 📖 Admin Guide — Thor Bot v3.9.54
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -121,7 +121,7 @@ The bot sends an embed + a "Verify Me" button to the channel where the command w
 
 - `label` — the name shown to members
 - `value` — unique ID (no spaces, e.g. `7d`, `30d`, `perm`)
-- `price` — free-form string: Indonesian format (`Rp. 50.000`), plain number (`25000`), suffixes (`25rb`, `2jt`), or dual-currency (`3$ USD | Rp 25.000` — stats record the **Rp part**, 25.000). USD-only (`$3`) is rejected — revenue is in Rupiah
+- `price` — free-form string, ANY currency (v3.9.54): `$3`, `€25`, `¥1000`, `₩25,000`, `25 usd`, `IDR 30.000`, Indonesian format (`Rp. 50.000`), plain numbers (`25000`, `25,000`), suffixes (`25rb`, `2jt`), or dual-currency (`3$ USD | Rp 25.000` — stats record the **Rp part**, 25.000; without an Rp part the FIRST amount is recorded). The bot is currency-agnostic: use ONE currency consistently — stats show plain numbers
 - `duration` — optional, informational only (it does not automatically become the role's expiry duration)
 - Maximum of 25 products (Discord dropdown limit)
 
@@ -902,8 +902,9 @@ Also check `/list-responder` to make sure the responder is registered. Triggers 
 
 - **The aggregate "Total Revenue" line was REMOVED from `/stats` in v3.9.51** (user request — it never matched manual bookkeeping and caused three rounds of confusion). Per-member spending is still tracked: see it in `/my-stats` ("Total Spent") and `/leaderboard` ("Top Spender").
 - **Indonesian price suffixes are parsed correctly (v3.9.49):** `25rb` = Rp 25.000, `2jt` / `2juta` = Rp 2.000.000 — before v3.9.49, `25rb` recorded only Rp 25 per sale.
-- **Dual-currency prices are parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale. USD-only prices (`$3`, `3 usd`) are **rejected** with a hint to include the Rupiah amount — the bot cannot convert currencies.
-- **`/add-product` rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently. `/update-product` shows the counted amount too when the price changes. Fix a badly-formatted price with `/update-product value:... price:25.000`.
+- **Dual-currency prices are parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale.
+- **Any currency works (v3.9.54):** USD-only and every other marker (`$3`, `€25`, `¥1000`, `25 usd`…) is accepted — the bot is currency-AGNOSTIC and records the numeric amount in your pricing currency (no conversion). Stats and escrow embeds show plain locale numbers (no hardcoded `Rp`).
+- **`/add-product` rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: 25,000 per sale` in the confirmation — a bad format can no longer record 0 silently. `/update-product` shows the counted amount too when the price changes. Fix a badly-formatted price with `/update-product value:... price:25.000`.
 - Personal spending counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked. Sales recorded BEFORE these fixes keep their small historical amounts in `stats.json` (history is not recomputed).
 
 ### Server stats counters don't update (v3.9.51)
@@ -1009,10 +1010,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.53) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.54) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.54** (2026-09-10) — 🌍 **user request: "the bot will be used by people outside Indonesia too"**. Prices are now **currency-AGNOSTIC**: ANY currency marker is accepted (`$3`, `€25`, `£ 20`, `¥1000`, `₩25,000`, `₱500`, `25 usd`, `IDR 30.000`… plus all existing formats) — the bot records the numeric amount in whatever currency the admin prices their products, with no conversion and no rejection. Dual-currency strings still record the **Rp half** (v3.9.50 behavior kept); without an Rp half the first amount wins. USD-only is no longer rejected by `/add-product` / `/update-product`; `/my-stats` "Total Spent" + `/leaderboard` "Top Spender" + every escrow amount now show plain locale numbers (the `formatRupiah` helper became **`formatMoney`** — ~20 display sites updated; whole-amount strictness kept in escrow). The `/help` price FAQ now documents international formats. +1 unit test (total **552**).
 - **v3.9.53** (2026-09-10) — ⚙️ **user request: "give /serverstats options for which counters to show"** + 📖 **user request: "rewrite /help so every category's commands get explanations"**. `/serverstats setup` now takes **5 boolean options** (`members`/`bots`/`boosts`/`roles`/`channels` — all ON by default, False skips one, all-False refused): only the selected counters are created/persisted/refreshed, the confirmation embed lists what was **"Not created"**, and `/refresh` shows exactly the configured counters. `/help`: **every one of the 20 category views is now a full self-contained guide** — per-command syntax + behavior + ❓ answers to the most common questions (role position, panel refresh, XP cooldown, price formats…), while the 📖 All Commands embed and 🔍 Search keep the compact lines (budget 5.793/5.800 untouched). Bonus: the Auto-Mod help line's `type:Exempt_(word)` corrected to the real option **`tipe:`**. +3 unit tests (total **551**).
 - **v3.9.52** (2026-09-10) — 📖 **user request: "update /help too so everything is in sync"**. Categories in `/help` can now carry a **`detail` block** — extended usage documentation that renders **only in the 📂 category detail view** (the 📖 All Commands embed and 🔍 Search keep the compact lines, so the full-listing budget — 7 chars of slack — is untouched and no category can silently drop). **Statistics** now explains the live counters properly: `/serverstats setup` / `remove` / `refresh`, the auto-update triggers (join/leave, boost, channel & role changes), the rate-limit safety, the deleted-counter warning + auto-disable, and the boost-notification flow (`/set-channel server-booster #ch` → pink embed + server log + `/boosters` history). **Quick Start** gained an optional-extras line (`/serverstats setup` + the boost channel) and **Logging & Channels** explains the boost auto-announcement. +8 unit tests (total **549**).
 - **v3.9.51** (2026-09-10) — ✨ **user request: live server stats like the ServerStats bots** + ✂️ **user request: "just delete the total revenue feature"**. New **`/serverstats`** command (91 total, admin): `setup` creates a `📊 SERVER STATS` category at the top of the channel list with 5 display-only channels whose NAMES are live counters (`👥 Members`, `🤖 Bots`, `🚀 Boosts`, `🎭 Roles`, `📺 Channels` — @everyone denied Connect), `remove` deletes them, `refresh` forces an update. Auto-update on member/boost/role/channel changes (4 new event files) via the 60s scheduler, rate-limit safe (change detection = zero API calls when unchanged; 5-min per-channel cooldown = exactly Discord's 2 renames/10 min; dirty-driven so a join burst = 1 refresh); 5-min catch-up tick self-heals missed events; deleted channels warn with the fix command and auto-disable when all are gone; partial-failure rollback; startup sync for offline changes; `serverstats.json` backed up + restored. `/stats`: **Total Revenue removed** (repeated confusion — personal spending stays in `/my-stats` + `/leaderboard`). +18 unit tests (total **541**).
@@ -1053,6 +1055,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.53
+**Document version:** v3.9.54
 **Last updated:** September 10, 2026
-**Bot version:** 3.9.53 · 91 slash commands · 551 unit tests
+**Bot version:** 3.9.54 · 91 slash commands · 552 unit tests

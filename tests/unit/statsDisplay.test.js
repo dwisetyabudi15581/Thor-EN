@@ -179,7 +179,7 @@ test('USER REPORT /my-stats: the REAL join date + transaction label', async () =
     assert.strictEqual(fields['📅 Joined This Server'], `<t:${Math.floor(REAL_JOINED_TS / 1000)}:R>`);
     assert.strictEqual(fields['💬 Messages'], '3');
     assert.strictEqual(fields['🛒 Transactions'], '2');
-    assert.strictEqual(fields['💰 Total Spent'], 'Rp 20,000');
+    assert.strictEqual(fields['💰 Total Spent'], '20,000'); // v3.9.54: plain number, currency-agnostic
 
     const names = (embed.data.fields || []).map(f => f.name);
     assert.ok(!names.some(n => /VIP/i.test(n)), 'my-stats must not say "VIP" either');

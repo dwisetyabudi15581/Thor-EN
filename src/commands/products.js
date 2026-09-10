@@ -13,13 +13,18 @@ const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply, pa
  * v3.9.49 (user report: "total revenue doesn't update"): validate a product
  * price BEFORE it is saved. A price string the bot cannot parse (e.g. "murah",
  * "negosiasi", "25rp2") used to be accepted silently — every later sale then
- * recorded parsePrice(price) = Rp 0 into stats/leaderboard, and the revenue
+ * recorded parsePrice(price) = 0 into stats/leaderboard, and the revenue
  * never moved. Returns null when valid (free prices "0"/"free"/"gratis" are
  * allowed), or an error message string when invalid.
  *
  * v3.9.50 (user report: "I set the price as 3$ USD | Rp. 25.000"): dual-currency
- * prices are now VALID — the Rupiah half is what gets recorded. USD-only prices
- * get a specific message explaining that revenue is in Rupiah.
+ * prices are VALID — the Rupiah half is what gets recorded.
+ *
+ * v3.9.54 (user request: "the bot will be used by people outside Indonesia
+ * too"): ANY currency is accepted ("$3", "€25", "¥1000", "25 usd"...) — the
+ * bot is currency-AGNOSTIC and records the numeric amount in whatever
+ * currency the admin prices their products. USD-only is no longer rejected.
+ * Dual-currency strings still record the Rp half (v3.9.50, unchanged).
  * Exported for unit tests (tests/unit/parsePrice.test.js).
  */
 function priceValidationError(price) {
@@ -27,16 +32,9 @@ function priceValidationError(price) {
     const FREE = ['0', 'free', 'gratis'];
     if (FREE.includes(raw.toLowerCase())) return null; // explicitly free — OK
     if (parsePriceNum(raw) > 0) return null; // parses to a positive amount — OK
-    // v3.9.50: USD-only ("$3", "3 usd") — stats record Rupiah, no conversion.
-    if (/\$|usd/i.test(raw) && !/rp/i.test(raw)) {
-        return (
-            `❌ The price \`${raw}\` is USD-only — revenue is recorded in **Rupiah**, and the bot cannot convert currencies.\n` +
-            `✅ Include the Rupiah amount, e.g. \`3$ USD | Rp 25.000\` — the stats will record the **Rp part** (25.000) of every sale.`
-        );
-    }
     return (
-        `❌ The price \`${raw}\` cannot be read as an amount — it would record **Rp 0** into the stats/revenue on every sale.\n` +
-        `✅ Accepted formats: \`25000\` · \`25.000\` · \`Rp 25.000\` · \`25rb\` · \`2jt\` · \`3$ USD | Rp 25.000\` (the Rp part is recorded) · \`free\``
+        `❌ The price \`${raw}\` cannot be read as an amount — it would record **0** into the stats on every sale.\n` +
+        `✅ Accepted formats: \`25000\` · \`25.000\` · \`25,000\` · \`$3\` · \`€25\` · \`Rp 30.000\` · \`30rb\` · \`3jt\` · \`3$ USD | Rp 25.000\` (the Rp part is recorded) · \`free\``
     );
 }
 
@@ -121,12 +119,14 @@ module.exports = async function (interaction) {
             details: `Add product: **${label}** (\`${value}\`) — ${price}${durationInfo}${catInfo}`,
             guildId: interaction.guild.id
         });
-        // v3.9.49: show how the price will be counted in /stats revenue — so a
+        // v3.9.49: show how the price will be counted in /stats — so a
         // format mistake is visible at setup time, not after N invisible sales.
+        // v3.9.54: no "Rp" prefix — the bot is currency-agnostic and records
+        // the numeric amount in the admin's own pricing currency.
         const priceNum = parsePriceNum(safePrice);
         const revenueNote =
             priceNum > 0
-                ? `\n💰 Counted in stats as: **Rp ${priceNum.toLocaleString('en-US')}** per sale (ticket + escrow transactions)`
+                ? `\n💰 Counted in stats as: **${priceNum.toLocaleString('en-US')}** per sale (ticket + escrow transactions)`
                 : '';
         return safeEditReply(interaction, {
             content: `✅ Product added: **${label}** — ${price}${durationInfo}${revenueNote}\n📦 Category: \`${finalCategory}\` | 🔑 Requires Key: ${finalRequiresKey ? 'Yes' : 'No'}`
@@ -310,7 +310,7 @@ module.exports = async function (interaction) {
             // will be counted, so a dual-currency typo is caught at update time.
             const newPriceNum = parsePriceNum(newPrice);
             if (newPriceNum > 0) {
-                changes.push(`💰 counted in stats: **Rp ${newPriceNum.toLocaleString('en-US')}** per sale`);
+                changes.push(`💰 counted in stats: **${newPriceNum.toLocaleString('en-US')}** per sale`);
             }
         }
         if (newDuration !== null) {

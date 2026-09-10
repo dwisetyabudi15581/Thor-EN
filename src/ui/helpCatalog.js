@@ -165,7 +165,7 @@ const HELP_CATEGORIES = [
             '• `/set-product-role value role days` — the buyer\'s role is granted automatically when the deal closes, and auto-removed after `days` (leave empty = permanent).',
             '• `/remove-product-role value` — stop granting it · `/list-product-roles` — see all.',
             '',
-            '❓ **Price format?** Rupiah, with or without dots/suffixes: `Rp 30.000`, `30000`, `30rb`. Dual-currency works (`3$ USD | Rp 25.000` — the Rp amount is what stats record). USD-only is rejected: stats are in Rupiah.',
+            '❓ **Price format?** ANY currency works: `30000`, `30.000`, `$3`, `€25`, `¥1000`, `Rp 30.000`, `30rb`, `3jt`. Dual-currency too (`3$ USD | Rp 25.000` — the Rp amount is recorded). Stats track the NUMBER, currency-agnostic — price everything in ONE currency.',
             '❓ **Buyers see the price?** Yes — the ticket panel price list uses your `label` + `price` exactly.'
         ]
     },
@@ -256,7 +256,7 @@ const HELP_CATEGORIES = [
             '**Escrow = the bot referees the deal: buyer and seller each confirm, the midman releases the funds, the fee is recorded automatically.**',
             '**Setup (once):**',
             '• `/set-role tipe:midman role:@Midman` — MANDATORY before any deal can open. Your staff with this role appear as the escrow officers.',
-            '• `/set-midman-fee mode value` — the fee: `mode:Percent value:5` (5%) or `mode:Flat value:5000` (Rp 5.000). `0` = free.',
+            '• `/set-midman-fee mode value` — the fee: `mode:Percent value:5` (5%) or `mode:Flat value:5000` (flat 5,000). `0` = free.',
             '• `/midman-deals` — every active deal on one page (buyer, seller, midman, amount, status).',
             '',
             '**How a deal flows**',
@@ -264,7 +264,7 @@ const HELP_CATEGORIES = [
             '2️⃣ Buyer and seller each press **Agree** — the bot locks edits once both agree (3 steps total).',
             '3️⃣ The midman settles: **Complete** (funds released + fee recorded) or **Cancel** (everyone freed).',
             '❓ **Stuck deal?** `/midman-deals` shows the status; deals whose channel was deleted are reconciled automatically at startup + daily.',
-            '❓ **Fee in stats?** Completed deals are recorded in the transaction stats (Rupiah).' 
+            '❓ **Fee in stats?** Completed deals are recorded in the transaction stats (the deal amount — any currency works).' 
         ]
     },
     {

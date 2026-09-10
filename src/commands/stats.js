@@ -32,6 +32,12 @@
  * spending stats stay available where they are per-user and unambiguous:
  * /my-stats "Total Spent" and /leaderboard "Top Spender".
  *
+ * v3.9.54 (user request: "the bot will be used by people outside Indonesia
+ * too"): spending amounts are now shown WITHOUT the hardcoded "Rp" prefix —
+ * the bot is currency-AGNOSTIC and records the numeric amount in whatever
+ * currency each server's admin prices their products (see
+ * statsManager.parsePrice). Use ONE currency consistently per server.
+ *
  * Note: the permission check for /leaderboard & /my-stats (public commands)
  *          lives in the router (src/commands/index.js). This domain file doesn't
  *          need to repeat that check.
@@ -154,7 +160,8 @@ module.exports = async function (interaction) {
         const metricFormat = {
             messages: v => `${v.toLocaleString('en-US')} messages`,
             vipPurchases: v => `${v} transactions`,
-            totalSpent: v => `Rp ${v.toLocaleString('en-US')}`,
+            // v3.9.54: plain number — currency-agnostic (no hardcoded "Rp").
+            totalSpent: v => v.toLocaleString('en-US'),
             giveawaysWon: v => `${v} wins`
         };
 
@@ -195,7 +202,8 @@ module.exports = async function (interaction) {
             .addFields(
                 { name: '💬 Messages', value: `${stats.messages.toLocaleString('en-US')}`, inline: true },
                 { name: '🛒 Transactions', value: `${stats.vipPurchases}`, inline: true },
-                { name: '💰 Total Spent', value: `Rp ${stats.totalSpent.toLocaleString('en-US')}`, inline: true },
+                // v3.9.54: plain number — currency-agnostic (no hardcoded "Rp").
+                { name: '💰 Total Spent', value: stats.totalSpent.toLocaleString('en-US'), inline: true },
                 { name: '🎉 Giveaway Won', value: `${stats.giveawaysWon}`, inline: true },
                 {
                     name: '📅 Joined This Server',

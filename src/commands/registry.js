@@ -444,7 +444,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'price',
-                    description: 'Price (e.g. Rp. 50.000, max 100 chars)',
+                    description: 'Price (e.g. Rp 50.000 / $3 / 25k — max 100 chars)',
                     required: true,
                     max_length: 100
                 },
@@ -509,7 +509,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'price',
-                    description: 'New price (e.g. "Rp 25.000")',
+                    description: 'New price (e.g. "Rp 25.000" / "$3")',
                     required: false,
                     min_length: 1,
                     max_length: 100
@@ -580,13 +580,13 @@ function getCommands() {
                     required: true,
                     choices: [
                         { name: 'Percent (%) of the deal price', value: 'percent' },
-                        { name: 'Flat amount (Rp per deal)', value: 'flat' }
+                        { name: 'Flat amount (per deal)', value: 'flat' }
                     ]
                 },
                 {
                     type: 10,
                     name: 'value',
-                    description: 'Fee value (percent: 0-90, flat: Rp amount). 0 = free',
+                    description: 'Fee value (percent: 0-90, flat: amount per deal). 0 = free',
                     required: true,
                     minValue: 0
                 }
