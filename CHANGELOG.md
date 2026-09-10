@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.50] — 2026-09-10
+
+### Fixed — 🐛 user report: "I set the price as 3$ USD | Rp. 25.000" (revenue still barely moved)
+
+- 🔴 **Dual-currency prices recorded Rp 3 per sale:** the user's actual product price format (`3$ USD | Rp. 25.000`) stopped `parseFloat` at the `$` — the Rupiah half was never read, so every sale added a near-invisible amount and the revenue STILL looked frozen even after the v3.9.49 suffix fix. Both price parsers (`parsePrice` shop/tickets/keys + `parsePriceNumber` escrow) now read the amount attached to the `Rp` marker directly: `3$ USD | Rp. 25.000` → **Rp 25.000** recorded per sale — with or without a pipe, Rp first or USD first, with or without `rb`/`jt` suffixes.
+- 🟡 **USD-only prices are rejected with a clear hint:** `$3` / `3 usd` cannot be converted to Rupiah reliably (before, `3$` silently recorded Rp 3). `/add-product` & `/update-product` now explain that revenue is recorded in **Rupiah** and ask for the Rp half, e.g. `3$ USD | Rp 25.000` — the accepted-format list shows the dual-currency example.
+- 🟢 **`/update-product` now shows the counted amount too:** the confirmation lists `💰 counted in stats: Rp 25.000 per sale` whenever the price changes — the same visibility `/add-product` has, so a dual-currency typo is caught at update time, not after N invisible sales.
+- 🟢 Escrow strictness preserved: a suffix + separator combination in the Rp half (`3$ | Rp 1.5rb`) is still rejected — the 10x-price guard stays intact.
+- 🟢 +5 unit tests (total **523**): the verbatim user format + common variants (pipe, no pipe, Rp first, suffix), USD-only → 0, Rp formats no-regression, midman dual-currency + strictness, and the `priceValidationError` contract (dual OK / USD-only hint / garbage rejected).
+
 ## [3.9.49] — 2026-09-10
 
 ### Added — ✨ user request: "server boosters — know who boosts + send it to a server booster channel"

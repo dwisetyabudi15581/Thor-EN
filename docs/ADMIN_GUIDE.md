@@ -119,7 +119,7 @@ The bot sends an embed + a "Verify Me" button to the channel where the command w
 
 - `label` — the name shown to members
 - `value` — unique ID (no spaces, e.g. `7d`, `30d`, `perm`)
-- `price` — free-form string; can use the Indonesian format (`Rp. 50.000`) or a plain number
+- `price` — free-form string: Indonesian format (`Rp. 50.000`), plain number (`25000`), suffixes (`25rb`, `2jt`), or dual-currency (`3$ USD | Rp 25.000` — stats record the **Rp part**, 25.000). USD-only (`$3`) is rejected — revenue is in Rupiah
 - `duration` — optional, informational only (it does not automatically become the role's expiry duration)
 - Maximum of 25 products (Discord dropdown limit)
 
@@ -881,12 +881,13 @@ Shows all backups, including the `pre-restore_*` safety backups (if you have eve
 
 The bot needs access to `message.content`. Without that intent, Discord delivers the content as an **empty string** → triggers never match.
 
-### Total revenue doesn't move when I sell (v3.9.49 fixed the causes)
+### Total revenue doesn't move when I sell (v3.9.49 + v3.9.50 fixed the causes)
 
 - **Indonesian price suffixes are now parsed correctly:** `25rb` = Rp 25.000, `2jt` / `2juta` = Rp 2.000.000 — before v3.9.49, `25rb` recorded only Rp 25 per sale (the revenue looked frozen).
-- **`/add-product` now rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently.
+- **Dual-currency prices are now parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale — before, `parseFloat` stopped at the `$` and only Rp 3 was counted. USD-only prices (`$3`, `3 usd`) are **rejected** with a hint to include the Rupiah amount — the bot cannot convert currencies.
+- **`/add-product` now rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently. `/update-product` shows the counted amount too when the price changes.
 - Check existing products with `/list-products` — fix a badly-formatted price with `/update-product value:... price:25.000`.
-- Revenue counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked — that's the one remaining gap that can make the number "not match" your books.
+- Revenue counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked — that's the one remaining gap that can make the number "not match" your books. Sales recorded BEFORE these fixes keep their small historical amounts in `stats.json` (history is not recomputed).
 
 **How to fix the intent:**
 
@@ -997,10 +998,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.49) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.50) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.50** (2026-09-10) — 🐛 **user report: "I set the price as 3$ USD | Rp. 25.000" — revenue still barely moved**. 🔴 Dual-currency prices recorded **Rp 3** per sale: `parseFloat` stopped at the `$` and the Rupiah half was never read. Both price parsers now read the amount attached to the `Rp` marker directly — `3$ USD | Rp. 25.000` → **Rp 25.000** per sale (pipe or not, Rp first or USD first, suffixes included). 🟡 USD-only prices (`$3`, `3 usd`) are now **rejected** with a hint to include the Rupiah amount (revenue is in Rupiah; no currency conversion). 🟢 `/update-product` now shows `💰 counted in stats: Rp 25.000 per sale` when the price changes (same visibility as `/add-product`). Escrow strictness preserved (`3$ | Rp 1.5rb` still rejected). +5 unit tests (total **523**).
 - **v3.9.49** (2026-09-10) — ✨ **user request: Server Booster feature** + 🐛 **user report: "the stats still don't match — revenue doesn't update, and member tracked vs member live"**. Boosters: boost add/remove is detected from the `guildMemberUpdate` premium_since diff (Discord has no dedicated boost event) → pink `🚀 NEW SERVER BOOST!` / gray `💔 BOOST ENDED` embeds to the new **server-booster channel** (`/set-channel tipe:server-booster`), always recorded in the server log, history persisted in `boosts.json` (backed up + restored), **offline catch-up** in one consolidated embed at startup, and a new public **`/boosters`** command (90 total) listing the live roster (earliest supporter first) + recent boost history. Stats fixes: 🔴 Indonesian price suffixes were silently mis-parsed — `25rb` recorded **Rp 25** per sale instead of Rp 25.000 (revenue looked frozen) — both price parsers now understand `rb`/`jt`/`juta`; `/add-product` & `/update-product` now **reject unparseable prices** and show the amount that will be counted per sale; the duplicate "Members (live)" + "Members Tracked" fields merged into **one `👥 Members`** (live count, average divides by it); `/config-show` now lists the server-log channel (missing since v3.9.43) + the new booster channel. +15 unit tests (total **518**).
 - **v3.9.48** (2026-09-09) — 🐛 **user report: "there's a bug — the Welcome doesn't appear"**. Investigation: the welcome code path was proven WORKING (end-to-end simulation with the real modules — join → unverified role + embed + server log, leave → goodbye embed); the real bug was **diagnosability**: when the welcome/goodbye channel was not set / deleted / from another server, the bot logged NOTHING at startup AND NOTHING when a member actually joined. Fix: every skip now logs the cause + the fix command; **new `/test-welcome`** (89 commands) diagnoses the whole chain (config → channel exists → bot permissions) and sends a **live preview** built by the same embed builders the real event uses; startup validates the configuration; a join from another guild (GUILD_ID mismatch) is visible. +17 unit tests (total **503**).
 - **v3.9.47** (2026-09-09) — ✨ **user request: auto-responder match modes + accurate stats**. Auto-responder: a trigger used to only fire at the START of a message — trigger `beli` never matched "bagaimana cara beli". Every responder now has a match mode (new `/add-responder` option `match_mode`): **contains** (default, also for legacy entries — the trigger matches as a WHOLE WORD anywhere in the message: `beli` answers "bagaimana cara beli"/"mau beli?" but NOT "belian"/"membeli") or **exact** (legacy start-of-message behavior). Bonus fix: a responder on cooldown no longer aborts the scan — an overlapping second trigger can still reply. Stats (user report: "the stats don't match"): `/stats` now leads with LIVE data from Discord (real member count, boost tier+count, open tickets) followed by clearly-labeled tracked activity; "VIP Purchases" renamed to **Transactions** (it counts ticket orders + escrow deals); `/my-stats` shows the REAL join date from the member object instead of "not recorded" for pre-v3.2 members. +22 unit tests (total **486**).
@@ -1037,6 +1039,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.49
+**Document version:** v3.9.50
 **Last updated:** September 10, 2026
-**Bot version:** 3.9.49 · 90 slash commands · 518 unit tests
+**Bot version:** 3.9.50 · 90 slash commands · 523 unit tests

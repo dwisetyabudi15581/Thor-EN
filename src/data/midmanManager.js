@@ -331,7 +331,21 @@ function parsePriceNumber(input) {
     if (!input || typeof input !== 'string') return 0;
     let s = String(input)
         .toLowerCase()
-        .trim()
+        .trim();
+    // v3.9.50 FIX: dual-currency prices ("3$ USD | Rp. 25.000") — read the
+    // Rupiah half directly (the stats/escrow currency). USD-only (no 'rp') → 0:
+    // escrow is denominated in Rupiah, and no reliable conversion exists.
+    if (/rp/.test(s)) {
+        const m = s.match(/rp\.?\s*([0-9][0-9.,]*\s*(?:juta|jt|rb|k|m)?)/);
+        if (m) {
+            s = m[1];
+        } else {
+            s = s.replace(/rp\.?/g, '');
+        }
+    } else if (/\$|usd/.test(s)) {
+        return 0;
+    }
+    s = s
         .replace(/rp\.?/g, '')
         .replace(/\s/g, '');
     let multiplier = 1;

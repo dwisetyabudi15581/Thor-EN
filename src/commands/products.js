@@ -16,15 +16,27 @@ const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply, pa
  * recorded parsePrice(price) = Rp 0 into stats/leaderboard, and the revenue
  * never moved. Returns null when valid (free prices "0"/"free"/"gratis" are
  * allowed), or an error message string when invalid.
+ *
+ * v3.9.50 (user report: "I set the price as 3$ USD | Rp. 25.000"): dual-currency
+ * prices are now VALID — the Rupiah half is what gets recorded. USD-only prices
+ * get a specific message explaining that revenue is in Rupiah.
+ * Exported for unit tests (tests/unit/parsePrice.test.js).
  */
 function priceValidationError(price) {
     const raw = String(price || '').trim();
     const FREE = ['0', 'free', 'gratis'];
     if (FREE.includes(raw.toLowerCase())) return null; // explicitly free — OK
     if (parsePriceNum(raw) > 0) return null; // parses to a positive amount — OK
+    // v3.9.50: USD-only ("$3", "3 usd") — stats record Rupiah, no conversion.
+    if (/\$|usd/i.test(raw) && !/rp/i.test(raw)) {
+        return (
+            `❌ The price \`${raw}\` is USD-only — revenue is recorded in **Rupiah**, and the bot cannot convert currencies.\n` +
+            `✅ Include the Rupiah amount, e.g. \`3$ USD | Rp 25.000\` — the stats will record the **Rp part** (25.000) of every sale.`
+        );
+    }
     return (
         `❌ The price \`${raw}\` cannot be read as an amount — it would record **Rp 0** into the stats/revenue on every sale.\n` +
-        `✅ Accepted formats: \`25000\` · \`25.000\` · \`Rp 25.000\` · \`25rb\` · \`25k\` · \`2jt\` · \`2juta\` · \`free\``
+        `✅ Accepted formats: \`25000\` · \`25.000\` · \`Rp 25.000\` · \`25rb\` · \`2jt\` · \`3$ USD | Rp 25.000\` (the Rp part is recorded) · \`free\``
     );
 }
 
@@ -294,6 +306,12 @@ module.exports = async function (interaction) {
             if (priceErr) return safeEditReply(interaction, { content: priceErr });
             product.price = newPrice;
             changes.push(`price: \`${before.price}\` → \`${newPrice}\``);
+            // v3.9.50: same visibility as /add-product — show how the NEW price
+            // will be counted, so a dual-currency typo is caught at update time.
+            const newPriceNum = parsePriceNum(newPrice);
+            if (newPriceNum > 0) {
+                changes.push(`💰 counted in stats: **Rp ${newPriceNum.toLocaleString('en-US')}** per sale`);
+            }
         }
         if (newDuration !== null) {
             // Empty string → delete the duration field
@@ -341,3 +359,7 @@ module.exports = async function (interaction) {
         });
     }
 };
+
+// v3.9.50: expose the price validator for unit tests (attached after the
+// handler assignment above so it isn't overwritten).
+module.exports.priceValidationError = priceValidationError;

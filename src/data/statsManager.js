@@ -354,7 +354,29 @@ function parsePrice(priceStr) {
     // be negative (totalSpent/revenue could go negative via the product price).
     if (typeof priceStr === 'number') return isNaN(priceStr) ? 0 : Math.max(0, priceStr);
     if (!priceStr) return 0;
-    let s = String(priceStr).toLowerCase().replace(/rp\.?/g, '').replace(/\s/g, '');
+    let s = String(priceStr).toLowerCase().trim();
+    // v3.9.50 FIX (user report: price entered as "3$ USD | Rp. 25.000" — the
+    // actual product price format). parseFloat stops at the '$', so the dual
+    // price recorded **Rp 3** per sale and the revenue looked frozen AGAIN.
+    // Stats are denominated in Rupiah: when an 'rp' marker exists, read the
+    // amount attached to it directly (pipe, separators and the USD half are
+    // ignored). A USD-only string (no 'rp') cannot be converted reliably → 0
+    // (priceValidationError explains the accepted formats).
+    if (/rp/.test(s)) {
+        const m = s.match(/rp\.?\s*([0-9][0-9.,]*\s*(?:juta|jt|rb|k|m)?)/);
+        if (m) {
+            s = m[1];
+        } else {
+            // Marker AFTER the amount ("25.000 rp") or stray noise — old behavior:
+            // strip the marker and parse what remains.
+            s = s.replace(/rp\.?/g, '');
+        }
+    } else if (/\$|usd/.test(s)) {
+        // USD-only ("$3", "3 usd"): there is no Rupiah amount to record —
+        // returning 0 lets the validation layer ask for the Rp half.
+        return 0;
+    }
+    s = s.replace(/\s/g, '');
     let multiplier = 1;
     // v3.9.49 FIX (user report: "total revenue doesn't update"): Indonesian
     // suffixes were SILENTLY mis-parsed — "25rb" kept the trailing 'rb', and

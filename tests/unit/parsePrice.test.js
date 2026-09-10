@@ -140,3 +140,66 @@ test('parsePriceNumber v3.9.49 (midman): escrow now accepts rb/jt/juta', () => {
     assert.strictEqual(mm.parsePriceNumber('100k'), 100000);
     assert.strictEqual(mm.parsePriceNumber('2.5'), 0);
 });
+
+// ============ v3.9.50 — dual-currency prices (user report: "I set the price as 3$ USD | Rp. 25.000") ============
+// The stats currency is Rupiah. Before this fix, parseFloat stopped at the '$'
+// so the dual price recorded **Rp 3** per sale — the revenue looked frozen
+// AGAIN, even after the v3.9.49 suffix fix.
+
+test('parsePrice v3.9.50: dual-currency — the Rp half is recorded', () => {
+    // The USER-REPORTED format, verbatim and in common variants.
+    assert.strictEqual(parsePrice('3$ USD | Rp. 25.000'), 25000);
+    assert.strictEqual(parsePrice('3$ USD | Rp 25.000'), 25000);
+    assert.strictEqual(parsePrice('$3 USD | Rp 25.000'), 25000);
+    assert.strictEqual(parsePrice('3 USD | Rp 25.000'), 25000);
+    assert.strictEqual(parsePrice('Rp 25.000 | $3 USD'), 25000); // Rp first
+    assert.strictEqual(parsePrice('3$ usd rp 25.000'), 25000);   // no pipe
+    assert.strictEqual(parsePrice('$5 USD | Rp 150rb'), 150000); // suffix too
+});
+
+test('parsePrice v3.9.50: USD-only is unparseable (stats are in Rupiah)', () => {
+    // A USD amount can't be converted reliably → 0 → priceValidationError asks
+    // for the Rupiah half instead of silently recording a wrong amount.
+    assert.strictEqual(parsePrice('3$'), 0);
+    assert.strictEqual(parsePrice('$3'), 0);
+    assert.strictEqual(parsePrice('3 usd'), 0);
+    assert.strictEqual(parsePrice('USD 3'), 0);
+    assert.strictEqual(parsePrice('3$ USD'), 0);
+});
+
+test('parsePrice v3.9.50: Rp formats keep working (no regression)', () => {
+    assert.strictEqual(parsePrice('Rp 25.000'), 25000);
+    assert.strictEqual(parsePrice('Rp. 50.000'), 50000);
+    assert.strictEqual(parsePrice('Rp 25rb'), 25000);
+    assert.strictEqual(parsePrice('25.000 rp'), 25000); // marker after the amount
+    assert.strictEqual(parsePrice('rp'), 0);
+});
+
+test('parsePriceNumber v3.9.50 (midman): dual-currency accepted, strictness kept', () => {
+    const mm = require('../../src/data/midmanManager');
+    assert.strictEqual(mm.parsePriceNumber('3$ USD | Rp. 25.000'), 25000);
+    assert.strictEqual(mm.parsePriceNumber('$3 | Rp 25.000'), 25000);
+    // USD-only → 0 (escrow is denominated in Rupiah).
+    assert.strictEqual(mm.parsePriceNumber('3$'), 0);
+    assert.strictEqual(mm.parsePriceNumber('3 usd'), 0);
+    // Strict guard preserved: decimal + suffix in the Rp half still rejected.
+    assert.strictEqual(mm.parsePriceNumber('3$ | Rp 1.5rb'), 0);
+    // Legacy strictness unchanged.
+    assert.strictEqual(mm.parsePriceNumber('1.5rb'), 0);
+});
+
+test('priceValidationError v3.9.50 (products): dual OK, USD-only gets a hint', () => {
+    const products = require('../../src/commands/products');
+    // Dual-currency and plain Rp prices are valid (null = no error).
+    assert.strictEqual(products.priceValidationError('3$ USD | Rp. 25.000'), null);
+    assert.strictEqual(products.priceValidationError('Rp 25rb'), null);
+    assert.strictEqual(products.priceValidationError('25.000'), null);
+    assert.strictEqual(products.priceValidationError('free'), null);
+    // USD-only: specific message telling the admin to include the Rp amount.
+    const usdErr = products.priceValidationError('3$ USD');
+    assert.ok(typeof usdErr === 'string' && usdErr.includes('Rupiah'), 'USD-only error mentions Rupiah');
+    assert.ok(usdErr.includes('Rp 25.000'), 'USD-only error shows the dual-price example');
+    // Garbage still rejected with the accepted-format list.
+    const junkErr = products.priceValidationError('murah');
+    assert.ok(typeof junkErr === 'string' && junkErr.includes('Rp 0'));
+});
