@@ -610,6 +610,19 @@ function attachToClient(client) {
     client.isGiveawayProcessing = isGiveawayProcessing;
 }
 
+/**
+ * v3.9.51: live server stats counters — called by the 60s scheduler loop.
+ * Refreshes when an event marked the stats dirty (member join/leave/boost,
+ * channel/role create/delete) OR every 5th tick (~5 min) as a catch-up so a
+ * missed event self-heals. The renames themselves are rate-limit safe
+ * (change detection + per-channel cooldown — see serverstatsManager).
+ * Cheap no-op when /serverstats is not set up.
+ */
+async function processServerStatsTick(client) {
+    const { processSchedulerTick } = require('../data/serverstatsManager');
+    return processSchedulerTick(client);
+}
+
 module.exports = {
     processExpiredRole,
     processGiveawayEnd,
@@ -619,5 +632,7 @@ module.exports = {
     pruneStaleData,
     reconcileZombieDeals,
     reconcileZombieDealsDaily,
+    // v3.9.51: live server stats counters
+    processServerStatsTick,
     attachToClient
 };

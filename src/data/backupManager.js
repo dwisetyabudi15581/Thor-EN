@@ -63,7 +63,12 @@ const FILES_TO_BACKUP = [
     // would silently lose the whole boost history (who boosted, streaks,
     // totalBoosts) while live boosters still exist — /boosters "Recent
     // Activity" would go empty for events the bot itself once announced.
-    'boosts.json'
+    'boosts.json',
+    // v3.9.51: serverstats.json — live counter channel IDs. Without it,
+    // restore-backup would lose the counter channel mapping → the counters
+    // silently stop updating after a restore (the events mark a config that
+    // no longer exists). The manager cache is also reloaded post-restore.
+    'serverstats.json'
 ];
 
 // v3.9.10: helper to resolve data file paths (to the data/ folder).
@@ -309,6 +314,13 @@ function _restoreBackupImpl(name) {
     try {
         const stats = require('./statsManager');
         if (typeof stats.reload === 'function') stats.reload();
+    } catch (_) {}
+
+    // v3.9.51: same staleness fix for the server stats counters — the in-memory
+    // config must be dropped so the RESTORED channel IDs are used immediately.
+    try {
+        const serverstats = require('./serverstatsManager');
+        if (typeof serverstats.reload === 'function') serverstats.reload();
     } catch (_) {}
 
     // v3.9.4: invalidate the admin role permissions cache too.

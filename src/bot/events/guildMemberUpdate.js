@@ -26,6 +26,9 @@ const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
 // v3.9.49: boost notifications (server-booster channel + server log + history).
 const { onBoostChange } = require('../boostHandler');
+// v3.9.51: live server stats counters (the Boosts counter changes on boost
+// add/remove).
+const { markStatsDirty } = require('../../data/serverstatsManager');
 
 async function onEvent(oldMember, newMember) {
     try {
@@ -91,6 +94,14 @@ async function onEvent(oldMember, newMember) {
     } catch (err) {
         console.error('GuildMemberUpdate log error:', err.message);
     }
+
+    // v3.9.51: a boost change (or any member update that shifted the numbers)
+    // marks the server stats counters dirty. Kept OUTSIDE the try above so a
+    // server-log failure can't skip the counter update. Cheap no-op without
+    // /serverstats setup.
+    try {
+        markStatsDirty(newMember?.guild?.id);
+    } catch (_) {}
 }
 
 module.exports = {

@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.50** · 90 slash commands · 523 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.51** · 91 slash commands · 541 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -48,7 +48,7 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 ### 📊 Leveling & Stats
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
-- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity, transactions & revenue (Indonesian price formats `25rb`/`2jt` understood, dual-currency `3$ USD | Rp 25.000` records the Rp part, product prices validated at setup). Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
+- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity & transactions. **Live counter channels** (`/serverstats`) — the channel names themselves are auto-updating counters (members, bots, boosts, roles, channels), rate-limit safe. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
 - **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history).
 
 ### 🎭 And More
@@ -137,9 +137,10 @@ Slash commands register instantly to the guild set in `GUILD_ID`. For developmen
 8. `/set-channel audit-log #channel` — the audit log channel
 9. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
 10. `/set-channel server-booster #channel` — boost notifications (optional — `/boosters` works without it)
-11. `/setup-verify` — install the verification panel
-12. `/setup-ticket` — install the ticket panel
-13. `/config-show` — verify all settings
+11. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating)
+12. `/setup-verify` — install the verification panel
+13. `/setup-ticket` — install the ticket panel
+14. `/config-show` — verify all settings
 
 The complete guide — including product examples, custom categories, and daily operations — is here: **[docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)**.
 
@@ -201,7 +202,7 @@ Run **`/test-welcome tipe:welcome`** — it diagnoses every link in the chain (c
 
 ### Total revenue doesn't move when I sell
 
-Since v3.9.49: the price parsers understand Indonesian suffixes (`25rb` = 25.000, `2jt`/`2juta` = 2.000.000) and `/add-product` **rejects** a price it cannot read (with the accepted-format list) — a wrong format can no longer record Rp 0 per sale silently. Since v3.9.50: dual-currency prices work — `3$ USD | Rp. 25.000` records **Rp 25.000 per sale** (the Rp half; USD-only prices are rejected with a hint to include the Rupiah amount). Check your existing products with `/list-products`: if a price was recorded in a bad format, fix it with `/update-product`. Revenue counts ticket orders + escrow completions (price + fee) processed **through the bot** — manual sales outside tickets/deals are not tracked.
+**The aggregate "Total Revenue" line was REMOVED from `/stats` in v3.9.51** (user request — it was never going to match manual bookkeeping). Personal spending per member is still tracked and visible in `/my-stats` ("Total Spent") and `/leaderboard` ("Top Spender"). Since v3.9.49/50 the price parsers understand Indonesian suffixes (`25rb` = 25.000, `2jt`/`2juta` = 2.000.000), dual-currency (`3$ USD | Rp. 25.000` records **Rp 25.000 per sale**), and `/add-product` **rejects** an unreadable price (with the accepted-format list) — so what IS tracked is recorded correctly. Personal spending counts ticket orders + escrow completions (price + fee) processed **through the bot** — manual sales outside tickets/deals are not tracked.
 
 For full troubleshooting (tickets, roles, stats, backups, etc.): **[docs/ADMIN_GUIDE.md → Section 9](./docs/ADMIN_GUIDE.md)**.
 

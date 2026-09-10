@@ -131,7 +131,14 @@ const eventHandlers = [
     require('./src/bot/events/messageBulkDelete'),
     require('./src/bot/events/guildBanAdd'),
     require('./src/bot/events/guildBanRemove'),
-    require('./src/bot/events/guildMemberUpdate')
+    require('./src/bot/events/guildMemberUpdate'),
+    // v3.9.51: live server stats counters — mark dirty on channel/role changes
+    // (member changes are handled inside the member events above). All 4 are
+    // cheap no-ops when /serverstats is not set up.
+    require('./src/bot/events/channelCreate'),
+    require('./src/bot/events/channelDelete'),
+    require('./src/bot/events/guildRoleCreate'),
+    require('./src/bot/events/guildRoleDelete')
 ];
 
 for (const handler of eventHandlers) {

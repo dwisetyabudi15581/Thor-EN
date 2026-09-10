@@ -1,0 +1,19 @@
+/**
+ * Event: guildRoleCreate — marks the server stats counters dirty (v3.9.51).
+ *
+ * A role being created changes the "Roles" counter → mark dirty, the 60s
+ * scheduler tick renames the channel (rate-limit safe). Cheap no-op when
+ * the counters are not set up.
+ */
+
+const { Events } = require('discord.js');
+const { markStatsDirty } = require('../../data/serverstatsManager');
+
+module.exports = {
+    name: Events.GuildRoleCreate,
+    execute(role) {
+        try {
+            markStatsDirty(role?.guild?.id);
+        } catch (_) {}
+    }
+};

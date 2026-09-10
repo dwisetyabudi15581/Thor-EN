@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.51] — 2026-09-10
+
+### Added — ✨ user request: "a live server-stats feature like the ServerStats bots"
+
+**Live server stats counter channels (new):**
+
+- 🟢 **NEW `/serverstats` command** (91 commands total, admin): channel NAMES are live counters that update automatically — the "ServerStats bot" experience without another bot. `setup` creates a **`📊 SERVER STATS`** category at the TOP of the channel list + 5 counter voice channels (`👥 Members`, `🤖 Bots`, `🚀 Boosts`, `🎭 Roles`, `📺 Channels`) with the current live values; `remove` deletes them all + clears the config; `refresh` forces an immediate update (bypasses the cooldown once — admin-invoked, rare, safe).
+- 🟢 **@everyone is denied Connect** on every counter channel — they are display-only (members see the numbers, nobody joins them). Counter values are read straight from the guild object: `memberCount` (exact), members cache for bots, `premiumSubscriptionCount`, role & channel cache sizes.
+- 🟢 **Auto-update, rate-limit safe:** member join/leave/boost changes (`guildMemberAdd/Remove/Update`), channel & role create/delete (4 new event files, registered in index.js) mark the stats *dirty* → the 60s scheduler tick refreshes them; every 5th tick (~5 min) is a catch-up so a missed event self-heals. Three guards keep it inside Discord's **2 renames per channel per 10 min** limit: (1) change detection — an unchanged name makes ZERO API calls, (2) a 5-min per-channel cooldown (deferred renames retry on later ticks), (3) dirty-driven refresh — a join burst = 1 refresh, not 1 rename each.
+- 🟢 **Self-healing:** deleted counter channel → console warning naming the fix commands; ALL counters gone → the feature auto-disables (no zombie scheduler work) — re-run `/serverstats setup`. Setup refuses politely when already configured (points at `refresh`/`remove`), auto-heals into a fresh setup when all old channels are gone, and rolls back half-created channels on partial failure (the v3.9.8 anti-orphan pattern). One forced refresh at startup syncs offline changes.
+- 🟢 `serverstats.json` is backed up by `/backup-now` & restore-able (the in-memory cache reloads after a restore — same staleness fix pattern as stats.json). No "online members" counter on purpose: it needs the GuildPresences privileged intent (not enabled — enabling it without the portal toggle would crash the login; without it the number would be a lie).
+
+### Changed — ✂️ user request: "just delete the total revenue feature — I don't really use it"
+
+- 🟢 **`/stats` no longer shows "Total Revenue":** the aggregate revenue line caused repeated confusion (v3.9.47/49/50 were all about it not matching) and the user doesn't use it — the server overview now shows live data (members, tickets, boosts) + tracked activity (messages, average, giveaway wins, transaction count) with NO revenue line. Personal spending stays where it is per-user and unambiguous: `/my-stats` "Total Spent" and `/leaderboard` "Top Spender".
+- 🟢 +18 unit tests (total **541**): `serverstats.test.js` — pure builders + live values, persistence round-trip + reload, change detection (zero calls when unchanged), rename + force bypass + the per-channel cooldown, setName failure isolation, missing channel warning + auto-disable, dirty-driven scheduler tick + 5-tick catch-up + single-guild hardening, `/serverstats setup` end-to-end (live names, @everyone locked out, category at the top, config saved, refusal, auto-heal, no-permission refusal, partial-failure rollback), `remove` + `refresh` end-to-end + friendly not-set-up errors, event wiring (guildMemberAdd + channelCreate mark dirty), registry 91 + router + NOT-public + FILES_TO_BACKUP + help-catalog + 5800 budget + index.js event registration contracts; statsDisplay re-pinned: NO field may mention revenue. Help catalog: Statistics lines compacted so the All-Commands embed stays within budget (5.793 / 5.800, all 20 categories intact).
+
 ## [3.9.50] — 2026-09-10
 
 ### Fixed — 🐛 user report: "I set the price as 3$ USD | Rp. 25.000" (revenue still barely moved)

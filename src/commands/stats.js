@@ -22,10 +22,15 @@
  * thing, make it one"): the duplicate member fields are GONE — ONE "Members"
  * field (the live count straight from Discord). "Avg Messages/Member" now
  * divides by the LIVE member count too, so the number matches what the embed
- * shows. v3.9.49 also fixes WHY "total revenue doesn't update": Indonesian
- * price suffixes ("25rb"/"2jt") were mis-parsed to near-zero amounts, and
- * unparseable product prices were accepted silently (see products.js +
- * statsManager.parsePrice).
+ * shows.
+ *
+ * v3.9.51 (user request: "just delete the total revenue feature — I don't
+ * really use it"): the "Total Revenue" field is REMOVED from /stats. The
+ * aggregate revenue number caused repeated confusion (v3.9.47/49/50 were all
+ * about it not matching) and the user doesn't use it — /stats now shows the
+ * live server data + tracked activity WITHOUT any revenue line. Personal
+ * spending stats stay available where they are per-user and unambiguous:
+ * /my-stats "Total Spent" and /leaderboard "Top Spender".
  *
  * Note: the permission check for /leaderboard & /my-stats (public commands)
  *          lives in the router (src/commands/index.js). This domain file doesn't
@@ -86,12 +91,12 @@ module.exports = async function (interaction) {
                     inline: true
                 },
                 { name: '🎁 Giveaways Won', value: `${stats.totalGiveawaysWon}`, inline: true },
-                // Row 3 — tracked transactions (ticket orders + escrow deals)
-                { name: '🛒 Transactions', value: `${stats.totalPurchases}`, inline: true },
-                { name: '💰 Total Revenue', value: `Rp ${stats.totalRevenue.toLocaleString('en-US')}`, inline: true }
+                // Row 3 — tracked transactions (ticket orders + escrow deals).
+                // v3.9.51: Total Revenue REMOVED (user request — not used).
+                { name: '🛒 Transactions', value: `${stats.totalPurchases}`, inline: true }
             )
             .setFooter({
-                text: 'Members/boosts/tickets = live from Discord • messages & transactions tracked since v3.2 • revenue = ticket + escrow sales'
+                text: 'Members/boosts/tickets = live from Discord • messages & transactions tracked since v3.2'
             })
             .setTimestamp();
         // v3.9.47: server icon when available (personal touch, null-safe).

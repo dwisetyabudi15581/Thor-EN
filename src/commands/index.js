@@ -32,6 +32,7 @@
  *     warn-clear                         → warn.js
  *   - stats, leaderboard, my-stats,
  *     boosters                        → stats.js
+ *   - serverstats                      → serverstats.js
  *   - poll                               → poll.js
  *   - setup-tempvoice, tempvoice-remove  → tempvoice.js
  *   - send-message                       → send-message.js
@@ -73,6 +74,8 @@ const levelingHandler = require('./leveling');
 const midmanHandler = require('./midman');
 // v3.9.43: the moderation pack (/timeout /untimeout /purge /kick /ban /unban)
 const moderationHandler = require('./moderation');
+// v3.9.51: live server stats counter channels (/serverstats setup|remove|refresh)
+const serverstatsHandler = require('./serverstats');
 
 const DOMAIN_HANDLERS = {
     help: helpHandler,
@@ -102,7 +105,9 @@ const DOMAIN_HANDLERS = {
     // v3.9.32
     midman: midmanHandler,
     // v3.9.43
-    moderation: moderationHandler
+    moderation: moderationHandler,
+    // v3.9.51: live server stats counter channels
+    serverstats: serverstatsHandler
 };
 
 // Mapping commandName → domain key (in DOMAIN_HANDLERS).
@@ -130,6 +135,9 @@ const COMMAND_TO_DOMAIN = {
     // v3.9.32: midman/escrow
     'set-midman-fee': 'midman',
     'midman-deals': 'midman',
+
+    // v3.9.51: live server stats counters
+    serverstats: 'serverstats',
 
     // products
     'add-product': 'products',

@@ -294,12 +294,16 @@ const HELP_CATEGORIES = [
         id: 'stats',
         emoji: '📈',
         name: 'Statistics',
-        short: 'Live server stats, boosters, leaderboards',
+        short: 'Live stats, counter channels, boosters, leaderboards',
+        // v3.9.51: + /serverstats (live counter channels). Lines compacted so
+        // the All-Commands embed stays within the 5800 budget with all 20
+        // categories intact (re-measured after every line change).
         lines: [
             '• `/stats` — live server stats + tracked activity',
-            '• `/boosters` — who is boosting now + recent boost history',
-            '• `/leaderboard metric:messages|vipPurchases|totalSpent` — rankings',
-            '• `/my-stats` — your messages, transactions, wins & join date'
+            '• `/serverstats` — live counter channels (members/boosts)',
+            '• `/boosters` — current boosters + history',
+            '• `/leaderboard` — rankings (messages/spending/wins)',
+            '• `/my-stats` — your messages & transactions'
         ]
     },
     {

@@ -13,6 +13,8 @@
 const { Events } = require('discord.js');
 const { onMemberAdd } = require('../memberHandler');
 const { logServerEvent } = require('../../infra/serverLog');
+// v3.9.51: live server stats counters.
+const { markStatsDirty } = require('../../data/serverstatsManager');
 
 async function onEvent(member) {
     try {
@@ -28,6 +30,11 @@ async function onEvent(member) {
             return;
         }
         await onMemberAdd(member);
+
+        // v3.9.51: the member counter changed (memberCount includes bots, so
+        // this must run BEFORE the bot-return below). Cheap no-op when the
+        // /serverstats counters are not set up.
+        markStatsDirty(member.guild.id);
 
         // v3.9.43: server log join (best effort — must never break the welcome).
         if (member.user?.bot) return; // bot joins = integration invites, not members

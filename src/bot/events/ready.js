@@ -21,7 +21,9 @@ const {
     processScheduledAnnouncement,
     pruneStaleData,
     reconcileZombieDeals,
-    reconcileZombieDealsDaily
+    reconcileZombieDealsDaily,
+    // v3.9.51: live server stats counter channels.
+    processServerStatsTick
 } = require('../../services/schedulerTasks');
 const { getExpired, getAllActive } = require('../../data/roleScheduler');
 const { removeExpiredKeys } = require('../../data/keyManager');
@@ -129,6 +131,33 @@ async function onReady(client) {
         }
     } catch (err) {
         console.warn('⚠️ Startup booster reconcile failed:', err.message);
+    }
+
+    // === 1e. v3.9.51: server stats counters — startup sync ===
+    // One forced refresh right after login so the counters are correct even
+    // if changes happened while the bot was offline (the events were missed).
+    // Also confirms the setup is healthy (deleted channels warn here).
+    try {
+        const serverstatsManager = require('../../data/serverstatsManager');
+        if (serverstatsManager.isEnabled()) {
+            const guild = GUILD_ID
+                ? client.guilds.cache.get(GUILD_ID)
+                : client.guilds.cache.size > 0
+                  ? client.guilds.cache.first()
+                  : null;
+            if (guild) {
+                const result = await serverstatsManager.refreshServerStats(guild, { force: true });
+                if (result.disabled) {
+                    console.warn('⚠️ Server stats counters: ALL channels are gone — the feature is disabled. Re-create with /serverstats setup.');
+                } else {
+                    console.log(
+                        `📊 Server stats counters synced (updated ${result.updated}, deferred ${result.deferred}, missing ${result.missing}, errors ${result.errors}).`
+                    );
+                }
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ Startup server stats sync failed:', err.message);
     }
 
     // v3.9.24 FIX: order reversed — register commands to the guild FIRST, then clean
@@ -329,6 +358,15 @@ async function onReady(client) {
                     await reconcileZombieDealsDaily(client);
                 } catch (err) {
                     console.error('Scheduler: reconcileZombieDeals error:', err.message);
+                }
+
+                // v3.9.51: live server stats counters — dirty-driven (an event
+                // happened) + 5-min catch-up. Rate-limit safe (change detection +
+                // per-channel cooldown inside the manager).
+                try {
+                    await processServerStatsTick(client);
+                } catch (err) {
+                    console.error('Scheduler: processServerStats error:', err.message);
                 }
             } catch (err) {
                 console.error('Scheduler tick error:', err);

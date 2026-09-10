@@ -11,6 +11,8 @@
 const { Events, AuditLogEvent } = require('discord.js');
 const { onMemberRemove } = require('../memberHandler');
 const { logServerEvent, findAuditExecutor } = require('../../infra/serverLog');
+// v3.9.51: live server stats counters.
+const { markStatsDirty } = require('../../data/serverstatsManager');
 
 async function onEvent(member) {
     try {
@@ -23,6 +25,10 @@ async function onEvent(member) {
             return;
         }
         await onMemberRemove(member);
+
+        // v3.9.51: the member/bot counters changed — runs BEFORE the bot-return
+        // (memberCount includes bots). Cheap no-op without /serverstats setup.
+        markStatsDirty(member.guild.id);
 
         // v3.9.43: server log leave/kick (best effort).
         if (member.user?.bot) return;

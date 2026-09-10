@@ -1141,6 +1141,32 @@ function getCommands() {
             name: 'boosters',
             description: 'List the current server boosters + recent boost history (public)'
         },
+        // v3.9.51: live server stats counter channels (the "ServerStats bot"
+        // experience): channel NAMES are auto-updating counters (members,
+        // bots, boosts, roles, channels). setup/remove/refresh — see
+        // src/data/serverstatsManager.js for the rate-limit strategy.
+        {
+            name: 'serverstats',
+            description: 'Live counter channels (members, boosts…) that update automatically',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 1,
+                    name: 'setup',
+                    description: 'Create the counter category + 5 live counter channels'
+                },
+                {
+                    type: 1,
+                    name: 'remove',
+                    description: 'Delete the counter channels + category and clear the config'
+                },
+                {
+                    type: 1,
+                    name: 'refresh',
+                    description: 'Force-refresh all counters right now'
+                }
+            ]
+        },
 
         // === POLL SYSTEM ===
         {

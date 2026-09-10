@@ -69,7 +69,9 @@ function seedTestData() {
     const statsManager = require('../../src/data/statsManager');
     // 3 messages for the test user (also seeds "members tracked").
     for (let i = 0; i < 3; i++) statsManager.incrementMessages(GUILD_ID, USER_ID);
-    // 2 transactions × Rp 10.000 → revenue Rp 20.000.
+    // 2 transactions (still displayed as the "Transactions" counter — the
+    // aggregate revenue display was removed in v3.9.51, but the per-transaction
+    // count stays, so the purchases still need seeding).
     statsManager.recordPurchase(GUILD_ID, USER_ID, 10000);
     statsManager.recordPurchase(GUILD_ID, USER_ID, 10000);
 
@@ -108,7 +110,14 @@ test('USER REPORT /stats: live member count, boosts, tickets + tracked activity'
     // Tracked activity from stats.json — seeded above.
     assert.strictEqual(fields['💬 Messages Tracked'], '3');
     assert.strictEqual(fields['🛒 Transactions'], '2');
-    assert.strictEqual(fields['💰 Total Revenue'], 'Rp 20,000');
+    // v3.9.51 (user request: "just delete the total revenue feature"):
+    // the aggregate revenue line is GONE from /stats — the field must not
+    // render at all (personal spending stays in /my-stats & /leaderboard).
+    const fieldNames = (embed.data.fields || []).map(f => f.name);
+    assert.ok(
+        !fieldNames.some(n => /revenue/i.test(n)),
+        `no field may mention revenue: ${fieldNames.join(' | ')}`
+    );
 
     // v3.9.49 (user report: "member tracked & member live — if they do the same
     // thing, make it one"): exactly ONE member field (the live count) + the

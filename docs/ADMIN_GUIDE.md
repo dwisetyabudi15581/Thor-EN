@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.49
+# 📖 Admin Guide — Thor Bot v3.9.51
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -92,6 +92,8 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `audit-log` — the channel where the bot records ALL admin actions (63 action types; automatically retried once if delivery fails due to rate limits/network)
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
 - `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off.
+
+> 📊 **Live server stats counters (v3.9.51, optional):** `/serverstats setup` creates a `📊 SERVER STATS` category at the TOP of the channel list with 5 display-only channels whose NAMES are live counters — `👥 Members: 123`, `🤖 Bots: 2`, `🚀 Boosts: 5`, `🎭 Roles: 9`, `📺 Channels: 12` — the "ServerStats bot" experience without another bot. They update automatically on member/boost/role/channel changes (rate-limit safe: unchanged numbers make zero API calls, and each channel is renamed at most once per 5 minutes — Discord's 2-per-10-min limit). Manage with `/serverstats refresh` (force an update now) and `/serverstats remove` (delete them all). The bot needs **Manage Channels + Manage Roles** for the setup.
 
 > 💡 Since v3.9.30 every channel is configured through **one command**, `/set-channel` — including transcript (previously a separate command, `/set-transcript-channel`). Remove one with `/remove-channel <type>`.
 
@@ -881,14 +883,6 @@ Shows all backups, including the `pre-restore_*` safety backups (if you have eve
 
 The bot needs access to `message.content`. Without that intent, Discord delivers the content as an **empty string** → triggers never match.
 
-### Total revenue doesn't move when I sell (v3.9.49 + v3.9.50 fixed the causes)
-
-- **Indonesian price suffixes are now parsed correctly:** `25rb` = Rp 25.000, `2jt` / `2juta` = Rp 2.000.000 — before v3.9.49, `25rb` recorded only Rp 25 per sale (the revenue looked frozen).
-- **Dual-currency prices are now parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale — before, `parseFloat` stopped at the `$` and only Rp 3 was counted. USD-only prices (`$3`, `3 usd`) are **rejected** with a hint to include the Rupiah amount — the bot cannot convert currencies.
-- **`/add-product` now rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently. `/update-product` shows the counted amount too when the price changes.
-- Check existing products with `/list-products` — fix a badly-formatted price with `/update-product value:... price:25.000`.
-- Revenue counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked — that's the one remaining gap that can make the number "not match" your books. Sales recorded BEFORE these fixes keep their small historical amounts in `stats.json` (history is not recomputed).
-
 **How to fix the intent:**
 
 1. Open https://discord.com/developers/applications
@@ -903,6 +897,23 @@ The bot needs access to `message.content`. Without that intent, Discord delivers
 7. **Restart the bot** (`npm start`)
 
 Also check `/list-responder` to make sure the responder is registered. Triggers are case-insensitive. By default (`match_mode:contains`) the trigger matches as a whole word anywhere in the message — `beli` answers "bagaimana cara beli" but NOT "belian"; choose `match_mode:exact` if the message must start with the trigger (`!sosmed` matches `!sosmed hello`, not `hello !sosmed`).
+
+### Personal spending doesn't move when I sell ("Total Revenue" was removed in v3.9.51)
+
+- **The aggregate "Total Revenue" line was REMOVED from `/stats` in v3.9.51** (user request — it never matched manual bookkeeping and caused three rounds of confusion). Per-member spending is still tracked: see it in `/my-stats` ("Total Spent") and `/leaderboard` ("Top Spender").
+- **Indonesian price suffixes are parsed correctly (v3.9.49):** `25rb` = Rp 25.000, `2jt` / `2juta` = Rp 2.000.000 — before v3.9.49, `25rb` recorded only Rp 25 per sale.
+- **Dual-currency prices are parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale. USD-only prices (`$3`, `3 usd`) are **rejected** with a hint to include the Rupiah amount — the bot cannot convert currencies.
+- **`/add-product` rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: Rp 25.000 per sale` in the confirmation — a bad format can no longer record Rp 0 silently. `/update-product` shows the counted amount too when the price changes. Fix a badly-formatted price with `/update-product value:... price:25.000`.
+- Personal spending counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked. Sales recorded BEFORE these fixes keep their small historical amounts in `stats.json` (history is not recomputed).
+
+### Server stats counters don't update (v3.9.51)
+
+- Run **`/serverstats refresh`** — it forces an immediate update and reports per-counter results (updated / deferred / missing / errors).
+- **Nothing happens right after a change?** That is the rate limit working as designed: each channel is renamed at most once per 5 minutes (Discord allows 2 renames per channel per 10 min) — a deferred rename is retried on a later scheduler tick (up to ~5 min). Unchanged numbers make ZERO API calls.
+- **A counter channel was deleted by an admin:** the console warns at the next refresh; once ALL counters are gone the feature auto-disables — re-create everything with `/serverstats setup`.
+- **Counters show wrong numbers right after `/serverstats setup`?** The "Channels" counter counts the counter channels themselves (they are real channels) — the next refresh corrects it.
+- The **Bots** counter reads the members cache — right after a cold start (or if the roster fetch failed) it can lag a few bots; the startup sync refreshes it.
+- There is **no "online members" counter** on purpose: it requires the GuildPresences privileged intent (not enabled — enabling it without the portal toggle would crash the login; without it the number would be inaccurate).
 
 ### The auto-responder cooldown feels long
 
@@ -923,10 +934,10 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ### Stats not updating / numbers don't match
 
-- `/stats` shows **live data first** (members, boosts, open tickets — straight from Discord, always current), then tracked activity (messages, transactions, revenue). The tracked part is cached in memory and flushed every 30 seconds — wait a moment, then check again
+- `/stats` shows **live data first** (members, boosts, open tickets — straight from Discord, always current), then tracked activity (messages, average per member, giveaway wins, transactions). The tracked part is cached in memory and flushed every 30 seconds — wait a moment, then check again
 - If the bot just restarted, old stats are still in `stats.json`
 - After a backup restore, the stats cache is reloaded automatically
-- "Members Tracked" only counts members the bot has recorded (v3.2+ tracking) — the REAL member count is the "Members (live)" field
+- "Members" is the REAL live count from Discord (one field since v3.9.49 — the old "Members Tracked" duplicate is gone)
 - Check `/stats` for the server overview, `/my-stats` for personal stats (messages, transactions, wins, real join date)
 
 ### Tickets can't be created
@@ -998,10 +1009,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.50) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.51) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.51** (2026-09-10) — ✨ **user request: live server stats like the ServerStats bots** + ✂️ **user request: "just delete the total revenue feature"**. New **`/serverstats`** command (91 total, admin): `setup` creates a `📊 SERVER STATS` category at the top of the channel list with 5 display-only channels whose NAMES are live counters (`👥 Members`, `🤖 Bots`, `🚀 Boosts`, `🎭 Roles`, `📺 Channels` — @everyone denied Connect), `remove` deletes them, `refresh` forces an update. Auto-update on member/boost/role/channel changes (4 new event files) via the 60s scheduler, rate-limit safe (change detection = zero API calls when unchanged; 5-min per-channel cooldown = exactly Discord's 2 renames/10 min; dirty-driven so a join burst = 1 refresh); 5-min catch-up tick self-heals missed events; deleted channels warn with the fix command and auto-disable when all are gone; partial-failure rollback; startup sync for offline changes; `serverstats.json` backed up + restored. `/stats`: **Total Revenue removed** (repeated confusion — personal spending stays in `/my-stats` + `/leaderboard`). +18 unit tests (total **541**).
 - **v3.9.50** (2026-09-10) — 🐛 **user report: "I set the price as 3$ USD | Rp. 25.000" — revenue still barely moved**. 🔴 Dual-currency prices recorded **Rp 3** per sale: `parseFloat` stopped at the `$` and the Rupiah half was never read. Both price parsers now read the amount attached to the `Rp` marker directly — `3$ USD | Rp. 25.000` → **Rp 25.000** per sale (pipe or not, Rp first or USD first, suffixes included). 🟡 USD-only prices (`$3`, `3 usd`) are now **rejected** with a hint to include the Rupiah amount (revenue is in Rupiah; no currency conversion). 🟢 `/update-product` now shows `💰 counted in stats: Rp 25.000 per sale` when the price changes (same visibility as `/add-product`). Escrow strictness preserved (`3$ | Rp 1.5rb` still rejected). +5 unit tests (total **523**).
 - **v3.9.49** (2026-09-10) — ✨ **user request: Server Booster feature** + 🐛 **user report: "the stats still don't match — revenue doesn't update, and member tracked vs member live"**. Boosters: boost add/remove is detected from the `guildMemberUpdate` premium_since diff (Discord has no dedicated boost event) → pink `🚀 NEW SERVER BOOST!` / gray `💔 BOOST ENDED` embeds to the new **server-booster channel** (`/set-channel tipe:server-booster`), always recorded in the server log, history persisted in `boosts.json` (backed up + restored), **offline catch-up** in one consolidated embed at startup, and a new public **`/boosters`** command (90 total) listing the live roster (earliest supporter first) + recent boost history. Stats fixes: 🔴 Indonesian price suffixes were silently mis-parsed — `25rb` recorded **Rp 25** per sale instead of Rp 25.000 (revenue looked frozen) — both price parsers now understand `rb`/`jt`/`juta`; `/add-product` & `/update-product` now **reject unparseable prices** and show the amount that will be counted per sale; the duplicate "Members (live)" + "Members Tracked" fields merged into **one `👥 Members`** (live count, average divides by it); `/config-show` now lists the server-log channel (missing since v3.9.43) + the new booster channel. +15 unit tests (total **518**).
 - **v3.9.48** (2026-09-09) — 🐛 **user report: "there's a bug — the Welcome doesn't appear"**. Investigation: the welcome code path was proven WORKING (end-to-end simulation with the real modules — join → unverified role + embed + server log, leave → goodbye embed); the real bug was **diagnosability**: when the welcome/goodbye channel was not set / deleted / from another server, the bot logged NOTHING at startup AND NOTHING when a member actually joined. Fix: every skip now logs the cause + the fix command; **new `/test-welcome`** (89 commands) diagnoses the whole chain (config → channel exists → bot permissions) and sends a **live preview** built by the same embed builders the real event uses; startup validates the configuration; a join from another guild (GUILD_ID mismatch) is visible. +17 unit tests (total **503**).
@@ -1039,6 +1051,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.50
+**Document version:** v3.9.51
 **Last updated:** September 10, 2026
-**Bot version:** 3.9.50 · 90 slash commands · 523 unit tests
+**Bot version:** 3.9.51 · 91 slash commands · 541 unit tests
