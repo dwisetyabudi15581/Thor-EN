@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.52** · 91 slash commands · 549 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.53** · 91 slash commands · 551 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -48,7 +48,7 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 ### 📊 Leveling & Stats
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
-- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity & transactions. **Live counter channels** (`/serverstats`) — the channel names themselves are auto-updating counters (members, bots, boosts, roles, channels), rate-limit safe. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date.
+- Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity & transactions. **Live counter channels** (`/serverstats`) — the channel names themselves are auto-updating counters (members, bots, boosts, roles, channels — **pick which ones to show** via boolean options), rate-limit safe. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date. **`/help` category views are full per-command guides** — syntax, behavior + the answers to the most common questions, so members stop asking.
 - **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history).
 
 ### 🎭 And More
@@ -137,7 +137,7 @@ Slash commands register instantly to the guild set in `GUILD_ID`. For developmen
 8. `/set-channel audit-log #channel` — the audit log channel
 9. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
 10. `/set-channel server-booster #channel` — boost notifications (optional — `/boosters` works without it)
-11. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating)
+11. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating; pick which counters to show via the `members`/`bots`/`boosts`/`roles`/`channels` boolean options)
 12. `/setup-verify` — install the verification panel
 13. `/setup-ticket` — install the ticket panel
 14. `/config-show` — verify all settings

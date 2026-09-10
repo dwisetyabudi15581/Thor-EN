@@ -1,23 +1,26 @@
 /**
- * Unit tests for the /help category `detail` blocks (v3.9.52).
+ * Unit tests for the /help category `detail` guides (v3.9.52 → v3.9.53).
  *
- * v3.9.52 (user request: "update /help too so everything is in sync") adds an
- * optional `detail` array per help category: richer usage documentation that
- * renders ONLY in the 📂 category detail view. The 📖 All Commands embed and
- * 🔍 Search keep rendering the compact `lines` — the All-Commands budget had
- * only ~7 chars of slack (5793/5800), so a detail leak would silently drop
- * the last category from the full listing.
+ * v3.9.52 added an optional per-category `detail` array. v3.9.53 (user
+ * request: "rewrite /help so every category's slash commands get
+ * explanations — members should not have to ask") makes `detail` the FULL
+ * category view: when present it IS the description (a self-contained
+ * per-command guide with syntax + behavior + FAQs), while the compact
+ * `lines` remain the content of the 📖 All Commands embed (5793/5800 — only
+ * 7 chars of slack; a guide leak would silently drop the last category)
+ * and the 🔍 Search index.
  *
  * Verifies:
- *   - Statistics category detail: /serverstats setup/remove/refresh usage,
- *     auto-update + rate-limit explanation, boost notification guidance.
- *   - Quick Start + Logging & Channels detail blocks present.
- *   - All-Commands embed does NOT contain detail text, stays within the 5800
- *     budget, and keeps ALL 20 categories (no silent drop).
- *   - Categories without `detail` render exactly as before (backward compat).
+ *   - EVERY category carries a non-empty `detail` guide (the rewrite).
+ *   - The category view renders the guide (not the compact lines).
+ *   - Guides document real commands: each guide mentions at least one
+ *     `/command` that also exists in the category's `lines`.
+ *   - All-Commands embed excludes guide text, stays within the 5800 budget,
+ *     and keeps ALL 20 categories (no silent drop).
+ *   - Statistics guide documents the v3.9.53 counter-selection options.
  *   - Every category view description stays ≤ 4096 (Discord limit).
- *   - Search scans only `lines`: the command name finds /serverstats, but a
- *     detail-only phrase ("self-heal") never leaks into search results.
+ *   - Search scans only `lines` (command findable; guide-only phrase never
+ *     leaks into results).
  */
 
 const test = require('node:test');
@@ -38,90 +41,72 @@ function findCat(id) {
 }
 
 // ====================================================
-// === 1. Statistics category — extended usage docs ===
+// === 1. Every category is a full guide ===
 // ====================================================
 
-test('helpDetail: stats category has a detail block documenting /serverstats', () => {
-    const cat = findCat('stats');
-    assert.ok(cat, 'stats category must exist');
-    assert.ok(Array.isArray(cat.detail) && cat.detail.length > 0, 'stats category needs a detail array');
-    const text = cat.detail.join('\n');
-
-    // /serverstats usage: setup + remove + refresh (the 3 subcommands).
-    assert.match(text, /\/serverstats setup/, 'detail must document `setup`');
-    assert.match(text, /\/serverstats remove/, 'detail must document `remove`');
-    assert.match(text, /\/serverstats refresh/, 'detail must document `refresh`');
-
-    // The live-counter promise (what the user asked for — like ServerStats bots).
-    assert.match(text, /Members/i, 'detail must name the Members counter');
-    assert.match(text, /Boosts/i, 'detail must name the Boosts counter');
-    assert.match(text, /rate-limit/i, 'detail must explain the rate-limit safety');
-
-    // Boost notification guidance → the server-booster channel.
-    assert.match(text, /server-booster/, 'detail must mention the server-booster channel');
+test('helpDetail: EVERY category has a non-empty detail guide (v3.9.53 rewrite)', () => {
+    assert.strictEqual(HELP_CATEGORIES.length, 20, 'expected the 20-category catalog');
+    for (const cat of HELP_CATEGORIES) {
+        assert.ok(
+            Array.isArray(cat.detail) && cat.detail.length >= 3,
+            `category ${cat.id} needs a full detail guide (got ${cat.detail ? cat.detail.length : 'none'} lines)`
+        );
+    }
 });
 
-test('helpDetail: stats category detail renders in the category view', () => {
-    const embed = buildCategoryEmbed(null, 'stats');
-    assert.ok(embed, 'category embed must build');
-    const desc = embed.toJSON().description;
-    // Compact command list first…
-    assert.match(desc, /• `\/stats` — live server stats/);
-    // …then the extended detail.
-    assert.match(desc, /\/serverstats setup/);
-    assert.match(desc, /Boost notifications/);
+test('helpDetail: the category view renders the guide, not the compact lines', () => {
+    for (const cat of HELP_CATEGORIES) {
+        const desc = buildCategoryEmbed(null, cat.id).toJSON().description;
+        assert.strictEqual(desc, cat.detail.join('\n'), `category ${cat.id} view must be exactly its guide`);
+    }
 });
 
-// ====================================================
-// === 2. Quick Start + Logging detail blocks ===
-// ====================================================
-
-test('helpDetail: quickstart detail suggests /serverstats setup as optional', () => {
-    const cat = findCat('quickstart');
-    const text = (cat.detail || []).join('\n');
-    assert.match(text, /\/serverstats setup/, 'quickstart detail should point at the live counters');
-    // The 5 numbered steps themselves must stay unchanged (All-Commands budget).
-    assert.strictEqual(
-        cat.lines.length,
-        7,
-        'quickstart lines count changed — All-Commands budget is budget-critical'
-    );
-});
-
-test('helpDetail: logging detail explains the boost auto-announcement', () => {
-    const cat = findCat('logging');
-    const text = (cat.detail || []).join('\n');
-    assert.match(text, /server-booster/, 'logging detail must mention the server-booster channel');
-    assert.match(text, /BOOST_ADD/, 'logging detail must mention the server-log event types');
+test('helpDetail: each guide documents real commands that also exist in lines', () => {
+    for (const cat of HELP_CATEGORIES) {
+        const guide = cat.detail.join('\n');
+        const commands = [...cat.lines.join('\n').matchAll(/`\/([a-z-]+)/g)].map(m => m[1]);
+        const documented = commands.filter(cmd => guide.includes(`/${cmd}`));
+        assert.ok(
+            documented.length >= Math.min(1, commands.length),
+            `guide for ${cat.id} must mention at least one real command`
+        );
+    }
 });
 
 // ====================================================
-// === 3. All-Commands embed — detail must NOT leak ===
+// === 2. All-Commands embed — guides must NOT leak ===
 // ====================================================
 
-test('helpDetail: All-Commands embed excludes detail text and keeps all 20 categories', () => {
+test('helpDetail: All-Commands embed excludes guide text and keeps all 20 categories', () => {
     const embeds = buildAllEmbeds();
     assert.strictEqual(embeds.length, 1, 'All-Commands is a single embed');
     const total = embedTotalChars(embeds[0]);
     const json = embeds[0].toJSON();
 
-    // Budget contract — the exact reason `detail` exists (7 chars of slack!).
+    // Budget contract — the exact reason the guides live in `detail` (7 chars!).
     assert.ok(total <= 5800, `All-Commands total ${total} exceeds the 5800 budget`);
     assert.strictEqual(json.fields.length, HELP_CATEGORIES.length, 'every category must stay in the full listing');
 
-    // Detail-only phrases must never appear in the full listing.
+    // Guide-only phrases must never appear in the full listing.
     const all = JSON.stringify(json);
-    assert.ok(!all.includes('/serverstats setup'), 'detail leaked into All-Commands');
-    assert.ok(!all.includes('Boost notifications'), 'detail leaked into All-Commands');
-    assert.ok(!all.includes('self-heal'), 'detail leaked into All-Commands');
+    assert.ok(!all.includes('Pick which counters'), 'guide leaked into All-Commands');
+    assert.ok(!all.includes('self-heal'), 'guide leaked into All-Commands');
+    assert.ok(!all.includes('Why can'), 'FAQ phrasing leaked into All-Commands');
 });
 
-test('helpDetail: categories without detail render exactly as before', () => {
-    for (const cat of HELP_CATEGORIES) {
-        if (cat.detail) continue;
-        const desc = buildCategoryEmbed(null, cat.id).toJSON().description;
-        assert.strictEqual(desc, cat.lines.join('\n'), `category ${cat.id} without detail must render lines only`);
-    }
+// ====================================================
+// === 3. Statistics guide — the v3.9.53 options ===
+// ====================================================
+
+test('helpDetail: stats guide documents the counter-selection options', () => {
+    const guide = findCat('stats').detail.join('\n');
+    assert.match(guide, /\/serverstats setup/, 'must document setup');
+    assert.match(guide, /\/serverstats remove/, 'must document remove');
+    assert.match(guide, /\/serverstats refresh/, 'must document refresh');
+    assert.match(guide, /bots/, 'must name the bots option');
+    assert.match(guide, /False/, 'must explain False = skip');
+    assert.match(guide, /rate-limit/i, 'must explain the rate-limit safety');
+    assert.match(guide, /server-booster/, 'must mention the boost channel');
 });
 
 // ====================================================
@@ -140,7 +125,7 @@ test('helpDetail: every category view description stays within 4096', () => {
     }
 });
 
-test('helpDetail: search scans lines only — command findable, detail phrases not', () => {
+test('helpDetail: search scans lines only — command findable, guide phrases not', () => {
     // The command name still finds the compact line.
     const result = searchHelp('serverstats');
     assert.ok(result.totalBlocks >= 1, 'searching "serverstats" must find the command');
@@ -148,7 +133,7 @@ test('helpDetail: search scans lines only — command findable, detail phrases n
     assert.ok(stats, 'stats category must be in the results');
     assert.match(stats.blocks.map(b => b.join('\n')).join('\n'), /\/serverstats/);
 
-    // Detail-only phrasing must NOT leak into search results.
+    // Guide-only phrasing must NOT leak into search results.
     const leak = searchHelp('self-heal');
-    assert.strictEqual(leak.totalBlocks, 0, 'detail-only phrases must not be searchable');
+    assert.strictEqual(leak.totalBlocks, 0, 'guide-only phrases must not be searchable');
 });

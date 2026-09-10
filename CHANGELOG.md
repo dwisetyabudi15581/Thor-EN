@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.53] — 2026-09-10
+
+### Added — ⚙️ user request: "give /serverstats options for which counters to show"
+
+- 🟢 **`/serverstats setup` now takes 5 boolean options — `members`, `bots`, `boosts`, `roles`, `channels`.** Every counter is ON by default; set one to **False** to skip it (e.g. `/serverstats setup bots:false channels:false` creates only 👥 · 🚀 · 🎭). Turning ALL of them off is refused with a friendly explanation. Only the selected counters are created, persisted in `serverstats.json`, and refreshed — and the confirmation embed gains a **"Not created"** field listing what was skipped. `/serverstats refresh` now lists exactly the CONFIGURED counters (same shape the setup confirmation showed). To change the selection: `remove` then `setup` again (documented in the footer of the confirmation embed).
+
+### Changed — 📖 user request: "rewrite /help so every category's slash commands get explanations — members shouldn't have to ask"
+
+- 🟢 **Every one of the 20 `/help` categories is now a full self-contained guide.** The v3.9.52 `detail` mechanism became the category view itself: when a category carries a guide, THAT is what the 📂 dropdown renders — per-command syntax, behavior, examples, and ❓ answers to the most common questions (why can't I moderate that member, why didn't the panel update, why didn't XP count…). The compact `lines` remain the content of the budget-critical 📖 All Commands embed (5.793/5.800 — untouched) and the 🔍 Search index, so nothing dropped and nothing overshot. Longest guide: Statistics at 1.539/4.096 chars.
+- 🟢 Bonus accuracy fix found while writing the guides: the Auto-Mod help line said `/add-word type:Exempt_(word)` but the option is actually **`tipe:`** in the registry — fixed in the compact line (the guide now documents the real option name).
+- 🟢 +3 unit tests (total **551**): `/serverstats setup` counter-selection end-to-end (False options skipped — only the selected channels created, config keys match the selection, "Not created" field lists the skipped ones), all-False refusal (nothing created, no config saved, friendly message), refresh with a partial selection lists only the configured counters; helpDetail.test.js re-pinned for the rewrite (every category has a guide, the category view renders the guide exactly, guides document real commands from `lines`, the All-Commands embed excludes guide text and keeps all 20 categories within budget, the stats guide documents the new selection options); the registry contract now pins the 5 boolean options (names, type 5, optional, ≤100-char descriptions).
+
 ## [3.9.52] — 2026-09-10
 
 ### Changed — 📖 user request: "update /help too so everything is in sync"

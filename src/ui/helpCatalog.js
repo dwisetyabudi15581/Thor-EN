@@ -90,11 +90,23 @@ const HELP_CATEGORIES = [
             '5️⃣ `/set-channel server-log #log` — enable server log',
             '💡 Then explore the other categories via the 📂 dropdown.'
         ],
-        // v3.9.52: optional extras listed only in the category detail view —
-        // NOT in `lines` (the All-Commands embed budget has ~7 chars of slack).
+        // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
+            '**New to this bot? Set the server up in this order (once):**',
+            '1️⃣ `/set-role tipe:verified role:@Verified` — the role members receive after verifying',
+            '2️⃣ `/add-category` + `/add-product` — prepare what you sell (see the Products category)',
+            '3️⃣ `/setup-ticket-panel` — mount the order panel members click to buy',
+            '4️⃣ `/setup-verify` — verification gate: new members click a button to get the verified role',
+            '5️⃣ `/set-channel tipe:server-log channel:#log` — record joins, leaves, deletions, bans',
             '',
-            '🎯 Nice extras once the basics run: `/serverstats setup` — live member/boost counters at the top of the channel list · `/set-channel server-booster #ch` — boost announcements.'
+            '**Nice extras once the basics run (all optional):**',
+            '• `/serverstats setup` — live member/boost counters at the top of the channel list (pick which counters to show)',
+            '• `/set-channel tipe:server-booster channel:#boosts` — pink embed whenever someone boosts',
+            '• `/setup-leveling` — XP per message + level-up roles',
+            '• `/setup-tempvoice` — private voice channels members can create themselves',
+            '• `/add-responder` — auto-reply to frequent questions',
+            '',
+            '💡 Nothing here is destructive, and **nothing is sent to members** until you mount a panel — you can safely explore. Every command is explained in its category via the 📂 dropdown.'
         ]
     },
     {
@@ -111,6 +123,22 @@ const HELP_CATEGORIES = [
             '• `/kick` remove · `/ban` block · `/unban` unblock',
             '• `/purge amount:100 user?` — bulk delete messages (1-100)',
             '💡 Auto-logged to `/warn-list` + server log. Higher roles are immune.'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Warnings & history**',
+            '• `/warn user reason` — issue a warning. Sanctions fire AUTOMATICALLY: 3 warns = 1h mute · 5 = 1-day mute · 7 = kick. The member is notified in DM when possible.',
+            '• `/warn-list user` — one page: active warns + every past sanction (mute/kick/ban with dates + reasons).',
+            '• `/warn-remove user warn_id` — delete a single warning (unfair warns vanish from the count). `/warn-clear user` — wipe them all.',
+            '',
+            '**Direct actions**',
+            '• `/timeout user duration reason` — mute for 1–40320 minutes (max 28 days); `/untimeout user` lifts it early.',
+            '• `/kick user reason` — remove from the server (they can re-join with a new invite).',
+            '• `/ban user reason` — block permanently, optionally deleting their last messages (`delete_days` 0–7). `/unban user_id` — revoke by ID (works even if they already left).',
+            '• `/purge amount user?` — bulk delete 1–100 recent messages in the CURRENT channel; add `user` to delete only that member\'s messages.',
+            '',
+            '❓ **Why can\'t I moderate a member?** Their role is HIGHER than the bot\'s — drag the bot\'s role up in Server Settings → Roles.',
+            '❓ **Where does everything land?** In the server-log channel + the member\'s warn history — nothing is silent.'
         ]
     },
     {
@@ -123,6 +151,22 @@ const HELP_CATEGORIES = [
             '• `/add-product ... requires_key:false` — service/account (details DM-ed to buyer)',
             '• `/update-product value:vip30 label:"..."` — edit · `/remove-product` · `/list-products`',
             '• `/set-product-role` — role on purchase (+ expiry) · `/remove-product-role` `/list-product-roles`'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Products = what you sell. Each has a `value` (unique ID), a `label` (what buyers see) and a `price`.**',
+            '• `/add-product label value price` — add one, e.g. `/add-product value:vip30 label:"VIP 30D" price:"Rp 30.000"`. Optional `duration` (days), `category`, `requires_key`.',
+            '• `requires_key:true` (default) — the buyer receives a product KEY they hand to your staff, who run `/set-key` to grant the role. Best for VIP-role products.',
+            '• `requires_key:false` — a text/DM product: the panel collects the buyer\'s note, and details are delivered manually (accounts, services, gifts).',
+            '• `/update-product value` — edit label/price/duration/category/requires_key of an existing product without delete+re-add. The confirmation shows the amount counted in stats per sale.',
+            '• `/remove-product value` · `/list-products` — remove / view the catalog.',
+            '',
+            '**Auto-role on purchase**',
+            '• `/set-product-role value role days` — the buyer\'s role is granted automatically when the deal closes, and auto-removed after `days` (leave empty = permanent).',
+            '• `/remove-product-role value` — stop granting it · `/list-product-roles` — see all.',
+            '',
+            '❓ **Price format?** Rupiah, with or without dots/suffixes: `Rp 30.000`, `30000`, `30rb`. Dual-currency works (`3$ USD | Rp 25.000` — the Rp amount is what stats record). USD-only is rejected: stats are in Rupiah.',
+            '❓ **Buyers see the price?** Yes — the ticket panel price list uses your `label` + `price` exactly.'
         ]
     },
     {
@@ -133,6 +177,16 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/set-key user:@user value:vip30 key:ABCDE-12345` — assign a product key',
             '• `/list-keys user:@user` — member keys · `/clear-schedule user clear_keys:true` — clean up'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Keys = proof of purchase. The buyer shows the key, staff verifies it once, the role + expiry schedule are handled automatically.**',
+            '• `/set-key user value key` — register a key, e.g. `/set-key value:vip30 key:ABCDE-12345`. The buyer instantly gets the product role, and the expiry schedule is extended by the product\'s duration (never duplicated — MAX EXTEND).',
+            '• `/list-keys user` — every key a member owns, active AND expired, with dates.',
+            '• `/clear-schedule user` — remove all scheduled role expirations for a member; `clear_keys:true` also deletes their keys and removes the VIP role — the full cleanup for refunds/chargebacks.',
+            '',
+            '❓ **Key already used?** Each key can only be redeemed once — staff can see its status in `/list-keys`.',
+            '❓ **Buyer lost the key?** `/list-keys user` shows it — no need to dig through DMs.'
         ]
     },
     {
@@ -145,6 +199,22 @@ const HELP_CATEGORIES = [
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
             '• `/setup-verify` — new-member verification · `/set-verify-button` — button style',
             '• `/setup-ticket` — legacy single-category panel'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**The panel is the shop window: one embed with buttons — members click, a private ticket opens.**',
+            '• `/setup-ticket-panel` — mount it. Full customization: `title`, `body`, `categories` (which ticket categories appear), `color`, `image`, `thumbnail`, `footer`, `channel`, `use_dropdown:true` (compact dropdown instead of buttons).',
+            '• `/list-panels` — every panel + its ID · `/update-panel id field` — edit title/body/color/image/footer via modal (no re-setup).',
+            '• `/refresh-panel id` — re-render with the LATEST categories/products (run this after adding products — the embed otherwise keeps the old list).',
+            '• `/delete-panel id` — remove a panel (message + config).',
+            '',
+            '**Verification for new members**',
+            '• `/setup-verify` — mount the verify panel: joining members click a button to get the verified role (and drop the unverified one).',
+            '• `/set-verify-button label emoji style` — customize the button look.',
+            '• `/setup-ticket` — the legacy single-category panel (kept for old setups; prefer `/setup-ticket-panel`).',
+            '',
+            '❓ **Panel shows old prices?** Run `/refresh-panel id` — or `/update-panel` for texts.',
+            '❓ **Nothing happens when a member clicks?** Check the bot\'s permission to create channels + see the channel in the ticket category.'
         ]
     },
     {
@@ -157,6 +227,17 @@ const HELP_CATEGORIES = [
             '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories`',
             '💡 With products → dropdown; without → creates a ticket directly.',
             '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE (help/report) · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Categories = the doors on the panel. Each has an `id`, a `label` (what members see), an `emoji` and a button `style` (color).**',
+            '• `/add-category id label emoji style requires_key` — e.g. `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`.',
+            '• `requires_key:true` — the category sells products: members get the product dropdown + price list. `requires_key:false` — a plain help/report ticket.',
+            '• `/update-category id` — edit label/emoji/style/requires_key without delete+re-add · `/remove-category id` · `/list-categories`.',
+            '💡 A category WITH products shows a dropdown; WITHOUT products, clicking creates the ticket directly.',
+            '',
+            '**Auto-Split (default): tickets are organized into 3 categories** — 🎫 TRANSACTIONS (product orders) · 🎫 ASSISTANCE (help/report) · 🤝 ESCROW (midman deals). Rename them via `/edit-message` types `ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`.',
+            '❓ **Added a product but the dropdown is missing?** Run `/refresh-panel id` — the panel embed refreshes with the new list.'
         ]
     },
     {
@@ -169,6 +250,21 @@ const HELP_CATEGORIES = [
             '• `/set-midman-fee mode:Percent value:5` — fee per deal (percent/flat, 0=free)',
             '• `/midman-deals` — all active deals',
             '💡 3-party escrow: buyer ⇄ seller, the midman holds the funds. Open via the **🤝 Escrow** button on the panel — 3 steps until both sides **Agree Deal**.'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Escrow = the bot referees the deal: buyer and seller each confirm, the midman releases the funds, the fee is recorded automatically.**',
+            '**Setup (once):**',
+            '• `/set-role tipe:midman role:@Midman` — MANDATORY before any deal can open. Your staff with this role appear as the escrow officers.',
+            '• `/set-midman-fee mode value` — the fee: `mode:Percent value:5` (5%) or `mode:Flat value:5000` (Rp 5.000). `0` = free.',
+            '• `/midman-deals` — every active deal on one page (buyer, seller, midman, amount, status).',
+            '',
+            '**How a deal flows**',
+            '1️⃣ A member clicks **🤝 Escrow** on the ticket panel and fills buyer/seller/price → a deal channel is created with all three inside.',
+            '2️⃣ Buyer and seller each press **Agree** — the bot locks edits once both agree (3 steps total).',
+            '3️⃣ The midman settles: **Complete** (funds released + fee recorded) or **Cancel** (everyone freed).',
+            '❓ **Stuck deal?** `/midman-deals` shows the status; deals whose channel was deleted are reconciled automatically at startup + daily.',
+            '❓ **Fee in stats?** Completed deals are recorded in the transaction stats (Rupiah).' 
         ]
     },
     {
@@ -184,10 +280,18 @@ const HELP_CATEGORIES = [
             '• `/remove-channel type` — turn one off',
             'ℹ️ No `server-log` set = no event records.'
         ],
-        // v3.9.52: boost announcements explained (category detail view only).
+        // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
-            '',
-            '🚀 Boost add/remove is auto-announced to the `server-booster` channel as a pink embed, and is ALWAYS recorded in the server log (BOOST_ADD / BOOST_REMOVE) + boost history — even when the channel is not set.'
+            '**Every channel is optional — set only what you want. Same command for all types: `/set-channel tipe:... channel:#ch`.**',
+            '• `tipe:server-log` — message deletes/edits, joins/leaves, bans, boost events — the server\'s black box.',
+            '• `tipe:audit-log` — admin actions (config changes, products, moderation).',
+            '• `tipe:transcript` — closed tickets are archived here as a text file.',
+            '• `tipe:welcome` / `tipe:goodbye` — the join/leave embeds. Test + diagnose them with `/test-welcome tipe:welcome` (checks config, channel, permissions, and sends a live preview).',
+            '• `tipe:invoice` — purchase invoices (one per completed order).',
+            '• `tipe:server-booster` — 🚀 boost add/remove is auto-announced as a pink embed, and is ALWAYS recorded in the server log + boost history even when this channel is not set.',
+            '• `/remove-channel tipe` — turn one off (the events keep flowing to the server log where applicable).',
+            '❓ **Set a channel but nothing arrives?** Run `/test-welcome` for welcome/goodbye, or check the bot\'s View + Send + Embed permissions on that channel.',
+            '❓ **Channel deleted?** Re-set it with `/set-channel` — a dead channel ID is detected and reported at startup.'
         ]
     },
     {
@@ -198,9 +302,25 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/set-automod` `/automod-show` `/automod-toggle` — enable & inspect',
             '• `/add-word words:word1,word2 action:Mute_10_minutes` — words + sanction',
-            '• `/remove-word` `/list-words` · `/add-word type:Exempt_(word)` — whitelist',
+            '• `/remove-word` `/list-words` · `/add-word tipe:Exempt_(word)` — whitelist',
             '• `/add-link-whitelist` `/remove-link-whitelist` — allowed links',
             '💡 Whole-word matching: "cat" does not match "category"'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Auto-mod watches every message and acts instantly — you choose the rules.**',
+            '**Configure:**',
+            '• `/set-automod` — the master switch: `spam_threshold` (messages/burst), `spam_action`, `block_links`, `block_words`, `word_action`, `max_mentions`, `mention_action`.',
+            '• `/automod-show` — see the current rules · `/automod-toggle enabled:false|true` — on/off in one click.',
+            '',
+            '**Word blocklist:**',
+            '• `/add-word words:kata1,kata2 action:Mute_10_minutes` — add words (comma-separated, APPENDED — never replaces) + the sanction. `tipe:Exempt_(word)` whitelists a word instead.',
+            '• `/remove-word word tipe` — delete one · `/list-words` — see the blocklist, exemptions + per-word actions.',
+            '',
+            '**Links & exemptions:**',
+            '• `/add-link-whitelist channel|#ch role|@role` — who may post links (channels or roles).',
+            '• Matching is WHOLE-WORD: "cat" does not match "category" — no false alarms on longer words.',
+            '❓ **Triggered but no action?** Check `/automod-show` — is the needed rule enabled, and is the bot\'s role above the member\'s?'
         ]
     },
     {
@@ -212,6 +332,16 @@ const HELP_CATEGORIES = [
             '• `/add-responder trigger:beli reply:...` — auto-reply to "beli" anywhere',
             '• `match_mode:contains|exact` — word anywhere, or message start',
             '• `/list-responder` · `/remove-responder` — view & delete'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Auto-responder = an FAQ machine: a message contains the trigger → the bot replies instantly.**',
+            '• `/add-responder trigger reply` — e.g. `/add-responder trigger:beli reply:"Please open a ticket 🎫"` — fires when the message CONTAINS "beli" as a whole word, anywhere.',
+            '• `match_mode:contains` (default) — whole word anywhere: "how do I buy" triggers "beli" — but "belian" does not. `match_mode:exact` — only when the message STARTS with the trigger (legacy `!sosmed` style).',
+            '• `reply_type` — plain reply or embed · `cooldown` — seconds before the same trigger can fire again (`0` = always).',
+            '• `/list-responder` — every trigger + reply + mode · `/remove-responder trigger` — delete one.',
+            '❓ **Two triggers in one message?** Both reply — a trigger on cooldown does NOT block the scan (a second matching trigger still answers).',
+            '❓ **Not firing?** Multi-word triggers work ("cara beli"); doubled spaces are collapsed; regex metacharacters are escaped (no errors).' 
         ]
     },
     {
@@ -224,6 +354,17 @@ const HELP_CATEGORIES = [
             '• `/setup-selfrole title:... type:button` — member-choice role panel',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
             '💡 `requires_role:@Verified` — conditionally locked role'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**System roles (bot logic)** — `/set-role tipe role`:',
+            '• `tipe:verified` — granted after verification · `tipe:unverified` — held until then · `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers. `/remove-role tipe` clears one.',
+            '',
+            '**Self-role panels (member choice)** — members click to take/drop a role themselves:',
+            '• `/setup-selfrole title description type:button|dropdown exclusive` — mount the panel. `exclusive:true` = only ONE role from the panel at a time.',
+            '• `/selfrole-add panel_id role label emoji style requires_role` — add a role to the panel (button look + optional emoji). `requires_role:@Verified` — only members already holding that role can take it (gated perks).',
+            '• `/selfrole-remove panel_id role` — take a role off · `/selfrole-list` — panels + roles · `/selfrole-delete panel_id` — remove a whole panel.',
+            '❓ **Members can\'t take a role?** Check `requires_role` on that entry + the bot\'s role position (must be ABOVE the roles it manages).'
         ]
     },
     {
@@ -235,6 +376,16 @@ const HELP_CATEGORIES = [
             '• `/setup-leveling` — enable XP per message',
             '• `/add-level-role level:5 role:@VIP` — role on level-up · `/list-level-roles` `/remove-level-role`',
             '• `/rank` — your XP · `/leaderboard-level` — top members'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Leveling = activity XP: members earn XP per message, roles unlock at levels.**',
+            '• `/setup-leveling enabled:true` — switch it on. Tuning: `xp_per_message`, `cooldown` (seconds between XP-earning messages — anti-spam), `announce_levelup` (post level-ups publicly or not).',
+            '• `/add-level-role level role` — e.g. `/add-level-role level:5 role:@Active` — granted AUTOMATICALLY at level-up. `/list-level-roles` — all rewards · `/remove-level-role level` — remove one.',
+            '• `/rank user?` — your (or another member\'s) level + XP (public command).',
+            '• `/leaderboard-level` — top-10 members by level (public).',
+            '❓ **XP not counting?** The cooldown applies — back-to-back messages in the same window earn nothing (anti-farm).',
+            '❓ **Role not granted at level-up?** The bot\'s role must be ABOVE the reward role.'
         ]
     },
     {
@@ -245,6 +396,14 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/afk reason:...` — go AFK (bot auto-replies when mentioned)',
             '• `/afk-clear` — come back · `/afk-list` — who is AFK'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**AFK = "do not disturb": while you are AFK, anyone who mentions you gets an instant auto-reply with your reason.**',
+            '• `/afk reason` — go AFK, e.g. `/afk reason:"studying, back at 8pm"`. Works for admins AND members (public command).',
+            '• `/afk-clear` — you are back; mentions stop being answered.',
+            '• `/afk-list` — everyone currently AFK + their reasons.',
+            '❓ **Coming back automatically?** Clear it with `/afk-clear` — the status does not expire by itself.'
         ]
     },
     {
@@ -256,6 +415,18 @@ const HELP_CATEGORIES = [
             '• `/giveaway create channel:#ch prize:... winners:1 duration:60` — start',
             '• `/giveaway list` `/giveaway end` `/giveaway reroll` — manage',
             '• `/poll create` `/poll list` `/poll close` — polls'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Giveaways**',
+            '• `/giveaway create channel prize duration winners required_role` — e.g. `/giveaway create channel:#events prize:"VIP 30D" winners:1 duration:60` (minutes). `required_role` — only members holding that role may enter.',
+            '• `/giveaway list` — running giveaways + IDs · `/giveaway end id` — end now (winners drawn + announced) · `/giveaway reroll id` — draw new winners for a finished one.',
+            '• Entries are the 🎉 reaction click — the bot tracks entries itself, prevents double-entries, and re-renders the embed at the end.',
+            '',
+            '**Polls**',
+            '• `/poll create channel question multiple` — e.g. `/poll create channel:#general question:"Movie night?" multiple:true` (members may pick several options). Options are typed in the modal (2–10).',
+            '• `/poll list` — running polls + IDs · `/poll close id` — lock voting + show the tallies.',
+            '❓ **Wrong winner count?** Set `winners` in create; reroll draws exactly that many again.'
         ]
     },
     {
@@ -267,6 +438,15 @@ const HELP_CATEGORIES = [
             '• `/announce channel:#ch title:... description:...` — announcement',
             '• `/announce-schedule at:30m recurring:daily` — scheduled (once/recurring)',
             '• `/announce-list` `/announce-cancel` — view & cancel schedules'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Two ways to announce: right now, or scheduled.**',
+            '• `/announce channel title description color image thumbnail mention` — sends one polished embed immediately. `mention` — ping a role/@everyone with it.',
+            '• `/announce-schedule at recurring` — schedule it: `at:30m` (in 30 minutes) or `at:2026-12-25 09:00`, `recurring:daily|weekly|monthly` or once. Repeating announcements re-send themselves.',
+            '• `/announce-list` — every pending schedule + its ID · `/announce-cancel id` — remove one before it fires.',
+            '❓ **Time zone?** The bot uses the server\'s configured TZ offset — schedule a couple of minutes ahead first to verify.',
+            '❓ **Edit a scheduled announcement?** Cancel + re-create — `/announce-list` shows the exact arguments to re-use.'
         ]
     },
     {
@@ -278,6 +458,19 @@ const HELP_CATEGORIES = [
             '**System texts:** `/set-message ticketBody text...` · `/edit-message` (modal) · `/reset-message` · `/list-messages`',
             '**Custom embeds:** `/send-message` (form) · `/embed-builder` · `/embed-list` `/embed-cancel`',
             '💡 Vars: `{server}` `{price_header}` `{price_list}` `{price_list:cat}` `{categories_list}`'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**System texts — every embed the bot sends (panel body, ticket opener, welcome…) can be reworded.**',
+            '• `/edit-message tipe` — pick the text + edit it in a modal (multi-line friendly). `/list-messages` — see every customizable text + its current value.',
+            '• `/reset-message tipe` — restore one to default. `/set-message` — the one-line variant.',
+            '• Template variables auto-fill: `{server}` (server name), `{price_header}` + `{price_list}` / `{price_list:cat}` (live price list), `{categories_list}`.',
+            '',
+            '**Custom messages & embeds**',
+            '• `/send-message channel message mention` — plain text (supports \n + mentions) — for rules, pings, quick notes.',
+            '• `/announce` — one polished embed via form (title/description/color/image/thumbnail/mention).',
+            '• `/embed-builder` — interactive builder with LIVE preview for complex embeds (multiple fields, author, footer). `/embed-list` — your sessions · `/embed-cancel session_id` — drop a stuck one.',
+            '❓ **Price list empty in a text?** The variables only fill when products exist — add products first, then `/refresh-panel`.'
         ]
     },
     {
@@ -288,6 +481,15 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/setup-tempvoice` — mount the trigger channel · `/tempvoice-remove` — disable',
             '💡 Join trigger → private voice auto-created + control panel (rename, lock, transfer)'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Private voice = members get their own voice channel on demand.**',
+            '• `/setup-tempvoice` — creates the category + a **Join to create** trigger channel. A member joins it → their own voice channel spawns instantly with a control panel inside.',
+            '• Control panel buttons: **rename** the channel, **lock/unlock** it, **transfer** ownership, **claim** when the owner left, and it auto-deletes when the last person leaves (no zombie channels).',
+            '• `/tempvoice-remove` — disable the feature (the category + related channels are deleted).',
+            '❓ **Channel not created on join?** Check the bot\'s Manage Channels permission + that nobody deleted the trigger channel.',
+            '❓ **Limits?** Discord caps channels per server; extremely large servers may need several trigger channels.'
         ]
     },
     {
@@ -299,6 +501,16 @@ const HELP_CATEGORIES = [
             '• `/backup-now` — back up now (auto every 24h, max 7 slots)',
             '• `/backup-list` `/restore-backup` — view & restore',
             '• `/reset-config` — ⚠️ DELETES ALL configuration (2-step confirm)'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**Backups protect your whole configuration: products, keys, panels, roles, channels, stats, server stats counters, boost history…**',
+            '• `/backup-now` — one manual backup right now. A safety backup ALSO runs automatically every 24h.',
+            '• `/backup-list` — the backup slots (max 7, oldest falls off) with names + timestamps.',
+            '• `/restore-backup name` — restore everything from a slot. A fresh safety backup is taken BEFORE restoring, so you can always go back.',
+            '• `/reset-config` — ⚠️ wipe ALL settings back to factory (roles, channels, products, messages). Two-step confirmation — take a `/backup-now` first!',
+            '❓ **Restore resets live caches** — the bot reloads the restored data immediately, no restart needed.',
+            '❓ **Where are the files?** `data/backups/` — do not edit by hand; use the commands.'
         ]
     },
     {
@@ -316,17 +528,22 @@ const HELP_CATEGORIES = [
             '• `/leaderboard` — rankings (messages/spending/wins)',
             '• `/my-stats` — your messages & transactions'
         ],
-        // v3.9.52 (user request: "update /help too so everything is in sync"):
-        // extended usage for the NEW stats features — category detail view only.
+        // v3.9.53: full self-contained guide (category view = detail only) —
+        // now documents the setup counter-selection options.
         detail: [
-            '',
             '**Live counter channels (like the ServerStats bots):**',
-            '• `/serverstats setup` — creates the "📊 SERVER STATS" category at the TOP of the channel list + 5 display-only voice channels: 👥 Members · 🤖 Bots · 🚀 Boosts · 🎭 Roles · 📺 Channels — the numbers in the channel NAMES update live',
-            '• `/serverstats remove` — delete the whole category · `/serverstats refresh` — force one immediate update',
-            '💡 Auto-updates on member join/leave, boost add/remove, channel & role create/delete — rate-limit safe (Discord allows only 2 renames per channel / 10 min, so updates are throttled and self-heal every ~5 min). A deleted counter warns you; if ALL counters are deleted the feature auto-disables.',
+            '• `/serverstats setup` — creates the "📊 SERVER STATS" category at the TOP of the channel list. Voice channels whose NAMES are live counters — members see the numbers at a glance, nobody can join them.',
+            '• **Pick which counters to show** (v3.9.53): `members bots boosts roles channels` — every one ON by default; set one to **False** to skip it, e.g. `/serverstats setup bots:false channels:false` creates only 👥 · 🚀 · 🎭. At least one must stay on.',
+            '• `/serverstats remove` — delete everything · `/serverstats refresh` — force an update now. To CHANGE the selection: `remove` then `setup` again.',
+            '• Updates are automatic: member join/leave, boost add/remove, channel & role create/delete. Rate-limit safe (Discord allows 2 renames per channel / 10 min — updates are throttled and self-heal every ~5 min). Deleted counters warn you; all gone → auto-disable.',
             '',
-            '**Boost notifications:**',
-            '• A member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel server-booster #ch`) and always recorded in the server log + `/boosters` history'
+            '**Boost notifications:** a member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel tipe:server-booster #ch`), always recorded in the server log + `/boosters` history.',
+            '',
+            '**Numbers & rankings**',
+            '• `/stats` — server overview: live members, boosts, open tickets + tracked activity (messages, transactions). No revenue line — spending is personal.',
+            '• `/boosters` — the live booster roster + recent history (public).',
+            '• `/leaderboard metric` — top 10 by messages / spending / giveaway wins (public).',
+            '• `/my-stats` — your own messages, transactions + total spent (public — only you see your page).' 
         ]
     },
     {
@@ -337,6 +554,17 @@ const HELP_CATEGORIES = [
         lines: [
             '• `/help` — the help center (or `/help search:keyword`)',
             '• `/config-show` — view all bot configuration at once'
+        ],
+        // v3.9.53: full self-contained guide (category view = detail only).
+        detail: [
+            '**/help — the command center**',
+            '• `/help` — this navigator: pick a category in the 📂 dropdown (every command explained), 🔍 **Search Commands** for a keyword, 📖 **All Commands** for the compact full list, or run `/help search:keyword` directly.',
+            '• Every category view IS the full guide — syntax, behavior, and the answers to the most common questions.',
+            '',
+            '**/config-show — one page, everything set**',
+            '• Roles, channels, products, responders, auto-mod, leveling… the whole configuration in one embed — check it after any big change to confirm everything landed.',
+            '❓ **Command not appearing?** Slash commands register to the server at startup — restart the bot if you just pulled an update.',
+            '❓ **Permissions?** Admin commands need the Manage Server permission; public commands (`/rank`, `/leaderboard`, `/my-stats`, `/boosters`, `/afk`) work for everyone.'
         ]
     }
 ];
@@ -406,10 +634,14 @@ function buildHomeEmbed(client, user) {
 function buildCategoryEmbed(client, categoryId) {
     const cat = findCategory(categoryId);
     if (!cat) return null;
-    // v3.9.52: optional `detail` lines render ONLY in this category view —
-    // richer usage docs without touching the budget-critical All-Commands
-    // embed (which renders only the compact `lines`) or Search (also lines).
-    const description = [...cat.lines, ...(cat.detail || [])].join('\n');
+    // v3.9.53 (user request: "rewrite /help so every category's slash
+    // commands get explanations — members should not have to ask"): when a
+    // category carries a `detail` guide, THAT is the category view — a
+    // self-contained per-command explanation. The compact `lines` stay the
+    // content of the budget-critical 📖 All Commands embed (5793/5800 — only
+    // 7 chars of slack) and the 🔍 Search index; a category without `detail`
+    // falls back to `lines` (identical to pre-v3.9.52 behavior).
+    const description = (cat.detail || cat.lines).join('\n');
     return baseEmbed()
         .setTitle(`${cat.emoji} ${cat.name}`)
         .setDescription(description)

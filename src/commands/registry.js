@@ -1153,7 +1153,42 @@ function getCommands() {
                 {
                     type: 1,
                     name: 'setup',
-                    description: 'Create the counter category + 5 live counter channels'
+                    description: 'Create the counter category + live counter channels',
+                    options: [
+                        // v3.9.53 (user request: "give options for which counters
+                        // to show"): every counter is on by default — set one to
+                        // False to SKIP it. At least one must stay on.
+                        {
+                            type: 5,
+                            name: 'members',
+                            description: 'Show the 👥 Members counter (default: yes)',
+                            required: false
+                        },
+                        {
+                            type: 5,
+                            name: 'bots',
+                            description: 'Show the 🤖 Bots counter (default: yes)',
+                            required: false
+                        },
+                        {
+                            type: 5,
+                            name: 'boosts',
+                            description: 'Show the 🚀 Boosts counter (default: yes)',
+                            required: false
+                        },
+                        {
+                            type: 5,
+                            name: 'roles',
+                            description: 'Show the 🎭 Roles counter (default: yes)',
+                            required: false
+                        },
+                        {
+                            type: 5,
+                            name: 'channels',
+                            description: 'Show the 📺 Channels counter (default: yes)',
+                            required: false
+                        }
+                    ]
                 },
                 {
                     type: 1,

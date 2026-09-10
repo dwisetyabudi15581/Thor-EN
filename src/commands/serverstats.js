@@ -3,14 +3,21 @@
  * Slash commands: /serverstats setup, /serverstats remove, /serverstats refresh
  *
  * v3.9.51 (user request: "live server stats like the ServerStats bots"):
- * creates a "📊 SERVER STATS" category with 5 auto-updating counter
- * channels (Members, Bots, Boosts, Roles, Channels). The channel NAMES are
- * the live numbers — they update automatically on member/boost/role/channel
- * changes (see src/data/serverstatsManager.js for the rate-limit strategy:
+ * creates a "📊 SERVER STATS" category with auto-updating counter
+ * channels. The channel NAMES are the live numbers — they update
+ * automatically on member/boost/role/channel changes (see
+ * src/data/serverstatsManager.js for the rate-limit strategy:
  * change detection + 5-min per-channel cooldown + dirty-driven refresh).
  *
- * setup   — creates the category + counters (rollback on partial failure,
- *           anti-orphan, same pattern as /setup-tempvoice)
+ * v3.9.53 (user request: "give options for which counters to show"):
+ * setup now takes 5 boolean options — members/bots/boosts/roles/channels.
+ * Every one defaults to TRUE; set one to False to skip it. At least one
+ * counter must stay on (all-False is refused with a friendly message).
+ * Only the selected counters are created, persisted, and refreshed —
+ * /serverstats refresh lists exactly the configured counters.
+ *
+ * setup   — creates the category + selected counters (rollback on partial
+ *           failure, anti-orphan, same pattern as /setup-tempvoice)
  * remove  — deletes every counter channel + the category + the config
  * refresh — forces an immediate update (admin-invoked, bypasses the
  *           cooldown once — safe because it is rare)
@@ -48,6 +55,18 @@ module.exports = async function (interaction) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const guild = interaction.guild;
 
+        // v3.9.53: which counters should be created? Every option defaults to
+        // true — False skips that counter. All-False is refused (a counter
+        // category with zero counters makes no sense).
+        const selectedDefs = COUNTER_DEFS.filter(def => interaction.options.getBoolean(def.type) !== false);
+        if (selectedDefs.length === 0) {
+            return safeEditReply(interaction, {
+                content:
+                    '⚠️ You turned OFF every counter (members, bots, boosts, roles AND channels).\n\n' +
+                    'Pick at least one — leave the options you want **on** as default (True), set only the ones you do NOT want to **False**.'
+            });
+        }
+
         // Bot permission check — BEFORE creating anything (anti-orphan).
         const me = guild.members?.me;
         const myPerms = me?.permissions || interaction.appPermissions;
@@ -79,7 +98,7 @@ module.exports = async function (interaction) {
             serverstatsManager.clearConfig();
         }
 
-        // === Create the category + 5 counter channels ===
+        // === Create the category + the selected counter channels ===
         // v3.9.8 anti-orphan pattern (same as /setup-tempvoice): if any step
         // fails, everything created so far is rolled back — no zombie channels.
         //
@@ -88,7 +107,7 @@ module.exports = async function (interaction) {
         // computing "Channels" mid-loop would count the half-created counters
         // (a self-referential number that jumps again on the next refresh).
         const liveValues = {};
-        for (const def of COUNTER_DEFS) {
+        for (const def of selectedDefs) {
             liveValues[def.type] = computeCounterValue(guild, def.type);
         }
 
@@ -110,7 +129,7 @@ module.exports = async function (interaction) {
             created.push(category);
 
             const counters = {};
-            for (const def of COUNTER_DEFS) {
+            for (const def of selectedDefs) {
                 const ch = await guild.channels.create({
                     name: buildCounterName(def.type, liveValues[def.type]),
                     type: ChannelType.GuildVoice,
@@ -136,10 +155,11 @@ module.exports = async function (interaction) {
                 action: 'SETUP_SERVER_STATS',
                 actorId: interaction.user.id,
                 actorTag: interaction.user.tag,
-                details: `Setup server stats counters — category: ${CATEGORY_NAME}, ${COUNTER_DEFS.length} counter channels (members/bots/boosts/roles/channels)`,
+                details: `Setup server stats counters — category: ${CATEGORY_NAME}, ${selectedDefs.length} counter channel(s): ${selectedDefs.map(d => d.type).join('/')}`,
                 guildId: guild.id
             });
 
+            const skipped = COUNTER_DEFS.filter(d => !selectedDefs.includes(d));
             const embed = new EmbedBuilder()
                 .setTitle('📊 Server Stats — live counters created!')
                 .setDescription(
@@ -147,14 +167,19 @@ module.exports = async function (interaction) {
                 )
                 .setColor(0x5865f2)
                 .addFields(
-                    ...COUNTER_DEFS.map(def => ({
+                    ...selectedDefs.map(def => ({
                         name: `${def.emoji} ${def.label}`,
                         value: `\`${buildCounterName(def.type, liveValues[def.type])}\``,
                         inline: true
-                    }))
+                    })),
+                    {
+                        name: '🧩 Not created',
+                        value: skipped.length > 0 ? skipped.map(d => `${d.emoji} ${d.label}`).join(' · ') : '— all counters enabled —',
+                        inline: false
+                    }
                 )
                 .setFooter({
-                    text: 'Counters refresh automatically (rate-limit safe) • /serverstats refresh forces an update now'
+                    text: 'Counters refresh automatically (rate-limit safe) • /serverstats refresh forces an update now • /serverstats remove + setup to change the selection'
                 })
                 .setTimestamp();
             return safeEditReply(interaction, { embeds: [embed] });
@@ -248,7 +273,11 @@ module.exports = async function (interaction) {
         // Discord's 2-renames-per-10-min limit).
         const result = await serverstatsManager.refreshServerStats(guild, { force: true });
 
-        const lines = COUNTER_DEFS.map(def => {
+        // v3.9.53: list exactly the CONFIGURED counters (setup may have
+        // skipped some) — same shape the setup confirmation showed.
+        const cfg = serverstatsManager.getConfig() || {};
+        const activeDefs = COUNTER_DEFS.filter(def => (cfg.counters || {})[def.type]);
+        const lines = activeDefs.map(def => {
             const value = computeCounterValue(guild, def.type);
             return `${def.emoji} ${def.label}: **${value}**`;
         }).join('\n');

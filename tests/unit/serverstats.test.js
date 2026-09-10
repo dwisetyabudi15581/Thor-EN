@@ -155,12 +155,16 @@ function makeStubGuild({ withCounters = false, botPermissions = true } = {}) {
     return guild;
 }
 
-/** Stub interaction for the /serverstats command. */
-function makeStubInteraction(sub, guild) {
+/** Stub interaction for the /serverstats command. `booleanOptions` feeds
+ *  getBoolean (the v3.9.53 counter-selection flags — undefined = default on). */
+function makeStubInteraction(sub, guild, booleanOptions = {}) {
     const replies = [];
     const interaction = {
         commandName: 'serverstats',
-        options: { getSubcommand: () => sub },
+        options: {
+            getSubcommand: () => sub,
+            getBoolean: name => booleanOptions[name]
+        },
         deferReply: async () => {},
         editReply: async opts => {
             replies.push(opts);
@@ -365,7 +369,11 @@ test('/serverstats setup: creates the category + 5 counters with live values, @e
     assert.strictEqual(interaction.__replies.length, 1, 'exactly one reply');
     const embed = interaction.__replies[0].embeds[0];
     assert.match(embed.data.title, /live counters created/);
-    assert.strictEqual(embed.data.fields.length, 5, 'one field per counter');
+    // v3.9.53: 5 counter fields + 1 "Not created" field (= all enabled).
+    assert.strictEqual(embed.data.fields.length, 6);
+    const notCreated = embed.data.fields[5];
+    assert.match(notCreated.name, /Not created/);
+    assert.match(notCreated.value, /all counters enabled/);
 
     // 6 creations: 1 category + 5 counters.
     assert.strictEqual(guild.__created.length, 6);
@@ -403,6 +411,67 @@ test('/serverstats setup: creates the category + 5 counters with live values, @e
     for (const c of counters) {
         assert.ok(Object.values(cfg.counters).includes(c.id));
     }
+});
+
+test('/serverstats setup: COUNTER SELECTION (v3.9.53) — False options are skipped, config + embed reflect the selection', async () => {
+    resetManager();
+    const guild = makeStubGuild();
+    // Only boosts/roles/channels — members + bots turned OFF.
+    const interaction = makeStubInteraction('setup', guild, { members: false, bots: false });
+
+    await serverstatsCommand(interaction);
+
+    assert.strictEqual(guild.__created.length, 4, '1 category + 3 selected counters');
+    const [category, ...counters] = guild.__created;
+    assert.deepStrictEqual(
+        counters.map(c => c.__opts.name),
+        ['🚀 Boosts: 2', '🎭 Roles: 9', '📺 Channels: 7']
+    );
+
+    // The config stores ONLY the selected counters — refresh iterates those.
+    const cfg = manager.getConfig();
+    assert.deepStrictEqual(Object.keys(cfg.counters).sort(), ['boosts', 'channels', 'roles']);
+
+    // The confirmation lists the skipped counters.
+    const embed = interaction.__replies[0].embeds[0];
+    const notCreated = embed.data.fields.find(f => /Not created/.test(f.name));
+    assert.ok(notCreated, 'a "Not created" field must exist');
+    assert.match(notCreated.value, /Members/);
+    assert.match(notCreated.value, /Bots/);
+    assert.ok(!notCreated.value.includes('Boosts'), 'selected counters must not appear as skipped');
+});
+
+test('/serverstats setup: ALL counters set to False → friendly refusal, nothing created', async () => {
+    resetManager();
+    const guild = makeStubGuild();
+    const interaction = makeStubInteraction('setup', guild, {
+        members: false, bots: false, boosts: false, roles: false, channels: false
+    });
+
+    await serverstatsCommand(interaction);
+
+    assert.strictEqual(guild.__created.length, 0, 'nothing created');
+    assert.strictEqual(manager.isEnabled(), false, 'no config saved');
+    const reply = interaction.__replies[0];
+    assert.match(reply.content, /turned OFF every counter/);
+    assert.match(reply.content, /at least one/i);
+});
+
+test('/serverstats refresh: lists ONLY the configured counters when the selection was partial', async () => {
+    resetManager();
+    const guild = makeStubGuild();
+    // A partial setup (3 counters, like /serverstats setup members:false bots:false).
+    const interaction = makeStubInteraction('setup', guild, { members: false, bots: false });
+    await serverstatsCommand(interaction);
+
+    const refreshInteraction = makeStubInteraction('refresh', guild);
+    await serverstatsCommand(refreshInteraction);
+
+    const desc = refreshInteraction.__replies[0].embeds[0].data.description;
+    assert.match(desc, /Boosts/);
+    assert.match(desc, /Roles/);
+    assert.ok(!/Members: /.test(desc), 'unselected counters must not be listed');
+    assert.ok(!/Bots: /.test(desc), 'unselected counters must not be listed');
 });
 
 test('/serverstats setup: refuses when already set up; auto-heals when all old channels are gone', async () => {
@@ -552,6 +621,20 @@ test('CONTRACT registry/router: /serverstats registered with 3 subcommands, admi
     for (const o of cmd.options) {
         assert.strictEqual(o.type, 1, 'subcommand options');
         assert.ok(o.description.length <= 100, 'subcommand description ≤ 100');
+    }
+
+    // v3.9.53: setup carries the 5 counter-selection booleans (default on).
+    const setup = cmd.options.find(o => o.name === 'setup');
+    const selOpts = setup.options || [];
+    assert.deepStrictEqual(
+        selOpts.map(o => o.name),
+        ['members', 'bots', 'boosts', 'roles', 'channels'],
+        'setup exposes one boolean per counter'
+    );
+    for (const o of selOpts) {
+        assert.strictEqual(o.type, 5, 'counter-selection options are booleans');
+        assert.strictEqual(o.required, false, 'selection options are optional (default on)');
+        assert.ok(o.description.length <= 100, 'option description ≤ 100');
     }
 
     const routeCommand = require('../../src/commands/index');
