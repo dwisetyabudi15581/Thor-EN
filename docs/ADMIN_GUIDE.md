@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.55
+# 📖 Admin Guide — Thor Bot v3.9.56
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -1011,9 +1011,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.55) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.56) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
+
+- **v3.9.56** (2026-09-12) — 🧪 **user request: "add booster tests too"**. +6 unit tests for the SERVER BOOSTER feature (total **563**): five previously unpinned `reconcileBoosters` paths — a lapsed-&-restarted streak while offline (boostedAt refreshed WITHOUT inflating totalBoosts), bot members skipped, the null/broken-guild guard, offline adds pinning boostedAt to the REAL premium_since, and getRecentEvents limit+event shape — plus a command-level decimal price guard `/add-product $5.88` (confirmation "Counted in stats as: 5.88"). No runtime changes — the tests pin the existing booster behavior contract.
 
 - **v3.9.55** (2026-09-11) — 💬 **user question: "does the number support decimals, e.g. $2.5 USD?"**. International **decimal prices now parse correctly** — the old Rupiah-era dot heuristic read `$2.50` as 250 and `$9.99` as 999 (a silent 100x error) and `Math.round` killed the cents (`$2.5` → 3). With a non-Rp currency marker present: a single dot with a 1-2 digit fraction is a **decimal** (`$2.5 USD` → 2.5, `$2.50` → 2.5, `$9.99` → 9.99, `$12.99` → 12.99, `$0.99` → 0.99, `€9,99` → 9.99), a 3-digit fraction stays a **thousands group** (`$50.000` → 50000), and **cents are preserved** (max 2 decimals). Marker-less legacy formats, the Rp branch, and dual-currency recording are unchanged. `/add-product` / `/update-product` accept decimal prices (format list shows `$2.50`); `/help` FAQ documents decimals; escrow keeps whole-amount strictness by design. +5 unit tests (total **557**).
 
@@ -1058,6 +1060,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.55
-**Last updated:** September 11, 2026
-**Bot version:** 3.9.55 · 91 slash commands · 557 unit tests
+**Document version:** v3.9.56
+**Last updated:** September 12, 2026
+**Bot version:** 3.9.56 · 91 slash commands · 563 unit tests

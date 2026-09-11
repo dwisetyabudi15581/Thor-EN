@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.56] — 2026-09-12
+
+### Added — 🧪 user request: "add booster tests too"
+
+- 🟢 **+6 unit tests for the SERVER BOOSTER feature (v3.9.49) — total 563.** Five previously unpinned `boostManager.reconcileBoosters` paths are now verified: **a lapsed-&-restarted streak while the bot was offline** (boostedAt refreshed to the new premium_since WITHOUT inflating totalBoosts — the gap is not observable via Discord, so it must not count as a new event), **bot members are skipped** (a bot's premium_since never counts as a booster), **the null/broken-guild guard** (reconcile returns empty without crashing), **an offline add pins boostedAt to the REAL premium_since** (streak duration stays accurate instead of using the reconcile time), and **getRecentEvents** (limit respected, newest first, full `{userId, event, at, boostedAt}` shape). Plus one command-level price-guard test for the v3.9.55 international decimals: `/add-product price:$5.88` → saved + confirmation `💰 Counted in stats as: **5.88** per sale` — verifying the FULL command path, not just the parser in parsePrice.test.js. No runtime changes: 563/563 tests green against existing behavior (principle: tests pin the contract, they don't change it).
+
 ## [3.9.55] — 2026-09-11
 
 ### Fixed — 💬 user question: "does the number support decimals, e.g. $2.5 USD?"

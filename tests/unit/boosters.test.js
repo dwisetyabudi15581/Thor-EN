@@ -16,6 +16,14 @@
  *      public command list, help catalog line.
  *   6. products price guard: /add-product rejects an unparseable price,
  *      /update-product rejects it too, valid prices pass with the revenue note.
+ *
+ * v3.9.56 (user request: "add booster tests too"): +6 tests —
+ * (a) reconcile lapsed-&-restarted streak while offline: boostedAt refreshed
+ * to the new premium_since WITHOUT inflating totalBoosts; (b) bot members are
+ * skipped by reconcile; (c) null/broken guild guard; (d) offline add pins
+ * boostedAt to the REAL premium_since (not the reconcile time); (e)
+ * getRecentEvents limit + event shape; (f) $5.88 decimal price guard (v3.9.55
+ * cents preservation).
  */
 
 const test = require('node:test');
@@ -169,6 +177,93 @@ test('boostManager: reconcile — boost stopped while offline is detected', () =
     const res = boostManager.reconcileBoosters(guild);
     assert.deepStrictEqual(res.removed, [USER_ID], 'stopped while offline detected');
     assert.strictEqual(boostManager.getRecentEvents(GUILD_ID, 1)[0].event, 'remove');
+});
+
+test('boostManager: reconcile — streak lapsed & RESTARTED while offline → boostedAt refreshed, totalBoosts NOT inflated', () => {
+    cleanBoostsFile();
+    const boostManager = require('../../src/data/boostManager');
+    boostManager.reload();
+
+    // The bot last saw the user start boosting at t0 (state still 'add' when it died).
+    const t0 = 1700000000000;
+    boostManager.recordBoostStart(GUILD_ID, USER_ID, t0);
+    assert.strictEqual(boostManager.getBoostHistory(GUILD_ID)[0].totalBoosts, 1);
+
+    // While offline: the boost lapsed, then the user RE-BOOSTED → a NEW premium_since (t1).
+    const t1 = 1700009000000;
+    const { guild } = makeStubMember({ premiumSinceTimestamp: t1 });
+
+    const res = boostManager.reconcileBoosters(guild);
+    assert.deepStrictEqual(res.added, [], 'stored active + still boosting live → not a new add');
+    assert.deepStrictEqual(res.removed, [], 'still boosting live → not a remove');
+
+    const entry = boostManager.getBoostHistory(GUILD_ID)[0];
+    assert.strictEqual(entry.boostedAt, t1, 'streak start refreshed to the newest premium_since');
+    assert.strictEqual(entry.lastEvent, 'add');
+    assert.strictEqual(entry.totalBoosts, 1, 'totalBoosts NOT inflated (the gap is not observable)');
+
+    // Second run: in sync — idempotent.
+    boostManager.reconcileBoosters(guild);
+    const entry2 = boostManager.getBoostHistory(GUILD_ID)[0];
+    assert.strictEqual(entry2.totalBoosts, 1, 'still 1 after a re-reconcile');
+    assert.strictEqual(entry2.boostedAt, t1);
+});
+
+test('boostManager: reconcile — BOT members are never counted as boosters', () => {
+    cleanBoostsFile();
+    const boostManager = require('../../src/data/boostManager');
+    boostManager.reload();
+
+    const { guild } = makeStubMember({ premiumSinceTimestamp: null });
+    guild.members.cache.set('bot_booster', { id: 'bot_booster', user: { id: 'bot_booster', bot: true }, premiumSinceTimestamp: 1700007000000 });
+
+    const res = boostManager.reconcileBoosters(guild);
+    assert.deepStrictEqual(res.added, [], 'a bot member with premium_since is skipped');
+    assert.deepStrictEqual(res.removed, []);
+    assert.strictEqual(boostManager.getBoostHistory(GUILD_ID).length, 0, 'no history row for bots');
+});
+
+test('boostManager: reconcile — null/broken guild → empty changes, no crash', () => {
+    const boostManager = require('../../src/data/boostManager');
+    assert.deepStrictEqual(boostManager.reconcileBoosters(null), { added: [], removed: [] });
+    assert.deepStrictEqual(boostManager.reconcileBoosters(undefined), { added: [], removed: [] });
+    assert.deepStrictEqual(boostManager.reconcileBoosters({}), { added: [], removed: [] }, 'object without an id');
+    assert.deepStrictEqual(boostManager.reconcileBoosters({ id: 'g1', members: {} }), { added: [], removed: [] }, 'members without a cache');
+});
+
+test('boostManager: reconcile — an offline add PINS boostedAt to the REAL premium_since (not the reconcile time)', () => {
+    cleanBoostsFile();
+    const boostManager = require('../../src/data/boostManager');
+    boostManager.reload();
+
+    const since = 1700005000000;
+    const { guild } = makeStubMember({ premiumSinceTimestamp: null });
+    guild.members.cache.set('late_booster', { id: 'late_booster', user: { id: 'late_booster', bot: false }, premiumSinceTimestamp: since });
+
+    const res = boostManager.reconcileBoosters(guild);
+    assert.deepStrictEqual(res.added, ['late_booster']);
+    const entry = boostManager.getBoostHistory(GUILD_ID).find(e => e.userId === 'late_booster');
+    assert.ok(entry, 'history row created');
+    assert.strictEqual(entry.boostedAt, since, 'boostedAt = the real premium_since → streak duration stays accurate');
+    assert.strictEqual(entry.totalBoosts, 1);
+});
+
+test('boostManager: getRecentEvents — limit respected, newest first, full event shape', () => {
+    cleanBoostsFile();
+    const boostManager = require('../../src/data/boostManager');
+    boostManager.reload();
+
+    boostManager.recordBoostStart(GUILD_ID, 'u1', 1700001000000);
+    boostManager.recordBoostStart(GUILD_ID, 'u2', 1700002000000);
+    boostManager.recordBoostStart(GUILD_ID, 'u3', 1700003000000);
+
+    assert.strictEqual(boostManager.getRecentEvents(GUILD_ID, 10).length, 3, 'all events with a loose limit');
+    const two = boostManager.getRecentEvents(GUILD_ID, 2);
+    assert.strictEqual(two.length, 2, 'limit truncates');
+    assert.strictEqual(two[0].userId, 'u3', 'newest lastEventAt first');
+    assert.strictEqual(two[0].event, 'add');
+    assert.strictEqual(two[0].at, 1700003000000, 'the at field = lastEventAt');
+    assert.strictEqual(two[0].boostedAt, 1700003000000, 'the boostedAt field is carried along');
 });
 
 test('boostHandler: pure embed builders — boost add/remove', () => {
@@ -409,6 +504,40 @@ test('PRODUCT PRICE GUARD: /add-product rejects unparseable price, shows the par
     assert.match(replies[0].content, /cannot be read as an amount/);
     const configAfterUpdate = require('../../src/data/configManager').getConfig();
     assert.strictEqual(configAfterUpdate.products[0].price, '25rb', 'price unchanged after the rejection');
+});
+
+test('PRODUCT PRICE GUARD v3.9.55: /add-product accepts a $5.88 decimal → stats records 5.88 (cents preserved)', async () => {
+    // Follow-up to the user's international-decimal-price question — pinned here
+    // (same file as the v3.9.49 booster price guard) so the COMMAND-level path
+    // is verified too, not just the parser in parsePrice.test.js.
+    writeTestConfig({});
+    const replies = [];
+    const interaction = {
+        commandName: 'add-product',
+        deferReply: async () => {},
+        editReply: async opts => {
+            replies.push(opts);
+            return {};
+        },
+        guild: { id: GUILD_ID, name: 'Boost Test Server' },
+        user: { id: 'admin_1', tag: 'Admin#0001' },
+        client: { channels: { cache: new Map() } },
+        options: {
+            getString: name => (name === 'price' ? '$5.88' : name === 'label' ? 'Decimal Product' : name === 'value' ? 'tp_decimal' : null),
+            getBoolean: () => null
+        }
+    };
+
+    const productsCommand = require('../../src/commands/products');
+    await productsCommand(interaction);
+
+    assert.match(replies[0].content, /✅ Product added/);
+    // en-US keeps the dot: 5.88 → "5.88" — NOT "588" (the silent 100x error of
+    // the pre-v3.9.55 era when a dot was always read as a thousands separator).
+    assert.match(replies[0].content, /Counted in stats as: \*\*5\.88\*\*/);
+    const configAfter = require('../../src/data/configManager').getConfig();
+    assert.strictEqual(configAfter.products.length, 1, 'product saved');
+    assert.strictEqual(configAfter.products[0].price, '$5.88', 'price saved exactly as the admin typed it');
 });
 
 // ============ CLEANUP ============
