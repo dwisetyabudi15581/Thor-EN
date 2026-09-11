@@ -50,11 +50,13 @@ test('parsePrice: v3.9.8 FIX — ID format with 2-digit suffix', () => {
 
 test('parsePrice: actual decimal (only int < 10 + 1-digit fractional)', () => {
     // v3.9.9: only int part < 10 AND a 1-digit fractional part → decimal.
-    // E.g. "2.5" → 2.5 (rounded 3), "9.9" → 9.9 (rounded 10).
-    assert.strictEqual(parsePrice('2.5'), 3);
-    assert.strictEqual(parsePrice('9.9'), 10);
-    // "9.99" now → 999 (thousand), not 9.99 (decimal).
-    // (Rupiah prices under 10 with a 2-digit decimal are very rare.)
+    // v3.9.55: cents are PRESERVED (currency-agnostic stats) — "2.5" → 2.5
+    // and "9.9" → 9.9, no longer rounded to 3 / 10.
+    assert.strictEqual(parsePrice('2.5'), 2.5);
+    assert.strictEqual(parsePrice('9.9'), 9.9);
+    // "9.99" still → 999 (thousand), not 9.99 (decimal) — no marker, so the
+    // Rp-centric heuristic applies (Rupiah prices under 10 with a 2-digit
+    // decimal are very rare). With a marker, "$9.99" → 9.99 (v3.9.55 below).
     assert.strictEqual(parsePrice('9.99'), 999);
 });
 
@@ -64,8 +66,8 @@ test('parsePrice: comma as thousand separator', () => {
 });
 
 test('parsePrice: comma as decimal (ID/EU)', () => {
-    // "2,5" → decimal 2.5 → rounded to 3 (Rupiah)
-    assert.strictEqual(parsePrice('2,5'), 3);
+    // "2,5" → decimal 2.5 → 2.5 (v3.9.55: cents preserved, was rounded to 3)
+    assert.strictEqual(parsePrice('2,5'), 2.5);
 });
 
 test('parsePrice: k/m suffix', () => {
@@ -86,14 +88,14 @@ test('parsePrice: invalid string returns 0', () => {
 });
 
 test('parsePrice: mixed dot + comma (US format)', () => {
-    // "1,234.56" → US format → 1234.56 → Math.round → 1235
-    // (parsePrice always rounds to an integer because Rupiah doesn't use cents)
-    assert.strictEqual(parsePrice('1,234.56'), 1235);
+    // "1,234.56" → US format → 1234.56 (v3.9.55: cents preserved — was rounded
+    // to 1235; stats are currency-AGNOSTIC since v3.9.54, so cents count)
+    assert.strictEqual(parsePrice('1,234.56'), 1234.56);
 });
 
 test('parsePrice: mixed dot + comma (EU/ID format)', () => {
-    // "1.234,56" → EU format → 1234.56 → Math.round → 1235
-    assert.strictEqual(parsePrice('1.234,56'), 1235);
+    // "1.234,56" → EU format → 1234.56 (v3.9.55: cents preserved, was 1235)
+    assert.strictEqual(parsePrice('1.234,56'), 1234.56);
 });
 
 // ============ v3.9.49 — Indonesian suffixes (user report: "total revenue doesn't update") ============
@@ -229,4 +231,68 @@ test('priceValidationError v3.9.54 (products): any currency accepted', () => {
     const junkErr = products.priceValidationError('murah');
     assert.ok(typeof junkErr === 'string' && junkErr.includes('cannot be read'));
     assert.ok(junkErr.includes('$3'), 'the format list shows international examples');
+});
+
+// ============ v3.9.55 — international DECIMALS (user question: "does it support decimals like $2.5 USD?") ============
+// The Rp-centric dot heuristic used to read "$2.50" as 250 and "$9.99" as 999
+// (a silent 100x error for every USD/EUR-priced server), and the final
+// Math.round killed the cents ("$2.5" → 3). When a NON-Rp currency marker is
+// present the price now parses with international rules: a single dot with a
+// 1-2 digit fraction is a DECIMAL, a 3-digit fraction is a thousands group,
+// and cents are PRESERVED in the recorded amount.
+
+test('parsePrice v3.9.55: decimals with a currency marker keep their cents', () => {
+    // The exact format the user asked about.
+    assert.strictEqual(parsePrice('$2.5 USD'), 2.5);
+    assert.strictEqual(parsePrice('$2.5'), 2.5);
+    assert.strictEqual(parsePrice('$2.50'), 2.5);
+    assert.strictEqual(parsePrice('$9.99'), 9.99);
+    assert.strictEqual(parsePrice('$12.99'), 12.99);
+    assert.strictEqual(parsePrice('$0.99'), 0.99);
+    assert.strictEqual(parsePrice('$2.0'), 2);
+    assert.strictEqual(parsePrice('£ 2.99'), 2.99);
+    // EU decimal comma keeps its cents too (used to round 9,99 → 10).
+    assert.strictEqual(parsePrice('€9,99'), 9.99);
+});
+
+test('parsePrice v3.9.55: 3-digit dot groups with a marker stay THOUSANDS', () => {
+    // German-style thousands: "$50.000" is 50000, NOT 50.000 cents.
+    assert.strictEqual(parsePrice('$50.000'), 50000);
+    assert.strictEqual(parsePrice('$1.234.567'), 1234567);
+    // Mixed separators keep working — cents preserved (used to round to 1235).
+    assert.strictEqual(parsePrice('$1,234.56'), 1234.56);
+    assert.strictEqual(parsePrice('$1.234,56'), 1234.56);
+    // Suffix + decimal: "$2.5k" → 2.5 × 1000.
+    assert.strictEqual(parsePrice('$2.5k'), 2500);
+});
+
+test('parsePrice v3.9.55: Rp & marker-less legacy formats unchanged (no regression)', () => {
+    // The Rp branch never sets intl — dot heuristics stay Rupiah-centric.
+    assert.strictEqual(parsePrice('Rp 2.5rb'), 2500);
+    assert.strictEqual(parsePrice('Rp 25.000'), 25000);
+    assert.strictEqual(parsePrice('50.000'), 50000);
+    assert.strictEqual(parsePrice('1.50'), 150);
+    assert.strictEqual(parsePrice('9.99'), 999);
+    // Dual-currency still records the Rp half (v3.9.50, unchanged).
+    assert.strictEqual(parsePrice('$2.5 USD | Rp 25.000'), 25000);
+});
+
+test('parsePriceNumber v3.9.55 (midman): escrow stays whole-amount only', () => {
+    const mm = require('../../src/data/midmanManager');
+    // Deliberate design: escrow deal amounts must be whole numbers — "$2.5" is
+    // ambiguous between 2.5 and a mis-typed 2500, and deals move real money.
+    assert.strictEqual(mm.parsePriceNumber('$2.5'), 0);
+    assert.strictEqual(mm.parsePriceNumber('$2.50'), 0);
+    assert.strictEqual(mm.parsePriceNumber('€2,50'), 0);
+    assert.strictEqual(mm.parsePriceNumber('$25,000'), 25000); // still fine
+});
+
+test('priceValidationError v3.9.55 (products): decimal prices are valid', () => {
+    const products = require('../../src/commands/products');
+    assert.strictEqual(products.priceValidationError('$2.5 USD'), null);
+    assert.strictEqual(products.priceValidationError('$2.50'), null);
+    assert.strictEqual(products.priceValidationError('€9.99'), null);
+    // The accepted-format list now shows a decimal example.
+    const junkErr = products.priceValidationError('murah');
+    assert.ok(junkErr.includes('$2.50'), 'the format list shows a decimal example');
 });

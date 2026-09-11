@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.55] — 2026-09-11
+
+### Fixed — 💬 user question: "does the number support decimals, e.g. $2.5 USD?"
+
+- 🟠 **International DECIMAL prices now parse correctly — a silent 100x error is gone.** The dot heuristic in `statsManager.parsePrice` was written in the Rupiah era (an integer currency, no cents), so even after v3.9.54 a marker price like `$2.50` read as **250**, `$9.99` as **999**, `$12.99` as **1299** (dot = thousands), and the trailing `Math.round` killed the cents (`$2.5` → **3**, `$1,234.56` → **1235**). Now, when a NON-Rp currency marker is present: a single dot with a **1-2 digit fraction is a DECIMAL** (`$2.5 USD` → 2.5, `$2.50` → 2.5, `$9.99` → 9.99, `$12.99` → 12.99, `$0.99` → 0.99, `£ 2.99` → 2.99, EU comma `€9,99` → 9.99, `$2.5k` → 2500), a **3-digit fraction stays a thousands group** (`$50.000` German style → 50000, `$1.234.567` → 1234567), and **cents are PRESERVED** in the recorded amount (rounded to at most 2 decimals). Marker-less legacy inputs are unchanged (`50.000` → 50000, `1.50` → 150, `9.99` → 999); the Rp branch and dual-currency recording (`$2.5 USD | Rp 25.000` → 25000) are untouched.
+- 🟢 **`/add-product` & `/update-product` accept decimal prices** (`$2.5 USD` → valid, `💰 Counted in stats as: 2.5 per sale`) and the accepted-format list now shows a decimal example (`$2.50`). Slash-option descriptions (`/add-product price`, `/update-product price`) show `$2.50` too.
+- 🟢 **`/help` FAQ documents decimals (Products & Escrow categories):** new "❓ Decimals?" line — "Yes — `$2.5`, `$2.50`, `€9.99` all record with cents; a 3-digit dot group stays thousands (`$50.000` → 50.000)" — plus a new escrow FAQ "Deal amount format? Whole amounts only — decimals like `$2.5` are rejected as ambiguous on purpose (deal safety)."
+- 🟢 **Escrow keeps its whole-amount strictness BY DESIGN** (`$2.5` / `$2.50` / `€2,50` → still rejected; `$25,000` / `€2.500` unchanged): a mis-typed decimal in a deal that moves real money between users is costlier than the convenience. Product prices can have cents; escrow deal amounts cannot.
+- 🟢 Tests: 5 legacy pins re-pinned to the cent-preserving values (`2.5` → 2.5 was 3, `9.9` → 9.9 was 10, `2,5` → 2.5 was 3, `1,234.56` → 1234.56 was 1235, `1.234,56` → 1234.56 was 1235) + **5 new tests** (decimal-cents matrix, 3-digit groups stay thousands, Rp/marker-less no-regression, escrow whole-only, `priceValidationError` decimals). Total **557**.
+
 ## [3.9.54] — 2026-09-10
 
 ### Changed — 🌍 user request: "the bot will be used by people outside Indonesia too — remove the Rupiah-only stuff (or use your own idea)"

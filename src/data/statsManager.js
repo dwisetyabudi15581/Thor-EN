@@ -347,6 +347,18 @@ function getServerStats(guildId) {
  * in whatever currency the admin prices their products. Dual-currency strings
  * ("3$ USD | Rp. 25.000") still record the Rupiah half (v3.9.50 behavior).
  *
+ * v3.9.55 FIX (user question: "does it support decimals like $2.5 USD?"):
+ * international currencies USE cents, so when a NON-Rp currency marker is
+ * present a single dot with a 1-2 digit fraction is now a DECIMAL ("$2.5" → 2.5,
+ * "$2.50" → 2.5, "$9.99" → 9.99, "$12.99" → 12.99 — the Rp heuristic used to
+ * read those as thousands: 250 / 999 / 1299, a silent 100x error), while a
+ * 3-digit fraction stays a thousands group ("$50.000" German style → 50000,
+ * "$1.234.567" → 1234567). Cents are PRESERVED in the result (rounded to at
+ * most 2 decimals) instead of Math.round to a whole number ("$1,234.56" →
+ * 1234.56, not 1235). The Rp branch and marker-less legacy inputs are unchanged.
+ * Escrow (midmanManager.parsePriceNumber) keeps its whole-amount strictness —
+ * "$2.5" is rejected there on purpose (deal-safety, see its own docs).
+ *
  * P2-13 FIX: before, `.replace(/\./g, '').replace(/,/g, '.')` was ambiguous:
  *   - "25,000" (US thousands) → "25.000" → parseFloat → 25 (WRONG, should be 25000)
  *   - "Rp. 50.000" (ID thousands) → 50000 → OK
@@ -359,6 +371,10 @@ function parsePrice(priceStr) {
     if (typeof priceStr === 'number') return isNaN(priceStr) ? 0 : Math.max(0, priceStr);
     if (!priceStr) return 0;
     let s = String(priceStr).toLowerCase().trim();
+    // v3.9.55: set when a NON-Rp currency marker is present — the decimal
+    // rules below then follow international conventions (cents) instead of
+    // the Rupiah-centric "dot is always thousands" heuristic.
+    let intl = false;
     // v3.9.50 FIX (user report: price entered as "3$ USD | Rp. 25.000" — the
     // actual product price format). parseFloat stops at the '$', so the dual
     // price recorded **Rp 3** per sale and the revenue looked frozen AGAIN.
@@ -390,6 +406,7 @@ function parsePrice(priceStr) {
         const m = s.match(/[0-9][0-9.,]*(?:\s*(?:juta|jt|rb)|[km])?/);
         if (!m) return 0; // a marker with no amount ("usd") → unparseable
         s = m[0];
+        intl = true; // v3.9.55: international decimal rules apply from here on
     }
     s = s.replace(/\s/g, '');
     let multiplier = 1;
@@ -460,14 +477,24 @@ function parsePrice(priceStr) {
         // v3.9.9 heuristic for small numbers (< 10) so old tests don't break.
         // Documentation: if an admin wants a price below 10 Rupiah with a decimal
         // (very rare), just use the format "0.5" or "5".
+        //
+        // v3.9.55 FIX: the rules above are RUPIAH-centric — but when a non-Rp
+        // currency marker is present (intl) the currency almost certainly uses
+        // cents, and a 1-2 digit fraction after a single dot is a decimal:
+        // "$2.5" → 2.5, "$2.50" → 2.5, "$9.99" → 9.99, "$12.99" → 12.99,
+        // "$0.99" → 0.99 ("$2.0" → 2). A 3-digit fraction is a thousands
+        // group instead: "$50.000" (German style) → 50000. Multi-dot below
+        // ("$1.234.567") is unambiguous thousands in every convention.
         const parts = s.split('.');
         if (parts.length === 2 && parts[0] !== '' && parts[1].length > 0) {
             const intPart = parseInt(parts[0], 10);
-            // Treat as a decimal ONLY if:
-            //   - int part < 10 (very small — Rupiah prices are rarely < 10)
-            //   - the fractional part is exactly 1 digit (not the ambiguous 2)
-            //   - not "0" (e.g. "1.0" → 10, not 1.0)
-            if (!isNaN(intPart) && intPart < 10 && parts[1].length === 1 && parts[1] !== '0') {
+            if (intl) {
+                // v3.9.55: international decimal rules (see above).
+                if (parts[1].length >= 3) {
+                    s = s.replace(/\./g, ''); // thousands group ("$50.000")
+                }
+                // else: keep the dot → decimal ("$2.50", "$9.99")
+            } else if (!isNaN(intPart) && intPart < 10 && parts[1].length === 1 && parts[1] !== '0') {
                 // Dot as decimal (e.g. "2.5", "9.9")
                 // keep it
             } else {
@@ -483,7 +510,11 @@ function parsePrice(priceStr) {
     const n = parseFloat(s);
     // v3.9.38 FIX: negative results are clamped to 0 — a price string "-5000" /
     // "Rp -25k" must not turn totalSpent/revenue negative.
-    return isNaN(n) ? 0 : Math.max(0, Math.round(n * multiplier));
+    // v3.9.55 FIX: stats are currency-AGNOSTIC (v3.9.54), so cents are now
+    // PRESERVED — round to at most 2 decimals instead of to a whole number
+    // ("$2.5" → 2.5, not 3; "$1,234.56" → 1234.56, not 1235). Integer inputs
+    // (every Rp price) produce identical results to before.
+    return isNaN(n) ? 0 : Math.max(0, Math.round(n * multiplier * 100) / 100);
 }
 
 module.exports = {

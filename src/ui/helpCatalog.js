@@ -166,6 +166,7 @@ const HELP_CATEGORIES = [
             '• `/remove-product-role value` — stop granting it · `/list-product-roles` — see all.',
             '',
             '❓ **Price format?** ANY currency works: `30000`, `30.000`, `$3`, `€25`, `¥1000`, `Rp 30.000`, `30rb`, `3jt`. Dual-currency too (`3$ USD | Rp 25.000` — the Rp amount is recorded). Stats track the NUMBER, currency-agnostic — price everything in ONE currency.',
+            '❓ **Decimals?** Yes — `$2.5`, `$2.50`, `€9.99` all record with cents (stats show `2.5` / `9.99`). A 3-digit dot group stays thousands: `$50.000` → 50.000. Escrow deal amounts are whole numbers only.',
             '❓ **Buyers see the price?** Yes — the ticket panel price list uses your `label` + `price` exactly.'
         ]
     },
@@ -264,6 +265,7 @@ const HELP_CATEGORIES = [
             '2️⃣ Buyer and seller each press **Agree** — the bot locks edits once both agree (3 steps total).',
             '3️⃣ The midman settles: **Complete** (funds released + fee recorded) or **Cancel** (everyone freed).',
             '❓ **Stuck deal?** `/midman-deals` shows the status; deals whose channel was deleted are reconciled automatically at startup + daily.',
+            '❓ **Deal amount format?** Whole amounts only (`$25,000`, `€2.500`, `Rp 150.000`) — decimals like `$2.5` are rejected as ambiguous on purpose (deal safety). Product prices can have cents; escrow amounts cannot.',
             '❓ **Fee in stats?** Completed deals are recorded in the transaction stats (the deal amount — any currency works).' 
         ]
     },
