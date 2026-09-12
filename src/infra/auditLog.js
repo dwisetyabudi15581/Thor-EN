@@ -137,7 +137,11 @@ async function logAudit(client, data) {
     let auditChannelId;
     try {
         const { getConfig } = require('../data/configManager');
-        const config = getConfig();
+        // v3.10.0 multi-guild: the audit-log channel is read from the
+        // config of the relevant guild (data.guildId is already part of the
+        // logAudit contract). A caller without guildId → getConfig throws →
+        // caught here → silent skip.
+        const config = getConfig(data.guildId);
         auditChannelId = config.channels['audit-log'];
     } catch (_err) {
         // config broken — skip

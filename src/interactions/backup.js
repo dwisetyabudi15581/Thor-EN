@@ -19,6 +19,7 @@
 const { MessageFlags } = require('discord.js');
 const { safeEditReply } = require('../commands/_shared');
 const { saveConfig, DEFAULTS } = require('../data/configManager');
+const { resolveGuildId } = require('../infra/guild');
 const { isAdmin } = require('../infra/permissions');
 const { restoreBackup } = require('../data/backupManager');
 const { logAudit } = require('../infra/auditLog');
@@ -107,7 +108,9 @@ async function handleResetConfigConfirm(interaction) {
             colors: { ...DEFAULTS.colors },
             products: []
         };
-        saveConfig(fresh);
+        // v3.10.0 multi-guild: the reset only wipes THIS guild's config —
+        // other servers using the bot are not reset.
+        saveConfig(resolveGuildId(interaction), fresh);
 
         await logAudit(interaction.client, {
             action: 'RESET_CONFIG',

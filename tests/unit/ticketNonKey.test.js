@@ -221,6 +221,8 @@ function makeMockInteraction({ customId, type = 'button', id = `t-${Date.now()}-
     const interaction = {
         id,
         customId,
+        // v3.10.0: domain handlers read per-guild config — this file's ticket metas use 'g1'.
+        guildId: 'g1',
         replied: false,
         deferred: false,
         isRepliable: () => true,

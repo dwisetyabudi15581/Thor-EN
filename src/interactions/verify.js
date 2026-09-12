@@ -13,11 +13,12 @@
  */
 
 const { MessageFlags } = require('discord.js');
-const { getConfig } = require('../commands/_shared');
+const { getConfig, resolveGuildId } = require('../commands/_shared');
 
 module.exports = async function (interaction) {
     // The router calls this handler ONLY for customId === 'btn_verify'.
-    const config = getConfig();
+    // v3.10.0 multi-guild: read this guild's config.
+    const config = getConfig(resolveGuildId(interaction));
 
     if (!config.roles.verified) {
         return interaction.reply({

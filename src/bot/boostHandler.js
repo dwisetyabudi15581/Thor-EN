@@ -85,7 +85,8 @@ function buildBoostRemoveEmbed(member, sinceTs) {
  */
 async function onBoostChange(member, action, oldSinceTs = null) {
     const { guild, user } = member;
-    const config = getConfig();
+    // v3.10.0 multi-guild: booster channel & role from this guild's config.
+    const config = getConfig(guild.id);
 
     // 1. Persist the history first (even if notifications fail, the data stays).
     try {
@@ -230,7 +231,7 @@ async function applyBoostRole(member, action) {
         if (!member?.guild?.id || !member.user || member.user.bot) {
             return { ok: false, reason: 'skip' };
         }
-        const config = getConfig();
+        const config = getConfig(member.guild.id);
         const roleId = config.roles && config.roles.booster;
         if (!roleId) {
             // Role not set = the optional feature is off. For a NEW boost leave
@@ -310,7 +311,8 @@ async function syncBoostRoles(guild, removedUserIds = []) {
     const out = { applied: 0, removed: 0 };
     if (!guild?.id || !guild.members?.cache) return out;
 
-    const config = getConfig();
+    // v3.10.0 multi-guild: the booster role is read from this guild's config.
+    const config = getConfig(guild.id);
     const roleId = config.roles && config.roles.booster;
     if (!roleId) return out; // feature off — silent no-op
     const role = guild.roles.cache?.get?.(roleId);

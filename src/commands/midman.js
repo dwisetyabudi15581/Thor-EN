@@ -16,10 +16,13 @@
  */
 
 const { MessageFlags, EmbedBuilder } = require('discord.js');
-const { setField, safeEditReply, logAudit } = require('./_shared');
+const { setField, resolveGuildId, safeEditReply, logAudit } = require('./_shared');
 const mm = require('../data/midmanManager');
 
 module.exports = async function (interaction) {
+    // v3.10.0 multi-guild: the escrow fee is stored per-guild.
+    const guildId = resolveGuildId(interaction);
+
     // === SET MIDMAN FEE ===
     if (interaction.commandName === 'set-midman-fee') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -42,8 +45,8 @@ module.exports = async function (interaction) {
             return safeEditReply(interaction, { content: '❌ That fee amount is unreasonable.' });
         }
 
-        setField('midman.feeMode', mode);
-        setField('midman.feeValue', value);
+        setField(guildId, 'midman.feeMode', mode);
+        setField(guildId, 'midman.feeValue', value);
 
         await logAudit(interaction.client, {
             action: 'SET_MIDMAN_FEE',

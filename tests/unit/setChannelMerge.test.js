@@ -25,13 +25,14 @@ const path = require('path');
 const { ChannelType } = require('discord.js');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const configPath = path.join(DATA_DIR, 'config.json');
+// v3.10.0: per-guild config — this file's interaction mocks use guild 'guild_test'.
+const configPath = path.join(DATA_DIR, 'config', 'guild_test.json');
 
 // ====================================================
 // === Sandbox: snapshot & restore config.json       ===
 // === (newCategorySafety.test.js pattern)           ===
 // ====================================================
-const SANDBOX_FILES = ['config.json'];
+const SANDBOX_FILES = ['config/guild_test.json'];
 const backups = new Map();
 for (const f of SANDBOX_FILES) {
     const p = path.join(DATA_DIR, f);
@@ -56,7 +57,7 @@ process.on('exit', () => {
 
 /** Controlled config: no audit-log → logAudit silently skips. */
 function writeTestConfig() {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(
         configPath,
         JSON.stringify(
@@ -190,7 +191,7 @@ test('handler: /set-channel tipe:transcript → config.channels.transcript fille
     const interaction = makeSetChannelInteraction({ tipe: 'transcript', channel: ch });
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, '999', 'must write the channels.transcript key');
+    assert.strictEqual(getConfig('guild_test').channels.transcript, '999', 'must write the channels.transcript key');
     const last = interaction._replies[interaction._replies.length - 1];
     assert.match(last.opts.content, /✅/);
     assert.match(last.opts.content, /transcript/i);
@@ -200,7 +201,7 @@ test('handler: /set-channel tipe:transcript → config.channels.transcript fille
 test('handler: the key written = the key saveTranscript reads (data key roundtrip)', () => {
     writeTestConfig();
     const { getConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('guild_test');
     // ticketManager.js reads: config.channels?.transcript (saveTranscript).
     // This test locks the contract: the key the handler writes == the key the runtime reads.
     assert.ok('transcript' in config.channels === false, 'start: empty');
@@ -210,7 +211,7 @@ test('handler: the key written = the key saveTranscript reads (data key roundtri
     // Write via the handler, then make sure it is exactly the same key the runtime reads.
     return require('../../src/commands/config')(makeSetChannelInteraction({ tipe: 'transcript', channel: ch })).then(
         () => {
-            assert.strictEqual(getConfig().channels.transcript, '777');
+            assert.strictEqual(getConfig('guild_test').channels.transcript, '777');
         }
     );
 });
@@ -224,7 +225,7 @@ test('handler: /set-channel tipe:transcript with a VOICE channel → rejected, c
     const interaction = makeSetChannelInteraction({ tipe: 'transcript', channel: voice });
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, undefined, 'must not be saved');
+    assert.strictEqual(getConfig('guild_test').channels.transcript, undefined, 'must not be saved');
     const last = interaction._replies[interaction._replies.length - 1];
     assert.match(last.opts.content, /must be a text channel/i);
 });
@@ -238,7 +239,7 @@ test('handler: /set-channel tipe:invoice still normal — without the transcript
     const interaction = makeSetChannelInteraction({ tipe: 'invoice', channel: ch });
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.invoice, '321');
+    assert.strictEqual(getConfig('guild_test').channels.invoice, '321');
     const last = interaction._replies[interaction._replies.length - 1];
     assert.match(last.opts.content, /✅/);
     assert.ok(!/auto-save/i.test(last.opts.content), 'the transcript tip must NOT appear for other types');
@@ -251,9 +252,9 @@ test('handler: /set-channel tipe:invoice still normal — without the transcript
 test('handler: /remove-channel tipe:transcript → key removed from config', async () => {
     writeTestConfig();
     const { getConfig, saveConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('guild_test');
     config.channels.transcript = '888';
-    saveConfig(config);
+    saveConfig('guild_test', config);
 
     const configHandler = require('../../src/commands/config');
     const replies = [];
@@ -285,7 +286,7 @@ test('handler: /remove-channel tipe:transcript → key removed from config', asy
     };
     await configHandler(interaction);
 
-    assert.strictEqual(getConfig().channels.transcript, undefined, 'the transcript key must be removed');
+    assert.strictEqual(getConfig('guild_test').channels.transcript, undefined, 'the transcript key must be removed');
     const last = replies[replies.length - 1];
     assert.match(last.opts.content, /removed from config/i);
     assert.match(last.opts.content, /\/set-channel transcript/);

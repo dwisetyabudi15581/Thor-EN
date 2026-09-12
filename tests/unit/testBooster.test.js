@@ -28,7 +28,8 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const configPath = path.join(DATA_DIR, 'config.json');
+// v3.10.0: per-guild config — the /test-booster mock uses guild 'guild_tb'.
+const configPath = path.join(DATA_DIR, 'config', 'guild_tb.json');
 const boostsPath = path.join(DATA_DIR, 'boosts.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -60,8 +61,9 @@ process.on('exit', () => {
 // === Helpers                                       ===
 // ====================================================
 
-/** Write config.json with the given channels. */
+/** Write the mock guild config — v3.10.0: per-guild path. */
 function writeConfig(channels = {}) {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify({ channels, roles: {}, messages: {} }, null, 4));
 }
 

@@ -302,7 +302,8 @@ async function findActiveTicketFor(guild, userId) {
 async function createTicket(interaction, product) {
     const guild = interaction.guild;
     const user = interaction.user;
-    const config = getConfig();
+    // v3.10.0 multi-guild: ticket categories/products/roles are read from this guild's config.
+    const config = getConfig(guild.id);
 
     // P2-2 FIX: check the lock first — if creation is already in progress, reject.
     // v3.9.8: the lock is scoped per guild so users in a multi-guild bot don't block each other.
@@ -570,7 +571,8 @@ async function createTicket(interaction, product) {
  * Used by the Set Key flow & closeTicket.
  */
 async function sendInvoice(channel, userId, productName, price, closer) {
-    const config = getConfig();
+    // v3.10.0 multi-guild: the invoice channel is read from the channel's guild config.
+    const config = getConfig(channel.guild?.id);
     if (!config.channels.invoice) return false;
     // v3.9.11 Phase 1: removed the 'Bantuan/Lapor' magic string.
     // Now: send an invoice for all transaction products (not help/report).
@@ -640,7 +642,9 @@ function resolveProduct(config, meta) {
  * @param {boolean} isSuccess - true if the transaction succeeded
  */
 async function saveTranscript(ticketChannel, meta, closer, isSuccess) {
-    const config = getConfig();
+    // v3.10.0 multi-guild: the transcript channel comes from this ticket's
+    // guild config. Priority: the live channel's guild → meta.guildId (old tickets).
+    const config = getConfig(ticketChannel.guild?.id || meta?.guildId);
     const transcriptChannelId = config.channels?.transcript;
     if (!transcriptChannelId) return false;
 
@@ -838,7 +842,8 @@ async function closeTicket(channel, closer, isSuccess) {
         // v3.9.11 Phase 3: auto-save the transcript to the transcript channel (if set).
         // Done BEFORE deleting the channel so messages can still be fetched.
         // Failure doesn't block the close — just log a warning.
-        const config = getConfig();
+        // v3.10.0 multi-guild: read this guild's transcript channel config.
+        const config = getConfig(channel.guild?.id || meta?.guildId);
         const transcriptChannelId = config.channels?.transcript;
         if (transcriptChannelId) {
             try {

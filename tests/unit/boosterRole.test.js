@@ -26,7 +26,11 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const configPath = path.join(DATA_DIR, 'config.json');
+// v3.10.0: per-guild config — the makeMember//set-role mocks use guild 'g_br',
+// the local /test-booster mock uses guild 'g_tb'. writeConfig writes both so
+// both handler paths read the same config.
+const CONFIG_GUILD_IDS = ['g_br', 'g_tb'];
+const configPaths = CONFIG_GUILD_IDS.map(g => path.join(DATA_DIR, 'config', `${g}.json`));
 const boostsPath = path.join(DATA_DIR, 'boosts.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -35,7 +39,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 // === boosts.json                                   ===
 // ====================================================
 const backups = [
-    { path: configPath, had: fs.existsSync(configPath) },
+    ...configPaths.map(p => ({ path: p, had: fs.existsSync(p) })),
     { path: boostsPath, had: fs.existsSync(boostsPath) }
 ];
 for (const b of backups) {
@@ -58,9 +62,12 @@ process.on('exit', () => {
 // === Helpers                                       ===
 // ====================================================
 
-/** Write config.json (roles + channels). */
+/** Write the mock guild config (roles + channels) — v3.10.0: per-guild path. */
 function writeConfig({ roles = {}, channels = {} } = {}) {
-    fs.writeFileSync(configPath, JSON.stringify({ channels, roles, messages: {} }, null, 4));
+    fs.mkdirSync(path.join(DATA_DIR, 'config'), { recursive: true });
+    for (const p of configPaths) {
+        fs.writeFileSync(p, JSON.stringify({ channels, roles, messages: {} }, null, 4));
+    }
 }
 
 /** Standard booster role (position 3, below the bot role at position 10). */
@@ -358,11 +365,11 @@ test('/set-role booster: config saved + retroactive to existing boosters + reply
 
     await require('../../src/commands/config')(interaction);
 
-    // Config saved.
-    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    // Config saved (v3.10.0: /set-role writes guild 'g_br' config).
+    const saved = JSON.parse(fs.readFileSync(configPaths[0], 'utf8'));
     assert.strictEqual(saved.roles.booster, 'r_boost', 'roles.booster saved');
     // Retroactive: the member currently boosting gets the role right away.
-    assert.strictEqual(booster.__calls.add.length, 1, 'live booster added immediately');
+    assert.strictEqual(booster.__calls.add.length, 1, 'the live booster gets the role right away');
     // The admin reply states the applied count.
     assert.match(replies[0].content, /Role \*\*booster\*\* set to/);
     assert.match(replies[0].content, /1 member\(s\) currently boosting/);

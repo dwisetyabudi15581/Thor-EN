@@ -166,13 +166,15 @@ test('v3.9.60 REGRESSION: modlogs.json is in FILES_TO_BACKUP (modLogManager v3.9
     );
 });
 
-test('v3.9.60 REGRESSION: every data manager JSON file name is in FILES_TO_BACKUP', () => {
-    // Cross-check the managers that persist a data/<name>.json file (grep for
-    // path.join(..., 'data', '<file>.json') in src/data/*). A new manager added
-    // without a FILES_TO_BACKUP entry breaks this test — same invariant as the
-    // live-file GUARD above, but green on a fresh clone.
+test('v3.9.60 REGRESSION: semua nama file JSON manager data ada di FILES_TO_BACKUP', () => {
+    // Cross-check manager yang persist ke data/<nama>.json (grep
+    // path.join(..., 'data', '<file>.json') di src/data/*). Manager baru yang
+    // lupa dapat entri FILES_TO_BACKUP mematahkan test ini — invarian yang sama
+    // dengan GUARD file live di atas, tapi tetap hijau di fresh clone.
+    // v3.10.0: 'config' is now a per-guild DIRECTORY (data/config/<guildId>.json),
+    // not a flat config.json file.
     const managerFiles = [
-        'config.json',
+        'config',
         'keys.json',
         'scheduledRoles.json',
         'selfRoles.json',

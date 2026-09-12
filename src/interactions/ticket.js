@@ -38,7 +38,7 @@ const {
     TextInputBuilder,
     TextInputStyle
 } = require('discord.js');
-const { getConfig, safeEditReply, logAudit, checkIsAdmin } = require('../commands/_shared');
+const { getConfig, resolveGuildId, safeEditReply, logAudit, checkIsAdmin } = require('../commands/_shared');
 const {
     createTicket,
     closeTicket,
@@ -85,8 +85,9 @@ function passesVerifiedCheck(interaction, config) {
 }
 
 module.exports = async function (interaction) {
-    const config = getConfig();
-
+    // v3.10.0 multi-guild: ticket config (verified role, categories, products)
+    // is read from the guild the interaction originated from.
+    const config = getConfig(resolveGuildId(interaction));
     // ====================================================
     // === v3.9.14: TICKET CATEGORY SELECT MENU (DROPDOWN PANEL) ===
     // === customId: ticket_cat_select (exact match)          ===
@@ -1383,7 +1384,8 @@ module.exports.completionLocks = completionLocks;
  */
 async function completeNonKeyOrder(interaction, meta) {
     const warnings = [];
-    const config = getConfig();
+    // v3.10.0 multi-guild: auto-role & products are read from this ticket's guild config.
+    const config = getConfig(resolveGuildId(interaction));
     const userId = meta?.userId;
 
     // 1. Auto-role (if the product has a roleId — the /set-product-role promise).

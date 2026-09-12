@@ -21,6 +21,7 @@ const {
     TextInputStyle,
     ActionRowBuilder,
     getConfig,
+    resolveGuildId,
     logAudit,
     safeEditReply,
     EMBED_LIMITS
@@ -218,7 +219,7 @@ module.exports = async function (interaction) {
             });
         }
 
-        const config = getConfig();
+        const config = getConfig(resolveGuildId(interaction));
         let build;
         try {
             build = buildTicketPanel(panel, {
@@ -430,7 +431,7 @@ module.exports.handlePanelModal = async function handlePanelModal(interaction) {
     // Re-render the panel message so the change shows up right away
     let renderedMessage = '';
     try {
-        const config = getConfig();
+        const config = getConfig(resolveGuildId(interaction));
         const build = buildTicketPanel(updated, {
             guild: interaction.guild,
             client: interaction.client,

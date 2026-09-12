@@ -124,6 +124,9 @@ const serverstatsManager = require('../data/serverstatsManager');
 
 // === Infra ===
 const { isAdmin: checkIsAdmin, invalidateAdminRoleCache } = require('../infra/permissions');
+// v3.10.0 multi-guild: resolveGuildId is used by every command domain to
+// get the guild ID from the interaction before reading/writing per-guild config.
+const { resolveGuildId } = require('../infra/guild');
 const { logAudit } = require('../infra/auditLog');
 const { safeEditReply } = require('../infra/safeReply');
 const { DISCORD_LIMITS, EMBED_LIMITS } = require('../infra/constants');
@@ -228,6 +231,7 @@ module.exports = {
     // infra
     checkIsAdmin,
     invalidateAdminRoleCache,
+    resolveGuildId,
     logAudit,
     safeEditReply,
     DISCORD_LIMITS,

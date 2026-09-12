@@ -13,6 +13,7 @@
 const { MessageFlags } = require('discord.js');
 const {
     getConfig,
+    resolveGuildId,
     setField,
     logAudit,
     EMBED_LIMITS
@@ -65,9 +66,10 @@ module.exports = async function (interaction) {
                 });
             }
 
-            // Apply the change
-            const oldValue = getConfig().messages?.[tipe];
-            setField(`messages.${tipe}`, newText);
+            // Apply the change (v3.10.0: the config of the guild that submitted this modal)
+            const guildId = resolveGuildId(interaction);
+            const oldValue = getConfig(guildId).messages?.[tipe];
+            setField(guildId, `messages.${tipe}`, newText);
 
             // logAudit is async — if it fails, the config is already saved. Still reply success,
             // but log a warning so it's visible in the console.

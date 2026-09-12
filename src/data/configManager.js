@@ -2,7 +2,25 @@ const fs = require('fs');
 const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
 
-const configPath = path.join(__dirname, '..', '..', 'data', 'config.json');
+// ============================================================
+// v3.10.0 MULTI-GUILD: config is now PER-GUILD.
+//   Previously: a single global data/config.json shared by EVERY server
+//   that invited the bot — admin of server A runs /set-channel welcome,
+//   server B changes too (overwrite each other).
+//   Now: data/config/<guildId>.json — one file per server.
+//
+//   One-time automatic migration: the old data/config.json (single-guild
+//   era) is moved to data/config/<guildId>.json when the rightful guild
+//   first reads its config (see _claimLegacyConfigIfNeeded). The old file
+//   is renamed to config.json.migrated as an audit trail, not deleted.
+// ============================================================
+const configDir = path.join(__dirname, '..', '..', 'data', 'config');
+const LEGACY_CONFIG_PATH = path.join(__dirname, '..', '..', 'data', 'config.json');
+
+/** Path of a single guild's config file. */
+function configPathFor(guildId) {
+    return path.join(configDir, `${guildId}.json`);
+}
 
 // Default structure (used when config.json is empty / corrupt / old format)
 const DEFAULTS = {
@@ -99,8 +117,67 @@ const DEFAULTS = {
     products: []
 };
 
+// ============================================================
+// === v3.10.0: LEGACY MIGRATION (config.json → config/<guildId>.json) ===
+// ============================================================
+// In-process flag: the legacy claim may only happen once — after the move
+// the old file is renamed to config.json.migrated so existsSync returns
+// false; this flag is a second safety net in case the rename fails.
+let legacyClaimed = false;
+
 /**
- * Read config.json (always fresh - no caching).
+ * Claim the old data/config.json (single-guild era) for this guild.
+ * Called ONLY from the ENOENT branch of getConfig() — the per-guild file
+ * doesn't exist yet, so there's no risk of overwriting a live guild config.
+ *
+ * Claim rules (prevent another server from "stealing" the old config):
+ *   - If env GUILD_ID is set: only the matching guild may claim.
+ *     (GUILD_ID is the v3.9.26 single-guild mode — other guilds get pure
+ *     DEFAULTS, not a copy of the main server's config.)
+ *   - If GUILD_ID is unset (full multi-guild mode): the FIRST guild to
+ *     call getConfig() claims the legacy. For a bot that has been used on
+ *     one server and then opened up to multi-guild, that old server is
+ *     almost certainly the first caller (ready/interaction events). A
+ *     clear log is printed so the admin can audit who claimed it.
+ *
+ * @returns {Object} the old raw config (not merged yet), or {} if none.
+ */
+function _claimLegacyConfigIfNeeded(guildId) {
+    if (legacyClaimed) return {};
+    if (!fs.existsSync(LEGACY_CONFIG_PATH)) return {};
+
+    const envGuild = process.env.GUILD_ID;
+    if (envGuild && envGuild !== guildId) return {};
+
+    try {
+        const raw = JSON.parse(fs.readFileSync(LEGACY_CONFIG_PATH, 'utf8'));
+        fs.mkdirSync(configDir, { recursive: true });
+        // Write the new guild file via writeFileSync directly (not
+        // safeWriteJSON) — the data is still raw; full normalization +
+        // save is continued by the getConfig() pipeline after return.
+        fs.writeFileSync(configPathFor(guildId), JSON.stringify(raw, null, 2));
+        // Rename legacy → .migrated: audit trail + prevents re-claiming.
+        try {
+            fs.renameSync(LEGACY_CONFIG_PATH, `${LEGACY_CONFIG_PATH}.migrated`);
+        } catch (renameErr) {
+            // Rename failed (e.g. a Windows FS lock) — the old file remains
+            // but the legacyClaimed flag prevents a second claim in this process.
+            console.warn('⚠️ Failed to rename the old config.json:', renameErr.message);
+        }
+        legacyClaimed = true;
+        console.log(
+            `✅ Multi-guild v3.10.0 migration: old config.json moved to data/config/${guildId}.json ` +
+                '(the old file was renamed to config.json.migrated as a trail).'
+        );
+        return raw;
+    } catch (err) {
+        console.warn('⚠️ Failed to migrate the legacy config (using DEFAULTS):', err.message);
+        return {};
+    }
+}
+
+/**
+ * Read a guild's config (always fresh - no caching).
  * - If the file is missing / corrupt -> use DEFAULTS
  * - If v1 format (flat) -> auto-migrate to v2 (nested)
  * - If v2 format -> merge with DEFAULTS so new fields still exist
@@ -108,24 +185,39 @@ const DEFAULTS = {
  * P2-4 FIX: previously used `delete require.cache` + `require()` which
  * was prone to race conditions and was an anti-pattern. Now uses readFileSync + JSON.parse
  * like the other managers.
+ *
+ * v3.10.0: signature is getConfig(guildId). guildId is REQUIRED — without it
+ * this function throws (fail-fast). A silent fallback to a global file is a
+ * hard-to-trace cross-guild bug (server A reading server B's config);
+ * better to crash immediately in dev/test than fail silently in production.
+ *
+ * @param {string} guildId - Discord guild ID (required)
  */
-function getConfig() {
+function getConfig(guildId) {
+    if (!guildId || typeof guildId !== 'string') {
+        throw new Error('getConfig(guildId): guildId is required — multi-guild v3.10.0 (call resolveGuildId(interaction) in the caller)');
+    }
+    const configPath = configPathFor(guildId);
+
     let raw = {};
     try {
         const fileContent = fs.readFileSync(configPath, 'utf8');
         raw = JSON.parse(fileContent);
     } catch (err) {
         if (err.code !== 'ENOENT') {
-            // File exists but is corrupt — log a warning. If ENOENT (file doesn't exist yet), stay silent.
-            console.warn('⚠️ config.json is corrupt, using DEFAULTS. Message:', err.message);
+            // File exists but is corrupt — log a warning. If ENOENT, try the legacy migration.
+            console.warn(`⚠️ config/${guildId}.json is corrupt, using DEFAULTS. Message:`, err.message);
             // v3.9.26: quarantine the corrupt file BEFORE continuing with DEFAULTS. Without this,
             // a subsequent setField()/saveConfig() would write a NEW config over the corrupt
             // file — all settings (roles/channels/products) permanently lost without a
             // trace. With quarantine, the old contents are preserved as
             // config.json.corrupt-<ts> for inspection/manual recovery.
             quarantineCorruptFile(configPath);
+        } else {
+            // v3.10.0: this guild's file doesn't exist yet — possibly a
+            // migration from the single-guild era config.json.
+            raw = _claimLegacyConfigIfNeeded(guildId);
         }
-        raw = {};
     }
 
     // === AUTO-MIGRATE v1 -> v2 ===
@@ -264,19 +356,21 @@ function getConfig() {
     // custom fields), not just the 5 main keys.
     if (didV1Migration) {
         try {
-            saveConfig(config);
-            console.log('✅ Old (v1) config.json auto-migrated to v2 (modern fields preserved).');
+            saveConfig(guildId, config);
+            console.log(`✅ Old (v1) config for guild ${guildId} auto-migrated to v2 (modern fields preserved).`);
         } catch (e) {
             console.warn('⚠️ Failed to auto-save the v1 migration:', e.message);
         }
     }
     if (_migrationChanged) {
         try {
-            saveConfig(config);
+            saveConfig(guildId, config);
             // v3.9.37: message updated — this block now also adds the
             // midman category (v3.9.32), not just the Help/Report rename +
             // claim_giveaway (v3.9.18) like the old message said.
-            console.log('📦 Ticket category migration: Help/Report rename + claim_giveaway + midman (escrow) added.');
+            console.log(
+                `📦 Ticket category migration (guild ${guildId}): Help/Report rename + claim_giveaway + midman (escrow) added.`
+            );
         } catch (migErr) {
             console.warn('⚠️ Failed to save the ticket category migration:', migErr.message);
         }
@@ -286,22 +380,39 @@ function getConfig() {
 }
 
 /**
- * Save config.json in a pretty format.
+ * Save a guild's config in a pretty format.
  * v3.9.0 FIX: uses safeWriteJSON (atomic write via tmp+rename) so that
- * if the bot crashes / OOMs / loses power during the write, the config.json file
+ * if the bot crashes / OOMs / loses power during the write, the config file
  * doesn't corrupt (truncated / empty). Previously it used fs.writeFileSync directly.
+ *
+ * v3.10.0: signature is saveConfig(guildId, config) — the data/config/
+ * directory is created automatically (recursive) if missing.
+ *
+ * @param {string} guildId - Discord guild ID (required)
+ * @param {Object} config - the full config object
  */
-function saveConfig(config) {
-    safeWriteJSON(configPath, config);
+function saveConfig(guildId, config) {
+    if (!guildId || typeof guildId !== 'string') {
+        throw new Error('saveConfig(guildId, config): guildId is required — multi-guild v3.10.0');
+    }
+    fs.mkdirSync(configDir, { recursive: true });
+    safeWriteJSON(configPathFor(guildId), config);
 }
 
 /**
  * Set a nested value (e.g. 'roles.admin' or 'channels.welcome').
  * v3.9.0 FIX: sanitize the dotPath to prevent prototype pollution
  * (e.g. '__proto__.polluted' or 'constructor.prototype.x').
+ *
+ * v3.10.0: signature is setField(guildId, dotPath, value) — only the
+ * config of that guild is modified.
+ *
+ * @param {string} guildId - Discord guild ID (required)
+ * @param {string} dotPath - nested path, e.g. 'roles.admin'
+ * @param {*} value
  */
-function setField(dotPath, value) {
-    const config = getConfig();
+function setField(guildId, dotPath, value) {
+    const config = getConfig(guildId);
     const keys = dotPath.split('.');
 
     // Reject keys that could touch Object.prototype
@@ -320,7 +431,7 @@ function setField(dotPath, value) {
         cur = cur[keys[i]];
     }
     cur[keys[keys.length - 1]] = value;
-    saveConfig(config);
+    saveConfig(guildId, config);
 
     // v3.9.2: invalidate the permissions cache when the admin role changes,
     // so the change takes effect immediately without waiting for the 30-second TTL.
@@ -380,4 +491,4 @@ function fillTemplate(text, vars = {}) {
     return result;
 }
 
-module.exports = { getConfig, saveConfig, setField, fillTemplate, DEFAULTS };
+module.exports = { getConfig, saveConfig, setField, fillTemplate, DEFAULTS, configPathFor };

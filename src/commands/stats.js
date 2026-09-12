@@ -51,6 +51,7 @@ const {
     getTopUsersStats,
     getServerStatsAll,
     getConfig,
+    resolveGuildId,
     safeEditReply
 } = require('./_shared');
 
@@ -159,7 +160,8 @@ module.exports = async function (interaction) {
         const tipe = interaction.options.getString('tipe'); // 'add' | 'remove'
         const live = interaction.options.getBoolean('live') === true;
         const guild = interaction.guild;
-        const config = getConfig();
+        // v3.10.0 multi-guild: the boost channel is read from this guild's config.
+        const config = getConfig(resolveGuildId(interaction));
         const configuredId = config.channels['server-booster'];
         const me = guild.members.me;
 

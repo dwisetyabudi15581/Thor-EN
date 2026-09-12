@@ -39,7 +39,8 @@ const dataDir = path.join(__dirname, '..', '..', 'data');
 // === Sandbox: production data files are snapshotted & restored ===
 // === (midman.test.js / ticketCloseButtons.test.js pattern) ===
 // ====================================================
-const SANDBOX_FILES = ['deals.json', 'config.json', 'tickets.json'];
+// v3.10.0: per-guild config — interaction mocks use 'g_v3937', deal-flow mocks use 'g_deal'.
+const SANDBOX_FILES = ['deals.json', 'config/g_v3937.json', 'config/g_deal.json', 'tickets.json'];
 const backups = [];
 for (const f of SANDBOX_FILES) {
     const p = path.join(dataDir, f);
@@ -68,6 +69,8 @@ process.on('exit', () => {
 
 function resetDataFile(name, content) {
     const p = path.join(dataDir, name);
+    // v3.10.0: name can be a nested path (config/<guildId>.json).
+    fs.mkdirSync(path.dirname(p), { recursive: true });
     if (content === null) {
         if (fs.existsSync(p)) fs.unlinkSync(p);
     } else {
@@ -79,13 +82,15 @@ function resetDataFile(name, content) {
 // === 1. ROUTER — exact match ticket_cat:midman ===
 // ====================================================
 
-test('router v3.9.37: a custom "midman_jual" category (midman prefix) is routed to TICKET, does not die in midman', async () => {
-    resetDataFile('config.json', {}); // → DEFAULTS (midman_jual is not registered)
+test('router v3.9.37: kategori custom "midman_jual" (prefix midman) di-route ke TICKET, tidak mati di midman', async () => {
+    resetDataFile('config/g_v3937.json', {}); // → DEFAULTS (midman_jual tidak terdaftar)
     const routeInteraction = require('../../src/interactions');
     const replies = [];
     const interaction = {
         id: `v3937-router-${Date.now()}-${Math.random()}`,
         customId: 'ticket_cat:midman_jual',
+        // v3.10.0: domain handlers read per-guild config.
+        guildId: 'g_v3937',
         replied: false,
         deferred: false,
         isRepliable: () => true,
@@ -111,12 +116,14 @@ test('router v3.9.37: a custom "midman_jual" category (midman prefix) is routed 
     assert.match(replies[0].content, /not found/);
 });
 
-test('router v3.9.37: the exact "ticket_cat:midman" button still dispatches to the midman domain', async () => {
-    resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' } });
+test('router v3.9.37: tombol persis "ticket_cat:midman" tetap dispatch ke domain midman', async () => {
+    resetDataFile('config/g_v3937.json', { roles: { admin: 'ra', midman: 'rm' } });
     const routeInteraction = require('../../src/interactions');
     const interaction = {
         id: `v3937-router2-${Date.now()}-${Math.random()}`,
         customId: 'ticket_cat:midman',
+        // v3.10.0: domain handlers read per-guild config.
+        guildId: 'g_v3937',
         replied: false,
         deferred: false,
         isRepliable: () => true,
@@ -168,10 +175,12 @@ test('findEmptyCategoryWarnings v3.9.37: the midman category is not warned about
 
 test('buildTicketPanel v3.9.37: the midman dropdown option mentions deal/escrow (not "open a ticket")', () => {
     const { buildTicketPanel } = require('../../src/commands/panels');
-    resetDataFile('config.json', {});
+    resetDataFile('config/g_v3937.json', {});
     const build = buildTicketPanel(
         { useDropdown: true, categoryIds: [], title: 'Panel' },
         {
+            // v3.10.0: the builder reads per-guild config from ctx.guild.id.
+            guild: { id: 'g_v3937', name: 'ServerTes' },
             client: { user: { username: 'Bot', displayAvatarURL: () => 'http://x/a.png' } }
         }
     );
@@ -434,8 +443,9 @@ function makeFlowInteraction({ type, customId, values, fields, guild }) {
     };
 }
 
-test('deal flow v3.9.37: a seller with an active regular ticket is REJECTED (asymmetry fixed)', async () => {
-    resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' } });
+test('deal flow v3.9.37: penjual dengan tiket reguler aktif DITOLAK (asimetri diperbaiki)', async () => {
+    // v3.10.0: per-guild config — makeMidmanGuild uses id 'g_deal'.
+    resetDataFile('config/g_deal.json', { roles: { admin: 'ra', midman: 'rm' } });
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {
         ch_ticket_seller: { userId: 'seller1', guildId: 'g_deal', productName: 'Help', category: 'help' }
@@ -472,8 +482,9 @@ test('deal flow v3.9.37: a seller with an active regular ticket is REJECTED (asy
     assert.strictEqual(mm.hasActiveDealFor('g_deal', 'seller1'), false);
 });
 
-test('deal flow v3.9.37 (regression): a seller without an active ticket → the deal is still created normally', async () => {
-    resetDataFile('config.json', { roles: { admin: 'ra', midman: 'rm' }, channels: {} });
+test('deal flow v3.9.37 (regression): penjual tanpa tiket aktif → deal tetap dibuat normal', async () => {
+    // v3.10.0: per-guild config — makeMidmanGuild uses id 'g_deal'.
+    resetDataFile('config/g_deal.json', { roles: { admin: 'ra', midman: 'rm' }, channels: {} });
     resetDataFile('deals.json', {});
     resetDataFile('tickets.json', {});
     const guild = makeMidmanGuild({ sellerHasTicket: false });
@@ -518,7 +529,7 @@ test('deal flow v3.9.37 (regression): a seller without an active ticket → the 
 
 test('saveTranscript v3.9.37: hard-split lines with exactly 1900 chars left do not produce an empty chunk', async () => {
     const { saveTranscript } = require('../../src/data/ticketManager');
-    resetDataFile('config.json', { channels: { transcript: 'ch_transcript' } });
+    resetDataFile('config/g_v3937.json', { channels: { transcript: 'ch_transcript' } });
 
     // One long user message: its transcript line must be > CHUNK_SIZE so the
     // hard-split path runs. The slice remainder is made EXACTLY 1900 + a small
@@ -542,7 +553,7 @@ test('saveTranscript v3.9.37: hard-split lines with exactly 1900 chars left do n
     const ticketChannel = {
         id: 'ch_ticket',
         name: 'ticket-u1',
-        guild: { channels: { cache: new Map([['ch_transcript', transcriptChannel]]) } },
+        guild: { id: 'g_v3937', channels: { cache: new Map([['ch_transcript', transcriptChannel]]) } },
         messages: {
             fetch: async () =>
                 new Map([

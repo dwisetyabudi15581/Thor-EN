@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.10.0] — 2026-09-12
+
+### Added — 🌍 MULTI-GUILD PHASE 1: per-server config
+
+- 🟢 **Config is now PER-GUILD: `data/config/<guildId>.json`.** Previously a single global `data/config.json` was shared by EVERY server that invited the bot — an admin of server A running `/set-channel welcome` would change server B too (mutual overwrites). Each server now owns its own config file. This is the foundation for opening the bot to the public (hosted multi-server): the other data layers (keys, warnings, stats, tickets, escrow deals) were already guild-scoped from the start — configManager was the last remaining global data point.
+- 🟢 **One-time automatic migration:** the old `data/config.json` (single-guild era) is moved to `data/config/<guildId>.json` when the rightful guild first reads its config. The old file is renamed to `config.json.migrated` as an audit trail (not deleted). Claim rule: if `GUILD_ID` is set (v3.9.26 single-guild mode), only that guild may claim it — other servers get pure DEFAULTS.
+- 🟢 **New API `resolveGuildId(interaction)`** (`src/infra/guild.js`) — a single resolution point for the guild ID of an interaction (checks `guildId` → falls back to `guild.id`), used by every command/interaction domain handler. `getConfig(guildId)` / `saveConfig(guildId, config)` / `setField(guildId, dotPath, value)` now REQUIRE a guildId — without one they throw with a clear message (fail-fast: cross-guild bugs surface in dev/test instead of failing silently in production).
+- 🟢 **The admin-role permission cache is now PER-GUILD** (`src/infra/permissions.js`): previously a single global 30-second variable meant server A's admin role was read by server B. Now a per-guild Map with the same TTL.
+- 🟢 **backupManager supports directories:** the `'config'` FILES_TO_BACKUP entry is copied recursively (all per-guild `*.json` files are included). Old backups (pre-3.10.0, flat `config.json`) can still be restored — the legacy file is placed back as `data/config.json` and claimed by the migration when read (it never overwrites an already-active guild config).
+- 🟢 **`.gitignore`:** the `data/config/` folder is ignored (runtime per-guild data).
+- 🟡 **19 test-suite files updated** to the per-guild pattern: sandboxes write `data/config/<guildId>.json`, interaction mocks carry `guildId`, and the `resetDataFile`/`writeDataJSON` helpers support nested paths. Total stays at 598 tests — all green.
+
+### Behavior notes
+
+- **An empty `GUILD_ID` = full multi-guild mode** — events & commands from every server are processed, slash commands register globally. If your bot is currently single-server, NOTHING changes: keep `GUILD_ID` set as usual, and the old config is migrated automatically when the bot starts.
+- Phase 2 (next): an `ALLOWED_GUILD_IDS` guard (public server allowlist) + Discord verification prep (100-server limit).
+
 ## [3.9.60] — 2026-09-12
 
 ### Fixed — 🧪 code review: backup/restore subsystem audit (fresh-clone test run was red)

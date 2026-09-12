@@ -293,7 +293,8 @@ test('levelManager: getRoleForLevel returns array of roles for stacking (v3.9.14
 
 test('configManager: leveling config defaults applied', () => {
     const { getConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    // v3.10.0: per-guild config — dummy test guild.
+    const config = getConfig('g_cf');
     assert.ok(config.leveling);
     assert.strictEqual(config.leveling.enabled, false); // default off
     assert.ok('xpPerMessage' in config.leveling);

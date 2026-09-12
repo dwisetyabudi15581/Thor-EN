@@ -26,8 +26,10 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const configPath = path.join(DATA_DIR, 'config.json');
+// v3.10.0: per-guild config — this file's interaction mocks use guild 'guild_w'.
+const configPath = path.join(DATA_DIR, 'config', 'guild_w.json');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(configPath), { recursive: true });
 
 // ====================================================
 // === Sandbox: snapshot & restore config.json       ===
@@ -149,7 +151,7 @@ test('buildWelcomeEmbed: template vars filled from the member (same builder as /
     const { buildWelcomeEmbed } = require('../../src/bot/memberHandler');
     const { member } = makeWorld();
 
-    const embed = buildWelcomeEmbed(member, require('../../src/data/configManager').getConfig());
+    const embed = buildWelcomeEmbed(member, require('../../src/data/configManager').getConfig('guild_w'));
     assert.strictEqual(embed.data.title, '👋 WELCOME!');
     assert.strictEqual(embed.data.description, 'Hello <@user_new>! Welcome to **Chronos** — member #42');
     assert.strictEqual(embed.data.thumbnail.url, 'https://cdn.example/avatar.png');
@@ -159,7 +161,7 @@ test('buildGoodbyeEmbed: action var filled (kicked/left)', () => {
     writeConfig({});
     const { buildGoodbyeEmbed } = require('../../src/bot/memberHandler');
     const { member } = makeWorld();
-    const config = require('../../src/data/configManager').getConfig();
+    const config = require('../../src/data/configManager').getConfig('guild_w');
 
     const left = buildGoodbyeEmbed(member, config, 'left');
     assert.match(left.data.description, /\*\*Newbie#0001\*\* has left\./);

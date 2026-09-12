@@ -17,7 +17,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 test('configManager: verifyButton defaults applied', () => {
     const { getConfig, DEFAULTS } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('g_phase_features');
     assert.ok(config.verifyButton, 'verifyButton should exist');
     assert.ok(typeof config.verifyButton === 'object');
     assert.ok('label' in config.verifyButton);
@@ -27,7 +27,7 @@ test('configManager: verifyButton defaults applied', () => {
 
 test('configManager: ticketCategories defaults applied', () => {
     const { getConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('g_phase_features');
     assert.ok(Array.isArray(config.ticketCategories));
     assert.ok(config.ticketCategories.length >= 3, 'should have at least 3 default categories');
     const ids = config.ticketCategories.map(c => c.id);
@@ -38,14 +38,14 @@ test('configManager: ticketCategories defaults applied', () => {
 
 test('configManager: ticketPriceHeader default exists', () => {
     const { getConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('g_phase_features');
     assert.ok(config.messages.ticketPriceHeader, 'ticketPriceHeader should exist in messages');
     assert.ok(typeof config.messages.ticketPriceHeader === 'string');
 });
 
 test('configManager: ticketCategories have valid structure', () => {
     const { getConfig } = require('../../src/data/configManager');
-    const config = getConfig();
+    const config = getConfig('g_phase_features');
     for (const cat of config.ticketCategories) {
         assert.ok(cat.id, 'category should have id');
         assert.ok(cat.label, 'category should have label');

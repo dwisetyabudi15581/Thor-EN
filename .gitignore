@@ -11,6 +11,8 @@ node_modules/
 # v3.9.10: file data JSON sekarang di data/ folder (sebelumnya di root).
 # Kalau file lama masih ada di root (pre-v3.9.10), tetap di-ignore.
 data/*.json
+# v3.10.0: config per-guild — data/config/<guildId>.json (multi-guild).
+data/config/
 config.json
 scheduledRoles.json
 keys.json
@@ -22,6 +24,10 @@ scheduledAnnouncements.json
 stats.json
 tempVoice.json
 tickets.json
+
+# v3.10.0: legacy config migration marker (runtime — never commit)
+config.json.migrated
+data/config.json.migrated
 
 # Corrupt-file quarantine (safeWrite pattern) — can appear at any time at
 # runtime, including corrupt-file test residue (v3.9.43: modlogs.json.corrupt-*).

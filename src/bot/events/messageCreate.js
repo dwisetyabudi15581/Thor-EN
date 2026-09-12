@@ -386,7 +386,8 @@ async function hookAfkSystem(message) {
  * Adds XP to the user. On a level up, announces it + grants reward role(s) if any.
  */
 async function hookLeveling(message) {
-    const config = getConfig();
+    // v3.10.0 multi-guild: the leveling configuration of this message's guild.
+    const config = getConfig(message.guild.id);
     const levelingConfig = config.leveling;
     if (!levelingConfig || !levelingConfig.enabled) return;
 

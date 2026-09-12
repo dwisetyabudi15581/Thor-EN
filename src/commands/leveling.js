@@ -6,12 +6,14 @@
  * v3.9.13: Leveling system — XP per message + level + auto-role on level up.
  */
 
-const { EmbedBuilder, MessageFlags, getConfig, saveConfig, logAudit, safeEditReply } = require('./_shared');
+const { EmbedBuilder, MessageFlags, getConfig, saveConfig, resolveGuildId, logAudit, safeEditReply } = require('./_shared');
 
 const levelManager = require('../data/levelManager');
 
 module.exports = async function (interaction) {
-    const config = getConfig();
+    // v3.10.0 multi-guild: the leveling configuration belongs to this guild.
+    const guildId = resolveGuildId(interaction);
+    const config = getConfig(guildId);
 
     // === SETUP LEVELING (enable/disable + basic config) ===
     if (interaction.commandName === 'setup-leveling') {
@@ -32,7 +34,7 @@ module.exports = async function (interaction) {
         if (announceLevelUp !== null) updates.announceLevelUp = announceLevelUp;
 
         config.leveling = updates;
-        saveConfig(config);
+        saveConfig(guildId, config);
 
         await logAudit(interaction.client, {
             action: 'SETUP_LEVELING',
@@ -76,7 +78,7 @@ module.exports = async function (interaction) {
         filtered.sort((a, b) => a.level - b.level);
 
         config.levelRoles = filtered;
-        saveConfig(config);
+        saveConfig(guildId, config);
 
         await logAudit(interaction.client, {
             action: 'ADD_LEVEL_ROLE',
@@ -127,7 +129,7 @@ module.exports = async function (interaction) {
             return safeEditReply(interaction, { content: `❌ No level role exists for level ${level}.` });
         }
 
-        saveConfig(config);
+        saveConfig(guildId, config);
 
         await logAudit(interaction.client, {
             action: 'REMOVE_LEVEL_ROLE',

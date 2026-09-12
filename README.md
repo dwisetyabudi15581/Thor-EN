@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.60** · 92 slash commands · 598 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.10.0** · 92 slash commands · 598 unit tests · discord.js v14 · Node.js 18+ · multi-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -168,7 +168,7 @@ Tests use the `node:test` runner built into Node.js v18+ — no extra dependenci
 - **Corrupt file quarantine** — data files that fail to parse are renamed to `.corrupt-<ts>` and never silently overwritten.
 - **TOCTOU guard** — `userLock` prevents double-processing when a user double-clicks.
 - **Audit log** — keys are always masked; every admin action is recorded.
-- **Guild-scoped data** — keys, warnings, stats, and config are scoped per guild (single-guild bot, with a `GUILD_ID` guard on every event).
+- **Multi-guild (v3.10.0)** — config is now per-server: `data/config/<guildId>.json`. Server A's admin can no longer overwrite server B's settings. The other data layers (keys, warnings, stats, tickets, escrow deals) were already guild-scoped. The `GUILD_ID` guard is optional: set = single-guild mode (ignore other servers), empty = full multi-guild mode.
 
 ---
 

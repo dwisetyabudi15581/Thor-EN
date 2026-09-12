@@ -24,14 +24,15 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
-const configPath = path.join(DATA_DIR, 'config.json');
+// v3.10.0: per-guild config — this file's interaction mocks use guild 'guild_test'.
+const configPath = path.join(DATA_DIR, 'config', 'guild_test.json');
 const ticketsPath = path.join(DATA_DIR, 'tickets.json');
 
 // ====================================================
 // === Sandbox: snapshot & restore config.json + tickets.json ===
 // === (production files exist — pattern from ticketNonKey.test.js) ===
 // ====================================================
-const SANDBOX_FILES = ['config.json', 'tickets.json'];
+const SANDBOX_FILES = ['config/guild_test.json', 'tickets.json'];
 const backups = new Map();
 for (const f of SANDBOX_FILES) {
     const p = path.join(DATA_DIR, f);
@@ -54,9 +55,9 @@ process.on('exit', () => {
     }
 });
 
-/** Write a controlled config.json for the test (no audit channel → logAudit skips). */
+/** Write the mock guild config (v3.10.0: per-guild path). */
 function writeTestConfig(cfg) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
     fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2));
 }
 
@@ -273,8 +274,8 @@ test('add-product: a product in a non-key category inherits requiresKey:false wi
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
-    // Setup: new category "akun_ml" requiresKey:false (from /add-category).
-    const cfg = getConfig();
+    // Setup: kategori baru "akun_ml" requiresKey:false (dari /add-category).
+    const cfg = getConfig('guild_test');
     const originalCategories = cfg.ticketCategories || [];
     const originalProducts = cfg.products || [];
     const originalChannels = { ...(cfg.channels || {}) };
@@ -285,7 +286,7 @@ test('add-product: a product in a non-key category inherits requiresKey:false wi
         { id: 'akun_ml', label: 'Akun ML', emoji: '🎮', style: 'Success', requiresKey: false, isDefault: false }
     ];
     cfg.products = originalProducts.filter(p => p.value !== 'ml_test_1');
-    saveConfig(cfg);
+    saveConfig('guild_test', cfg);
 
     // The admin did NOT set requires_key (null) → must inherit false from the category.
     const interaction = makeAddProductInteraction({
@@ -297,7 +298,7 @@ test('add-product: a product in a non-key category inherits requiresKey:false wi
     });
     await productsHandler(interaction);
 
-    const saved = getConfig().products.find(p => p.value === 'ml_test_1');
+    const saved = getConfig('guild_test').products.find(p => p.value === 'ml_test_1');
     assert.ok(saved, 'the product must be saved');
     assert.strictEqual(saved.category, 'akun_ml');
     assert.strictEqual(saved.requiresKey, false, 'inherits requiresKey:false from the akun_ml category');
@@ -313,10 +314,10 @@ test('add-product: unknown category → REJECTED (anti id-typo)', async () => {
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
-    const cfg = getConfig();
+    const cfg = getConfig('guild_test');
     const originalProducts = cfg.products || [];
     cfg.products = originalProducts.filter(p => p.value !== 'ml_typo_1');
-    saveConfig(cfg);
+    saveConfig('guild_test', cfg);
 
     const interaction = makeAddProductInteraction({
         label: 'Akun Typo',
@@ -327,7 +328,7 @@ test('add-product: unknown category → REJECTED (anti id-typo)', async () => {
     });
     await productsHandler(interaction);
 
-    const saved = getConfig().products.find(p => p.value === 'ml_typo_1');
+    const saved = getConfig('guild_test').products.find(p => p.value === 'ml_typo_1');
     assert.ok(!saved, 'a product with a typo category must NOT be saved');
     const last = interaction._replies[interaction._replies.length - 1].opts.content;
     assert.match(last, /not found/);
@@ -337,10 +338,10 @@ test('add-product: an explicit requires_key overrides the category (key product 
     const { getConfig, saveConfig } = require('../../src/data/configManager');
     const productsHandler = require('../../src/commands/products');
 
-    const cfg = getConfig();
+    const cfg = getConfig('guild_test');
     const originalProducts = cfg.products || [];
     cfg.products = originalProducts.filter(p => p.value !== 'ml_topup_1');
-    saveConfig(cfg);
+    saveConfig('guild_test', cfg);
 
     // The akun_ml category is requiresKey:false, but this product is a top-up using voucher keys.
     const interaction = makeAddProductInteraction({
@@ -352,7 +353,7 @@ test('add-product: an explicit requires_key overrides the category (key product 
     });
     await productsHandler(interaction);
 
-    const saved = getConfig().products.find(p => p.value === 'ml_topup_1');
+    const saved = getConfig('guild_test').products.find(p => p.value === 'ml_topup_1');
     assert.ok(saved);
     assert.strictEqual(saved.requiresKey, true, 'the product flag overrides the category flag');
     const t = classifyProduct(saved);

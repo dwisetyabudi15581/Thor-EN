@@ -11,7 +11,8 @@
  * Folder structure:
  *   backups/
  *     2026-07-31_15-30-00/
- *       config.json
+ *       config/              <- v3.10.0: per-guild folder (one file per server)
+ *         <guildId>.json
  *       keys.json
  *       ...
  *     2026-07-31_09-00-00/
@@ -37,7 +38,11 @@ const backupsDir = path.join(rootDir, 'backups');
 // (before, these 5 files were NOT backed up even though they're used live by the
 // auto-mod word rules, leveling, responder, AFK, and ticket panel features).
 const FILES_TO_BACKUP = [
-    'config.json',
+    // v3.10.0 MULTI-GUILD: 'config' is now a DIRECTORY (data/config/<guildId>.json —
+    // one file per server). This entry is copied recursively (all *.json
+    // inside it). Old backups (pre-3.10.0) that stored a flat config.json can
+    // still be restored — see the legacy note in _restoreBackupImpl.
+    'config',
     'keys.json',
     'scheduledRoles.json',
     'selfRoles.json',
@@ -126,9 +131,29 @@ function createBackup() {
         try {
             if (fs.existsSync(src)) {
                 const stats = fs.statSync(src);
-                fs.copyFileSync(src, dst);
-                result.filesCopied++;
-                result.totalSize += stats.size;
+                if (stats.isDirectory()) {
+                    // v3.10.0: directory entry (per-guild config/) — copy all
+                    // *.json files inside it. An empty directory counts as 0 files
+                    // (feature not used yet — consistent with file behavior).
+                    fs.mkdirSync(dst, { recursive: true });
+                    let dirSize = 0;
+                    let dirFiles = 0;
+                    for (const f of fs.readdirSync(src)) {
+                        if (!f.endsWith('.json')) continue;
+                        const fsz = fs.statSync(path.join(src, f)).size;
+                        fs.copyFileSync(path.join(src, f), path.join(dst, f));
+                        dirSize += fsz;
+                        dirFiles++;
+                    }
+                    if (dirFiles > 0) {
+                        result.filesCopied++;
+                        result.totalSize += dirSize;
+                    }
+                } else {
+                    fs.copyFileSync(src, dst);
+                    result.filesCopied++;
+                    result.totalSize += stats.size;
+                }
             }
         } catch (err) {
             result.errors.push(`${file}: ${err.message}`);
@@ -296,9 +321,27 @@ function _restoreBackupImpl(name) {
         const src = dataFilePath(file);
         if (fs.existsSync(src)) {
             try {
-                fs.copyFileSync(src, path.join(preRestoreDir, file));
+                if (fs.statSync(src).isDirectory()) {
+                    // v3.10.0: snapshot the per-guild config/ folder recursively.
+                    fs.mkdirSync(path.join(preRestoreDir, file), { recursive: true });
+                    for (const f of fs.readdirSync(src)) {
+                        if (f.endsWith('.json')) {
+                            fs.copyFileSync(path.join(src, f), path.join(preRestoreDir, file, f));
+                        }
+                    }
+                } else {
+                    fs.copyFileSync(src, path.join(preRestoreDir, file));
+                }
             } catch (_) {}
         }
+    }
+    // v3.10.0: the legacy data/config.json file (single-guild era, pre-migration)
+    // is snapshotted too so the pre-restore backup covers both.
+    const legacyLive = dataFilePath('config.json');
+    if (fs.existsSync(legacyLive)) {
+        try {
+            fs.copyFileSync(legacyLive, path.join(preRestoreDir, 'config.json'));
+        } catch (_) {}
     }
 
     // Restore: copy files from the backup to the data dir
@@ -308,11 +351,41 @@ function _restoreBackupImpl(name) {
         const dst = dataFilePath(file);
         try {
             if (fs.existsSync(src)) {
-                fs.copyFileSync(src, dst);
-                result.filesRestored++;
+                if (fs.statSync(src).isDirectory()) {
+                    // v3.10.0: restore the per-guild config/ folder — every guild
+                    // file inside the backup is restored. Guild config files NOT
+                    // present in the backup are left untouched (not deleted) so a
+                    // server that joined after the backup doesn't lose its config.
+                    fs.mkdirSync(dst, { recursive: true });
+                    for (const f of fs.readdirSync(src)) {
+                        if (!f.endsWith('.json')) continue;
+                        fs.copyFileSync(path.join(src, f), path.join(dst, f));
+                    }
+                    result.filesRestored++;
+                } else {
+                    fs.copyFileSync(src, dst);
+                    result.filesRestored++;
+                }
             }
         } catch (err) {
             result.errors.push(`${file}: ${err.message}`);
+        }
+    }
+
+    // v3.10.0 BACKWARD-COMPAT: old backups (pre-3.10.0) stored the config as a
+    // flat config.json at the root of the backup folder. Restore it as
+    // data/config.json (the legacy file) — configManager._claimLegacyConfigIfNeeded
+    // will claim it for the rightful guild on the first getConfig() call. If the
+    // guild already has an active config/ file, the legacy file does NOT
+    // overwrite it (the claim only runs when the per-guild file doesn't exist
+    // yet) — safe by design.
+    const legacyBackupSrc = path.join(srcDir, 'config.json');
+    if (fs.existsSync(legacyBackupSrc)) {
+        try {
+            fs.copyFileSync(legacyBackupSrc, dataFilePath('config.json'));
+            result.filesRestored++;
+        } catch (err) {
+            result.errors.push(`config.json (legacy): ${err.message}`);
         }
     }
 

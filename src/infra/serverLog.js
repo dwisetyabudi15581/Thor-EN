@@ -76,7 +76,10 @@ async function logServerEvent(client, data) {
     let channelId;
     try {
         const { getConfig } = require('../data/configManager');
-        const config = getConfig();
+        // v3.10.0 multi-guild: the server-log channel is read from the
+        // config of the relevant guild (data.guildId has been part of the
+        // contract since v3.9.43).
+        const config = getConfig(data.guildId);
         channelId = config.channels && config.channels['server-log'];
     } catch (_err) {
         return false; // config broken — skip

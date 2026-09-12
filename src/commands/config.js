@@ -20,6 +20,7 @@ const {
     getConfig,
     saveConfig,
     setField,
+    resolveGuildId,
     DEFAULTS,
     Embeds,
     logAudit,
@@ -46,7 +47,10 @@ const { normalizeNewlines, truncateUtf8Safe } = require('../infra/text');
 
 module.exports = async function (interaction) {
     const embeds = new Embeds(interaction.client);
-    const config = getConfig();
+    // v3.10.0 multi-guild: every /set-role /set-channel /set-welcome-text
+    // writes the config of the guild that ran the command.
+    const guildId = resolveGuildId(interaction);
+    const config = getConfig(guildId);
 
     // === SETUP VERIFY ===
     if (interaction.commandName === 'setup-verify') {
@@ -293,7 +297,7 @@ module.exports = async function (interaction) {
             });
         }
 
-        setField(`roles.${tipe}`, role.id);
+        setField(guildId, `roles.${tipe}`, role.id);
         await logAudit(interaction.client, {
             action: 'SET_ROLE',
             actorId: interaction.user.id,
@@ -404,7 +408,7 @@ module.exports = async function (interaction) {
             return safeEditReply(interaction, { content: '❌ The channel must be a text channel.' });
         }
 
-        setField(`channels.${tipe}`, channel.id);
+        setField(guildId, `channels.${tipe}`, channel.id);
         await logAudit(interaction.client, {
             action: 'SET_CHANNEL',
             actorId: interaction.user.id,
@@ -470,7 +474,7 @@ module.exports = async function (interaction) {
                 content: `❌ Text too long for **${tipe}**.\n\n📏 Length: **${teks.length}** char\n🎯 Limit: **${limit}** char (${limitLabel})\n💡 Trim ${teks.length - limit} more char.`
             });
         }
-        setField(`messages.${tipe}`, teks);
+        setField(guildId, `messages.${tipe}`, teks);
         await logAudit(interaction.client, {
             action: 'SET_MESSAGE',
             actorId: interaction.user.id,
@@ -664,7 +668,7 @@ module.exports = async function (interaction) {
             });
         }
         delete config.roles[tipe];
-        saveConfig(config);
+        saveConfig(guildId, config);
         // v3.9.2: invalidate the permissions cache when the admin role is removed
         if (tipe === 'admin') {
             try {
@@ -694,7 +698,7 @@ module.exports = async function (interaction) {
             });
         }
         delete config.channels[tipe];
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'REMOVE_CHANNEL',
             actorId: interaction.user.id,
@@ -747,7 +751,7 @@ module.exports = async function (interaction) {
 
         if (tipe === 'ALL') {
             config.messages = { ...DEFAULTS.messages };
-            saveConfig(config);
+            saveConfig(guildId, config);
             await logAudit(interaction.client, {
                 action: 'RESET_MESSAGE',
                 actorId: interaction.user.id,
@@ -760,7 +764,7 @@ module.exports = async function (interaction) {
 
         const before = config.messages[tipe];
         config.messages[tipe] = DEFAULTS.messages[tipe];
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'RESET_MESSAGE',
             actorId: interaction.user.id,

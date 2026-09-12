@@ -46,13 +46,16 @@ async function onReady(client) {
     // v3.9.49: server-booster joined the same check (boost notifications).
     try {
         const { getConfig } = require('../../data/configManager');
-        const config = getConfig();
         const guild = GUILD_ID
             ? client.guilds.cache.get(GUILD_ID)
             : client.guilds.cache.size > 0
               ? client.guilds.cache.first()
               : null;
         if (guild) {
+            // v3.10.0 multi-guild: check this guild's channels (if GUILD_ID
+            // is unset, the first guild is used ONLY for the startup report —
+            // runtime handlers always use their own guild).
+            const config = getConfig(guild.id);
             const CHANNEL_LABELS = {
                 welcome: 'welcome messages',
                 goodbye: 'goodbye messages',
@@ -118,7 +121,7 @@ async function onReady(client) {
                 if (removed.length > 0) lines.push(`💔 Stopped boosting while the bot was offline: ${removed.map(id => `<@${id}>`).join(' ')}`);
                 console.log(`🚀 Booster catch-up: ${added.length} added, ${removed.length} removed since the last run.`);
                 const { getConfig } = require('../../data/configManager');
-                const boostChId = getConfig().channels['server-booster'];
+                const boostChId = getConfig(guild.id).channels['server-booster'];
                 const boostCh = boostChId ? guild.channels.cache.get(boostChId) : null;
                 if (boostCh && typeof boostCh.send === 'function') {
                     try {

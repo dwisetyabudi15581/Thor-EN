@@ -7,7 +7,7 @@
  * Behavior: manage products + auto-role mapping per product.
  */
 
-const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply, parsePriceNum } = require('./_shared');
+const { MessageFlags, getConfig, saveConfig, resolveGuildId, Embeds, logAudit, safeEditReply, parsePriceNum } = require('./_shared');
 
 /**
  * v3.9.49 (user report: "total revenue doesn't update"): validate a product
@@ -48,7 +48,9 @@ function priceValidationError(price) {
 
 module.exports = async function (interaction) {
     const embeds = new Embeds(interaction.client);
-    const config = getConfig();
+    // v3.10.0 multi-guild: products are stored in this guild's config.
+    const guildId = resolveGuildId(interaction);
+    const config = getConfig(guildId);
 
     // === ADD PRODUCT ===
     if (interaction.commandName === 'add-product') {
@@ -116,7 +118,7 @@ module.exports = async function (interaction) {
         newProduct.requiresKey = finalRequiresKey;
 
         config.products.push(newProduct);
-        saveConfig(config);
+        saveConfig(guildId, config);
 
         const durationInfo = duration ? ` (duration: ${duration})` : ' (no duration)';
         const catInfo = ` | category: ${finalCategory} | requiresKey: ${finalRequiresKey ? 'yes' : 'no'}`;
@@ -148,7 +150,7 @@ module.exports = async function (interaction) {
         const idx = config.products.findIndex(p => p.value === value);
         if (idx === -1) return safeEditReply(interaction, { content: `❌ Product \`${value}\` not found.` });
         const [removed] = config.products.splice(idx, 1);
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'REMOVE_PRODUCT',
             actorId: interaction.user.id,
@@ -202,7 +204,7 @@ module.exports = async function (interaction) {
 
         product.roleId = role.id;
         product.days = days;
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,
@@ -235,7 +237,7 @@ module.exports = async function (interaction) {
 
         delete product.roleId;
         delete product.days;
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,
@@ -350,7 +352,7 @@ module.exports = async function (interaction) {
             });
         }
 
-        saveConfig(config);
+        saveConfig(guildId, config);
         await logAudit(interaction.client, {
             action: 'EDIT_PRODUCT',
             actorId: interaction.user.id,

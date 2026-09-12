@@ -20,7 +20,8 @@ const path = require('node:path');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const SANDBOX_FILES = [
-    'config.json',
+    // v3.10.0: per-guild config — this file's configManager tests use guild 'g_v26'.
+    'config/g_v26.json',
     'giveaways.json',
     'polls.json',
     'scheduledAnnouncements.json',
@@ -50,7 +51,10 @@ function restoreSandbox() {
 }
 
 function writeDataJSON(name, data) {
-    fs.writeFileSync(path.join(DATA_DIR, name), JSON.stringify(data, null, 2));
+    const p = path.join(DATA_DIR, name);
+    // v3.10.0: name can be a nested path (config/<guildId>.json).
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(data, null, 2));
 }
 
 function readDataJSON(name) {
@@ -96,7 +100,7 @@ test('v3.9.26 isValidEmoji: rejects strings that would poison setEmoji()', () =>
 test('v3.9.26 claim_giveaway: dismissed flag prevents resurrection', () => {
     const { getConfig } = require('../../src/data/configManager');
     // Write a config WITHOUT claim_giveaway + WITH the dismissed flag
-    writeDataJSON('config.json', {
+    writeDataJSON('config/g_v26.json', {
         roles: { admin: 'r_admin' },
         ticketCategories: [
             { id: 'transaction', label: 'Beli Key', emoji: '🛒', style: 'Primary', requiresKey: true, isDefault: true },
@@ -106,7 +110,7 @@ test('v3.9.26 claim_giveaway: dismissed flag prevents resurrection', () => {
         customFieldAdmin: 'jangan-hilang'
     });
 
-    const config = getConfig();
+    const config = getConfig('g_v26');
     const ids = config.ticketCategories.map(c => c.id);
     assert.ok(!ids.includes('claim_giveaway'), 'claim_giveaway must NOT be re-added when dismissed');
     // Custom fields must be preserved
@@ -115,14 +119,14 @@ test('v3.9.26 claim_giveaway: dismissed flag prevents resurrection', () => {
 
 test('v3.9.26 claim_giveaway: without the flag, the migration still adds it (backward compat)', () => {
     const { getConfig } = require('../../src/data/configManager');
-    writeDataJSON('config.json', {
+    writeDataJSON('config/g_v26.json', {
         roles: { admin: 'r_admin' },
         ticketCategories: [
             { id: 'transaction', label: 'Beli Key', emoji: '🛒', style: 'Primary', requiresKey: true, isDefault: true }
         ]
         // claimGiveawayDismissed NOT set
     });
-    const config = getConfig();
+    const config = getConfig('g_v26');
     const ids = config.ticketCategories.map(c => c.id);
     assert.ok(ids.includes('claim_giveaway'), 'without the flag, the sample category is still added (old behavior)');
 });
@@ -131,7 +135,7 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
     const { getConfig } = require('../../src/data/configManager');
     // MIXED config: leftover v1 flat keys + v2 modern fields — previously the
     // auto-save migration only wrote the 5 main keys → ticketCategories/leveling were lost from disk.
-    writeDataJSON('config.json', {
+    writeDataJSON('config/g_v26.json', {
         verifiedRoleId: 'r_verified_old',
         invoiceChannelId: 'c_invoice_old',
         roles: { admin: 'r_admin' },
@@ -145,8 +149,8 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
         customFieldAdmin: 'preserve-me'
     });
 
-    const config = getConfig();
-    // Flat v1 → moved into nested
+    const config = getConfig('g_v26');
+    // Flat v1 → dipindah ke nested
     assert.strictEqual(config.roles.verified, 'r_verified_old');
     assert.strictEqual(config.channels.invoice, 'c_invoice_old');
     // Modern fields must be present in the merged result
@@ -156,9 +160,9 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
     const ids = config.ticketCategories.map(c => c.id);
     assert.ok(ids.includes('jasa'), 'custom ticketCategories must be preserved');
 
-    // And what is saved to disk must be FREE of v1 flat keys (idempotent)
-    const saved = readDataJSON('config.json');
-    assert.strictEqual(saved.verifiedRoleId, undefined, 'v1 flat keys must be gone from disk after the migration');
+    // Dan yang tersimpan di disk harus BEBAS flat key v1 (idempotent)
+    const saved = readDataJSON('config/g_v26.json');
+    assert.strictEqual(saved.verifiedRoleId, undefined, 'the v1 flat keys must be gone from disk after the migration');
     assert.ok(Array.isArray(saved.ticketCategories));
 });
 
@@ -445,7 +449,7 @@ test('v3.9.26 panel patch contract: imageUrl/thumbnailUrl/footerText reach the b
     // The builder must LOAD the same value (this was the v3.9.26 bug: the old patch
     // wrote `image` but the builder read `imageUrl` → a silent no-op)
     const built = buildTicketPanel(patched, {
-        guild: { name: 'Test Guild', members: { me: { id: 'bot' } } },
+        guild: { id: 'g_test', name: 'Test Guild', members: { me: { id: 'bot' } } },
         client: { user: { username: 'Thor', displayAvatarURL: () => 'https://example.com/a.png' } }
     });
     // buildTicketPanel returns { embed, components } (not an EmbedBuilder directly)

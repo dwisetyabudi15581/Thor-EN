@@ -21,6 +21,7 @@ const {
     StringSelectMenuBuilder,
     getConfig,
     saveConfig,
+    resolveGuildId,
     logAudit,
     safeEditReply
 } = require('./_shared');
@@ -137,7 +138,7 @@ function findEmptyCategoryWarnings(panel, config) {
  * @returns {{embed: EmbedBuilder, components: ActionRowBuilder[]}}
  */
 function buildTicketPanel(panel, ctx) {
-    const config = ctx.config || getConfig();
+    const config = ctx.config || getConfig(ctx.guild?.id);
     const allCategories = config.ticketCategories || [];
     const categoryIds = Array.isArray(panel.categoryIds) ? panel.categoryIds : [];
 
@@ -317,7 +318,9 @@ function buildTicketPanel(panel, ctx) {
 }
 
 module.exports = async function (interaction) {
-    const config = getConfig();
+    // v3.10.0 multi-guild: panels & the verify button are stored in this guild's config.
+    const guildId = resolveGuildId(interaction);
+    const config = getConfig(guildId);
 
     // === SET VERIFY BUTTON ===
     if (interaction.commandName === 'set-verify-button') {
@@ -352,7 +355,7 @@ module.exports = async function (interaction) {
         if (style) newVerifyBtn.style = style;
 
         config.verifyButton = newVerifyBtn;
-        saveConfig(config);
+        saveConfig(guildId, config);
 
         await logAudit(interaction.client, {
             action: 'SET_VERIFY_BUTTON',

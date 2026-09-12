@@ -33,7 +33,8 @@ const dataDir = path.join(__dirname, '..', '..', 'data');
 // === Sandbox: production data files are snapshotted & restored ===
 // === (hardeningV31.test.js pattern)                             ===
 // ====================================================
-const SANDBOX_FILES = ['deals.json', 'config.json', 'tickets.json'];
+// v3.10.0: per-guild config — this file's configManager tests use guild 'g_midman'.
+const SANDBOX_FILES = ['deals.json', 'config/g_midman.json', 'tickets.json'];
 const backups = [];
 for (const f of SANDBOX_FILES) {
     const p = path.join(dataDir, f);
@@ -63,6 +64,8 @@ process.on('exit', () => {
 
 function resetDataFile(name, content) {
     const p = path.join(dataDir, name);
+    // v3.10.0: name can be a nested path (config/<guildId>.json).
+    fs.mkdirSync(path.dirname(p), { recursive: true });
     if (content === null) {
         if (fs.existsSync(p)) fs.unlinkSync(p);
         return;
@@ -523,9 +526,9 @@ function freshConfigManager() {
 }
 
 test('config DEFAULTS: midman fee exists & midman category registered', () => {
-    resetDataFile('config.json', {});
+    resetDataFile('config/g_midman.json', {});
     const { getConfig, DEFAULTS } = freshConfigManager();
-    const config = getConfig();
+    const config = getConfig('g_midman');
     assert.strictEqual(DEFAULTS.midman.feeMode, 'percent');
     assert.strictEqual(DEFAULTS.midman.feeValue, 5);
     assert.strictEqual(DEFAULTS.midman.category, '🤝 ESCROW');
@@ -537,7 +540,7 @@ test('config DEFAULTS: midman fee exists & midman category registered', () => {
 
 test('config migration: an old config automatically gets the midman category (once only)', () => {
     // Simulate an old v3.9.31 config — no midman category yet.
-    resetDataFile('config.json', {
+    resetDataFile('config/g_midman.json', {
         roles: { admin: '123' },
         ticketCategories: [
             { id: 'transaction', label: 'Beli Key / Transaksi', emoji: '🔑', style: 'Primary', requiresKey: true },
@@ -546,32 +549,32 @@ test('config migration: an old config automatically gets the midman category (on
         products: []
     });
     const { getConfig } = freshConfigManager();
-    const config = getConfig();
+    const config = getConfig('g_midman');
     const cats = config.ticketCategories.map(c => c.id);
     assert.ok(cats.includes('midman'), 'migration must add the midman category');
     assert.ok(config.ticketCategories.find(c => c.id === 'midman').emoji === '🤝');
-    // The migration is saved to disk — re-reading getConfig does not add a duplicate.
-    const config2 = freshConfigManager().getConfig();
+    // Migration di-save ke disk — getConfig ulang tidak menambah dobel.
+    const config2 = freshConfigManager().getConfig('g_midman');
     const midmanCount = config2.ticketCategories.filter(c => c.id === 'midman').length;
     assert.strictEqual(midmanCount, 1, 'the midman category must not be duplicated after a re-read');
 });
 
 test('config migration: the midmanCategoryDismissed flag prevents re-adding after /remove-category', () => {
-    resetDataFile('config.json', {
+    resetDataFile('config/g_midman.json', {
         roles: { admin: '123' },
         midmanCategoryDismissed: true,
         ticketCategories: [{ id: 'transaction', label: 'Beli Key', emoji: '🔑', style: 'Primary' }],
         products: []
     });
     const { getConfig } = freshConfigManager();
-    const cats = getConfig().ticketCategories.map(c => c.id);
+    const cats = getConfig('g_midman').ticketCategories.map(c => c.id);
     assert.ok(!cats.includes('midman'), 'the midman category must NOT be added again once dismissed');
 });
 
-test('config merge: custom admin midman fields preserved', () => {
-    resetDataFile('config.json', { roles: { admin: '1' }, midman: { feeMode: 'flat', feeValue: 2500 }, products: [] });
+test('config merge: custom admin midman field preserved', () => {
+    resetDataFile('config/g_midman.json', { roles: { admin: '1' }, midman: { feeMode: 'flat', feeValue: 2500 }, products: [] });
     const { getConfig } = freshConfigManager();
-    const config = getConfig();
+    const config = getConfig('g_midman');
     assert.strictEqual(config.midman.feeMode, 'flat');
     assert.strictEqual(config.midman.feeValue, 2500);
     // Fields not set by the admin fall back to DEFAULTS (category).
