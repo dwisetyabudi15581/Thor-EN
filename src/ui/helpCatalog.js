@@ -82,13 +82,13 @@ const HELP_CATEGORIES = [
         name: 'Quick Start',
         short: 'New to the bot? Server setup order from scratch',
         lines: [
-            '**New to this bot? Follow this order:**',
+            '**New to this bot? Follow this:**',
             '1️⃣ `/set-role verified @Verified` — verified-member role',
             '2️⃣ `/add-category` + `/add-product` — prepare the catalog',
-            '3️⃣ `/setup-ticket-panel` — mount the ticket panel',
-            '4️⃣ `/setup-verify` — verification for new members',
-            '5️⃣ `/set-channel server-log #log` — enable server log',
-            '💡 Then explore the other categories via the 📂 dropdown.'
+            '3️⃣ `/setup-ticket-panel` — mount ticket panel',
+            '4️⃣ `/setup-verify` — verify new members',
+            '5️⃣ `/set-channel server-log #log` — enable logging',
+            '💡 Then explore other categories via 📂.'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -117,12 +117,12 @@ const HELP_CATEGORIES = [
         lines: [
             '**Violation history:**',
             '• `/warn user reason` — warning (3=mute 1h, 5=mute 1d, 7=kick)',
-            '• `/warn-list user` — warn + sanction history · `/warn-remove` `/warn-clear`',
+            '• `/warn-list user` — warn history · `/warn-remove` `/warn-clear`',
             '**Direct actions:**',
-            '• `/timeout user minutes reason` — mute (max 40320 = 28 days) · `/untimeout`',
+            '• `/timeout user minutes reason` — mute (max 28 days) · `/untimeout`',
             '• `/kick` remove · `/ban` block · `/unban` unblock',
-            '• `/purge amount:100 user?` — bulk delete messages (1-100)',
-            '💡 Auto-logged to `/warn-list` + server log. Higher roles are immune.'
+            '• `/purge amount:100 user?` — bulk delete (1-100)',
+            '💡 Auto-logged to `/warn-list` + log. Higher roles are immune.'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -177,17 +177,29 @@ const HELP_CATEGORIES = [
         short: 'Product key stock & member expiry schedule',
         lines: [
             '• `/set-key user:@user value:vip30 key:ABCDE-12345` — assign a product key',
-            '• `/list-keys user:@user` — member keys · `/clear-schedule user clear_keys:true` — clean up'
+            '• `/list-keys user` — member keys · `/clear-schedule clear_keys:true` — clean up',
+            '• Sell keys: `/gen-key` → member `/redeem` · `/list-stock` · `/revoke-key`'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
+        // v3.13.0: + the self-service selling flow (stock keys + /redeem).
+        // NOTE: `lines` also render in the 📖 All Commands embed whose budget
+        // is tight — the premium line is deliberately ultra-compact; the full
+        // guide lives in `detail` (the primary category view).
         detail: [
-            '**Keys = proof of purchase. The buyer shows the key, staff verifies it once, the role + expiry schedule are handled automatically.**',
+            '**Keys = proof of purchase. Two flows: (1) classic — staff assign keys manually; (2) self-service — the admin mints stock, members redeem via `/redeem`.**',
+            '**Classic flow (admin online)**',
             '• `/set-key user value key` — register a key, e.g. `/set-key value:vip30 key:ABCDE-12345`. The buyer instantly gets the product role, and the expiry schedule is extended by the product\'s duration (never duplicated — MAX EXTEND).',
             '• `/list-keys user` — every key a member owns, active AND expired, with dates.',
             '• `/clear-schedule user` — remove all scheduled role expirations for a member; `clear_keys:true` also deletes their keys and removes the VIP role — the full cleanup for refunds/chargebacks.',
+            '**Self-service flow (premium SaaS — no admin needed online)**',
+            '• `/gen-key value:vip30 count:5` — the bot mints 5 random keys (format `XXXXX-XXXXX-XXXXX`) as STOCK. Send those keys to buyers (DM / marketplace / top.gg).',
+            '• `/redeem key` — the buyer redeems the key THEMSELVES: the role is granted + the expiry schedule is created automatically. **The duration starts WHEN REDEEMED** — stock never goes "stale" while unsold.',
+            '• `/list-stock` — this guild\'s unredeemed stock (product, duration, note).',
+            '• `/revoke-key key` — cancel a stock key that leaked/was minted by mistake (already-redeemed keys cannot be revoked — use `/clear-schedule`).',
             '',
             '❓ **Key already used?** Each key can only be redeemed once — staff can see its status in `/list-keys`.',
-            '❓ **Buyer lost the key?** `/list-keys user` shows it — no need to dig through DMs.'
+            '❓ **Buyer lost the key?** `/list-keys user` shows it — no need to dig through DMs.',
+            '❓ **Can stock keys be used on another server?** No — stock keys are bound to the server they were minted on (safe for public multi-server mode).'
         ]
     },
     {

@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.12.0
+# 📖 Admin Guide — Thor Bot v3.13.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -48,7 +48,7 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **92 slash commands** must appear
+- In Discord, type `/` — all **96 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
 > 🌍 **ONE GUILD ID (v3.12.0)** — all server behavior is controlled by ONE line in `.env`: `GUILD_ID`. **Set** = single-server mode (default): slash commands register **instantly** to that server, and events from other servers (messages/joins/boosts/tickets) are ignored — insurance in case the bot is accidentally invited. **Empty** = **public Dyno-style mode**: global commands (appear automatically in every server that invites the bot, ~1 hour), **per-server** configs at `data/config/<guildId>.json` — server A's admin can never overwrite server B's settings. The old `data/config.json` is migrated automatically the first time a legitimate guild reads it (the old file is renamed to `config.json.migrated` — not deleted). Switching servers = edit that one line, period. Want to open the bot to the public? See [Section 12 — Public Mode (Dyno-style) + Developer Portal](#12-public-mode-dyno-style--developer-portal-phase-3).
@@ -325,6 +325,31 @@ The bot automatically:
 5. Sends an invoice to the invoice channel
 6. Records the purchase in stats
 7. Writes the `SET_KEY` audit log — **the key is masked** (only `***` + length; the key value never leaks)
+
+### 💰 Self-Service Key Selling — Premium SaaS (v3.13.0)
+
+> Sell keys without staff being online 24/7 — completing the public v3.12.0 mode. The bot mints the keys; buyers redeem them themselves. The classic `/set-key` flow above still applies.
+
+**The selling flow (set up once, repeats forever):**
+
+1. Make sure the product has an auto-role (`/set-product-role`) and the correct day duration.
+2. `/gen-key value:30d count:5 note:this-weeks-stock` — the bot mints 5 crypto-secure random keys (`XXXXX-XXXXX-XXXXX`, no ambiguous letters), shown ONLY to you (ephemeral).
+3. Distribute the keys to buyers: direct DM, a marketplace, or an external shop/top.gg. **Never post keys in public channels.**
+4. The buyer types `/redeem key:XXXXX-XXXXX-XXXXX` → the VIP role is granted immediately + the auto-expiry schedule is created + a DM proof of purchase is sent. **The duration only starts WHEN REDEEMED** — stock never goes "stale" while unsold.
+5. Done — no admin step. A `REDEEM_KEY` audit entry is logged automatically (the key stays masked).
+
+**Manage the stock:**
+
+```
+/list-stock        → all unredeemed keys (product · duration · note)
+/revoke-key key:…  → cancel a stock key that leaked / was minted by mistake
+```
+
+- `/config-show` now shows a **🏷️ Ready-to-sell stock (not yet redeemed)** line.
+- Stock keys are bound to the server they were minted on — they cannot be redeemed on another server (safe for public multi-server mode).
+- ALREADY-redeemed keys cannot be revoked (a legitimate redemption) — to revoke a member's VIP, use `/clear-schedule user clear_keys:true`.
+
+**`/redeem` security (a public command):** a rate limiter of 5 failures / 10 minutes per user; every failure returns ONE generic message (no enumeration possible); key consumption is atomic (two simultaneous clicks → only one succeeds); key values never appear in audit logs.
 
 ### View a Member's Keys
 
@@ -1032,10 +1057,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.12.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.13.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.13.0** (2026-09-12) — 💰 **PREMIUM SAAS: STOCK KEYS + SELF-SERVICE REDEMPTION**. Sell keys without staff online 24/7: `/gen-key` (admin) mints crypto-secure stock keys `XXXXX-XXXXX-XXXXX`; buyers redeem them themselves via `/redeem` (PUBLIC) → role + expiry schedule automatically, **duration starts when redeemed**. `/list-stock` + `/revoke-key` manage the stock; a stock line appears in `/config-show`. Security: a 5-failures/10-min rate limiter, generic error messages (anti-enumeration), atomic consumption, guild-scoped keys, keys never leak in audit logs. Registry 92 → 96 commands; +29 tests (total **645**). No breaking changes — the classic `/set-key` flow stays.
 - **v3.12.0** (2026-09-12) — 🎯 **ONE GUILD ID + PHASE 3: PUBLIC MODE (Dyno-style)**. `.env` now has exactly **one server variable: `GUILD_ID`** — the `ALLOWED_GUILD_IDS` allowlist (v3.11.0) is fully removed (no more confusion: switching servers = edit one line). **Set** = single-server mode (instant commands, other servers' events ignored); **empty** = public Dyno/MEE6-style mode (global commands — they appear automatically in every server within ~1 hour, no manual guild id). `src/infra/guild.js` simplified (`getPrimaryGuildId()`); the legacy config claim gate + command registration + startup follow suit; join/leave skip logs now mention `GUILD_ID`. Docs: a new **12 — Public Mode + Developer Portal** section (how Dyno works, the OAuth2 URL + `applications.commands` scope, Discord verification at 100 servers, a security checklist). `guildGuard.test.js` rewritten + 3 ANTI-CONFUSION PINS (no allowlist comeback; one `.env.example` variable; the export contract). +3 tests (total **616**).
 - **v3.11.0** (2026-09-12) — 🛡️ **MULTI-GUILD PHASE 2: the `ALLOWED_GUILD_IDS` allowlist**. A comma-separated list of server IDs allowed to use the bot — priority `ALLOWED_GUILD_IDS` > `GUILD_ID` > neither set (open mode). All 11 event handlers switched to the allowlist guard (`isGuildAllowed()`); slash command registration is now **per-guild for EVERY allowlisted server at once** (instant, and unlisted servers never see the commands at all); startup (channel checks, boost catch-up, server-stats sync) now runs for each allowlisted guild (previously only the first one); the legacy config claim gate follows the allowlist (a single-entry list → only that guild may claim). +15 unit tests (total **613**). *Note v3.12.0: this feature was replaced by the single-`GUILD_ID` configuration.*
 - **v3.10.0** (2026-09-12) — 🌍 **MULTI-GUILD PHASE 1: per-server config**. The global `data/config.json` (shared by every server that invited the bot — server A's admin overwriting server B's settings) is replaced by **`data/config/<guildId>.json`** — one file per server. One-time automatic migration on bot start (the old file becomes `config.json.migrated`). The internal `getConfig/saveConfig/setField` API now requires a `guildId` (fail-fast) via the new `resolveGuildId()` helper; the admin-role permission cache is per-guild (was global — server A's admin role was read by server B); backup/restore supports the recursive `config/` folder + backward-compat for old backups. 57 call sites across 24 src files + 19 test files updated; the total stays at **598 tests** green. An empty `GUILD_ID` = full multi-guild mode; currently single-server setups change nothing at all.
@@ -1143,6 +1169,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.12.0
+**Document version:** v3.13.0
 **Last updated:** September 12, 2026
-**Bot version:** 3.12.0 · 92 slash commands · 616 unit tests
+**Bot version:** 3.13.0 · 96 slash commands · 645 unit tests

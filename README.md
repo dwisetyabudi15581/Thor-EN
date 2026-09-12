@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.12.0** · 92 slash commands · 616 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style)
+> **v3.13.0** · 96 slash commands · 645 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style) · self-service key selling (premium SaaS)
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -19,11 +19,13 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 - **Automatic invoice** to the testimonial channel (once per ticket) + **automatic transcript** saved before the ticket channel is deleted.
 - **🤝 Midman / Escrow — 3-party escrow deal** (known as _rekber_ in Indonesia) — buyer, seller, and middleman in a single deal channel with a **Deal Board** (the source-of-truth embed) and a **state machine**: funds received (confirmed by the middleman) → goods delivered (confirmed by the buyer) → release (middleman). A dispute freezes the deal, and only an admin can resolve it. **Anyone can open a deal** (the buyer, the seller, or a helper) through a **3-step form** (item + price → pick the buyer → pick the seller, all via searchable dropdowns), and **terms are locked only after both the buyer and the seller agree**. The **👥 Add Member / ➖ Remove Member** buttons manage extra members inside the deal channel (they can only view & chat; they cannot move the deal forward). **The fee is added on top of the price** (the seller always receives the full price; the buyer pays price + fee), every button click is recorded in the deal history, and invoice/transcript/audit log are fully integrated.
 
-### 🔑 Products & VIP (Key-Driven)
+### 🔑 Products & VIP (Key-Driven + Premium SaaS)
 
 - Products with a category, a price, and a `requires_key` flag (inherited from the category down to the product).
 - Key-driven VIP roles using the **MAX EXTEND** model — the role follows the key with the most time remaining; auto-expire is scheduled.
 - A successful Set Key → store the key, grant the role, DM the member, send the invoice, record stats — all automatic.
+- **Self-service selling (v3.13.0)** — `/gen-key` mints crypto-secure random stock keys (`XXXXX-XXXXX-XXXXX`); send them to buyers via DM/marketplace/top.gg; buyers redeem them themselves via `/redeem` → role + expiry schedule automatically, **duration starts when redeemed** (stock never goes stale). No admin needed online 24/7. Stock is guild-scoped; `/redeem` is protected by a rate limiter (5 failures/10 min) + generic error messages (anti brute-force & enumeration) + atomic consumption.
+- Manage stock: `/list-stock` (view unredeemed stock) · `/revoke-key` (cancel a leaked key). A stock line appears in `/config-show`.
 - Keys are always **masked** in the audit log (the value never leaks).
 
 ### 🛡️ Anti-Spam & Auto-Mod
@@ -153,7 +155,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (616 tests)  |
+| `npm test`       | Run all unit tests (645 tests) |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 

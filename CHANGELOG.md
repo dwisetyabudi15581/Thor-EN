@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.13.0] — 2026-09-12
+
+### Added — 💰 PREMIUM SAAS: STOCK KEYS + SELF-SERVICE REDEMPTION
+
+Completing the public v3.12.0 mode: admins sell keys WITHOUT being online 24/7 waiting for buyers. The old model (`/set-key`) stays; this is a fully self-service flow on top.
+
+- 🟢 **`/gen-key value count note` (admin)** — the bot mints crypto-secure random stock keys (`crypto.randomBytes`, NOT `Math.random`): `XXXXX-XXXXX-XXXXX` format, a 31-char alphabet without ambiguous letters (I/L/O/0/1 dropped — easy to read & copy manually), ~74 bits of entropy. `count` 1-10 per invocation. A stock key = `status: 'available'`, owned by nobody, **duration not running yet** (`expireAt` null) — computed later when the key is REDEEMED. Audit logs still never contain key values (the v3.9.1 pattern).
+- 🟢 **`/redeem key` (PUBLIC — the first public command to touch key data)** — members redeem their purchased keys THEMSELVES: the role is granted + the auto-expiry schedule is created (MAX EXTEND; expireAt computed by `redeemKey` = duration SINCE REDEMPTION — stock never goes "stale" while unsold), a DM proof of purchase is sent, and a REDEEM_KEY audit entry is logged. If the role can't be granted (role deleted / bot hierarchy), the key stays stored + the member is pointed to an admin (the /set-key pattern).
+- 🟢 **`/list-stock` (admin)** — all of this guild's unredeemed stock (key, product, duration, note), a green embed explaining "duration starts when redeemed".
+- 🟢 **`/revoke-key key` (admin)** — cancel a stock key that leaked / was minted by mistake. ALREADY-redeemed keys cannot be revoked (a legitimate redemption) — for that use `/clear-schedule user clear_keys:true`.
+- 🟢 **/redeem security (4 layers):** (1) a data-layer rate limiter — 5 failures / 10 minutes per user (sliding window, success resets it); (2) every validation failure returns ONE generic message "Key is invalid or already used" — keys cannot be enumerated; (3) ATOMIC consumption in `redeemKey` (load→validate→mutate→save with no await) — two concurrent redeems: only one succeeds; (4) stock keys are guild-scoped — a key for server A cannot be redeemed in server B (critical in public multi-server mode).
+- 🟢 **`keyManager`: +10 new functions** (`generateKeyString`, `createStockKey`, `findKeyByString`, `redeemKey`, `listStockKeys`, `revokeStockKey`, `isRedeemRateLimited`, `noteRedeemFailure`, `noteRedeemSuccess`, `_resetRedeemRateLimitForTest`) + an `available` field in `getStats`/`getStatsByGuild` (stock counted SEPARATELY — not in active/permanent; `/config-show` now shows a stock line). `removeExpiredKeys` is stock-safe (expireAt null → always survives).
+- 🟡 **Router:** a new `premium` domain (4 commands routed + the v3.9.24 GUARD contract); `/redeem` joins `PUBLIC_COMMANDS` (8 total). Registry 92 → **96 slash commands**.
+- 🟡 **`/help`:** the 🔑 Key Manager category now documents BOTH flows (classic vs self-service) + a new FAQ ("can stock keys be used on another server?" — no). The `lines` are ultra-compact (the 📖 All Commands embed budget is tight) + minor compaction of the Moderation/Quick Start categories so all 20 categories stay intact within the 5,800-char budget.
+- 🟢 **+29 unit tests (total 645):** `premiumKeys.test.js` — key format/uniqueness, stock fields, duration-since-redemption, atomic single-use, generic messages on every failure path, guild-scoping (list/revoke/redeem), the rate limiter (5 failures, 10-minute window, success reset, per-user isolation), separate available stats, stock surviving the cleaner, and 4 registry/router contracts (registered, routed, public vs admin-gated, command options).
+
+### Compatibility
+
+- **No breaking changes.** The classic `/set-key` model is untouched; legacy keys (pre-v3.13, no `status` field) remain valid and are treated as already claimed.
+- Stock data lives in the same `data/keys.json` (new schema fields: `status`, `note`, `createdBy`, `redeemedAt`) — no migration needed.
+
 ## [3.12.0] — 2026-09-12
 
 ### Changed — 🎯 ONE GUILD ID + PHASE 3: PUBLIC MODE (Dyno-style)

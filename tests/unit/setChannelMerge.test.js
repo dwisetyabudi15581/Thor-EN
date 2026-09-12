@@ -126,9 +126,9 @@ test('registry: /set-transcript-channel is NO LONGER registered (merged into /se
     assert.ok(!names.includes('set-transcript-channel'), 'the old command must be gone from the registry');
 });
 
-test('registry: total commands exactly 92 (91 + /test-booster v3.9.58)', () => {
+test('registry: total commands exactly 96 (92 + 4 premium commands v3.13.0)', () => {
     const { getCommands } = require('../../src/commands/registry');
-    assert.strictEqual(getCommands().length, 92);
+    assert.strictEqual(getCommands().length, 96);
 });
 
 test('registry: /set-channel has the "transcript" tipe choice + description mentions transcript', () => {
