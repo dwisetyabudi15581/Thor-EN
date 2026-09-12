@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.58
+# 📖 Admin Guide — Thor Bot v3.9.59
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -64,6 +64,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 /set-role verified @Verified
 /set-role unverified @Unverified
 /set-role admin @Staff
+/set-role booster @Booster
 ```
 
 **Explanation:**
@@ -72,6 +73,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `unverified` — the default role for new members (removed after verification)
 - `admin` — the staff role that gets access to ticket channels + the admin panel
 - Admin role changes take effect immediately (the cache is invalidated automatically)
+- `booster` — (v3.9.59, optional) **booster auto role**: a member who boosts the server automatically gets this role and loses it when the boost ends — the same semantics as Discord's built-in Server Booster role, but using your own role (order/color fully configurable). When set, the role is applied right away to everyone CURRENTLY boosting (retroactive — the reply states the count). Boosts that start/end while the bot is offline are synced at startup. **Requirements:** the role must sit BELOW the bot role + the bot needs the **Manage Roles** permission; `/test-booster` checks the whole chain. `/remove-role booster` only turns the automation off — roles already granted are not revoked.
 
 ### Step 2: Set Channels
 
@@ -91,7 +93,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `invoice` — the transaction testimonial channel (filled in automatically on every Set Key / Deliver Order / Order Successful — **once per ticket**, never duplicated)
 - `audit-log` — the channel where the bot records ALL admin actions (63 action types; automatically retried once if delivery fails due to rate limits/network)
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
-- `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off. **Want to test it without waiting for a real boost?** Run `/test-booster tipe:add` (v3.9.58) — it diagnoses the whole chain and previews the exact embed; add `live:true` to also deliver the preview to this channel. Pure simulation, nothing is recorded.
+- `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off. **Want to test it without waiting for a real boost?** Run `/test-booster tipe:add` (v3.9.58) — it diagnoses the whole chain (including the booster role when set, v3.9.59) and previews the exact embed; add `live:true` to also deliver the preview to this channel. Pure simulation, nothing is recorded.
 
 > 📊 **Live server stats counters (v3.9.51, optional):** `/serverstats setup` creates a `📊 SERVER STATS` category at the TOP of the channel list with display-only channels whose NAMES are live counters — `👥 Members: 123`, `🤖 Bots: 2`, `🚀 Boosts: 5`, `🎭 Roles: 9`, `📺 Channels: 12` — the "ServerStats bot" experience without another bot. **v3.9.53: pick which counters to show** — the `members`/`bots`/`boosts`/`roles`/`channels` boolean options are all ON by default; set one to False to skip it (all-False is refused). They update automatically on member/boost/role/channel changes (rate-limit safe: unchanged numbers make zero API calls, and each channel is renamed at most once per 5 minutes — Discord's 2-per-10-min limit). Manage with `/serverstats refresh` (force an update now) and `/serverstats remove` (delete them all — then `setup` again to change the selection). The bot needs **Manage Channels + Manage Roles** for the setup.
 
@@ -1027,9 +1029,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.58) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.59) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
+
+- **v3.9.59** (2026-09-12) — 💬 **user request: "auto booster role — those who boost the server should get a role"**. New **`tipe:booster`** in `/set-role`: the Booster role is **automatically** granted when a member boosts the server and removed when the boost ends (Discord's built-in Server Booster semantics, but with your own role — order/color configurable). Applied **retroactively** to existing boosters when set (the reply states the count), synced at startup for boosts that happened while the bot was offline, and **never revokes** manual grants to regular members. Every skip/failure leaves a cause + fix log line (not set, ghost role, position above the bot role, Manage Roles permission); `/test-booster` also diagnoses the role chain without touching the role (the simulation stays pure); `/remove-role booster` disables the automation without revoking granted roles. +18 unit tests (total **595**).
 
 - **v3.9.58** (2026-09-12) — 🧪 **user request: "command test booster"**. New **`/test-booster`** (92nd command, admin): the boost feature's `/test-welcome` — admins cannot simulate a real boost (it costs real money), so this command proves the whole notification chain works: server-booster channel set → exists → bot View/Send/Embed permissions, plus a **live preview of the exact embed** a real boost sends (same builders as the live event — no drift). `tipe:add` → pink 🚀 preview with the mention; `tipe:remove` → gray 💔 preview. The `live:true` option ALSO delivers the preview to the REAL server-booster channel — the full end-to-end delivery test. **Pure simulation — nothing is recorded** (boost history, server log and counters stay clean). +11 unit tests (total **577**).
 
@@ -1080,6 +1084,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.58
+**Document version:** v3.9.59
 **Last updated:** September 12, 2026
-**Bot version:** 3.9.58 · 92 slash commands · 577 unit tests
+**Bot version:** 3.9.59 · 92 slash commands · 595 unit tests

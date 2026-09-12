@@ -301,6 +301,30 @@ module.exports = async function (interaction) {
             details: `Role **${tipe}** set to ${role.name} (\`${role.id}\`)`,
             guildId: interaction.guild.id
         });
+
+        // v3.9.59: setting the booster role ALSO applies it retroactively to
+        // everyone CURRENTLY boosting (the admin shouldn't wait for the next
+        // boost). syncBoostRoles only grants the role to live boosters —
+        // manual grants to regular members are never touched.
+        if (tipe === 'booster') {
+            let retroNote;
+            try {
+                if (typeof interaction.guild.members.fetch === 'function') {
+                    await interaction.guild.members.fetch(); // cache may be partial — fetch the roster first
+                }
+                const { syncBoostRoles } = require('../bot/boostHandler');
+                const res = await syncBoostRoles(interaction.guild, []);
+                retroNote =
+                    res.applied > 0
+                        ? `\n🚀 ${res.applied} member(s) currently boosting got the role right away. From now on automatic: the role is granted on boost, removed when the boost ends.`
+                        : '\nℹ️ Nobody is boosting right now — the role will be granted automatically when someone boosts, and removed when their boost ends.';
+            } catch (syncErr) {
+                retroNote = `\n⚠️ Role saved, but applying it to existing boosters failed: ${syncErr.message}`;
+            }
+            return safeEditReply(interaction, {
+                content: `✅ Role **${tipe}** set to ${role} (\`${role.id}\`)${retroNote}`
+            });
+        }
         return safeEditReply(interaction, { content: `✅ Role **${tipe}** set to ${role} (\`${role.id}\`)` });
     }
 
@@ -576,7 +600,10 @@ module.exports = async function (interaction) {
                             `• Verified: ${fmt(config.roles.verified, '@&')}`,
                             `• Unverified: ${fmt(config.roles.unverified, '@&')}`,
                             `• Admin: ${fmt(config.roles.admin, '@&')}`,
-                            `• Midman (Escrow): ${fmt(config.roles.midman, '@&')}`
+                            `• Midman (Escrow): ${fmt(config.roles.midman, '@&')}`,
+                            // v3.9.59: booster auto role (granted on boost,
+                            // removed when the boost ends).
+                            `• Booster (auto): ${fmt(config.roles.booster, '@&')}`
                         ].join('\n')
                     ),
                     inline: false

@@ -47,7 +47,7 @@ function getCommands() {
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (verified / unverified / admin / midman)',
+            description: 'Set roles (verified / unverified / admin / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -60,7 +60,11 @@ function getCommands() {
                         { name: 'Unverified', value: 'unverified' },
                         { name: 'Admin', value: 'admin' },
                         // v3.9.32: midman/escrow role — handles 3-party escrow deals.
-                        { name: 'Midman (Escrow)', value: 'midman' }
+                        { name: 'Midman (Escrow)', value: 'midman' },
+                        // v3.9.59: booster role — granted automatically when a
+                        // member boosts, removed when the boost ends. Applied
+                        // retroactively to existing boosters when set.
+                        { name: 'Booster (auto role)', value: 'booster' }
                     ]
                 },
                 { type: 8, name: 'role', description: 'The role to use', required: true }
@@ -548,7 +552,7 @@ function getCommands() {
         // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Remove a role from the config (verified / unverified / admin)',
+            description: 'Remove a role from the config (verified / unverified / admin / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -561,7 +565,11 @@ function getCommands() {
                         { name: 'Unverified', value: 'unverified' },
                         { name: 'Admin', value: 'admin' },
                         // v3.9.32: remove the midman role from the config.
-                        { name: 'Midman (Escrow)', value: 'midman' }
+                        { name: 'Midman (Escrow)', value: 'midman' },
+                        // v3.9.59: remove the booster role from config (roles
+                        // already on members are NOT revoked — the automation
+                        // just stops).
+                        { name: 'Booster (auto role)', value: 'booster' }
                     ]
                 }
             ]

@@ -199,6 +199,36 @@ module.exports = async function (interaction) {
         const boostCount = guild.premiumSubscriptionCount ?? 0;
         lines.push(`ℹ️ Server now: Level ${guild.premiumTier ?? 0} · ${boostCount} boost(s)`);
 
+        // --- v3.9.59: BOOSTER AUTO ROLE chain diagnostics (optional — but when
+        // set it must actually be assignable). Diagnosis only: the role is
+        // NEVER touched here (the simulation stays pure). ---
+        const boosterRoleId = config.roles && config.roles.booster;
+        if (!boosterRoleId) {
+            lines.push('ℹ️ Booster role: not set (optional) → `/set-role booster @role` so boosting members automatically get a role');
+        } else {
+            const boosterRole = guild.roles.cache.get(boosterRoleId);
+            if (!boosterRole) {
+                lines.push(
+                    `❌ **booster role: not found** (ID \`${boosterRoleId}\`) — deleted, or the ID belongs to another server → set it again with \`/set-role booster @role\``
+                );
+            } else {
+                lines.push(`✅ **booster role:** ${boosterRole} — granted automatically when a member boosts, removed when the boost ends`);
+                if (me) {
+                    const botPos = me.roles?.highest?.position;
+                    if (typeof botPos === 'number' && (boosterRole.position ?? 0) >= botPos) {
+                        lines.push(
+                            '❌ the booster role is positioned ABOVE the bot\'s highest role — the bot cannot assign it → move the booster role BELOW the bot role (Server Settings → Roles)'
+                        );
+                    }
+                    const canManageRoles =
+                        typeof me.permissions?.has === 'function' ? me.permissions.has(PermissionFlagsBits.ManageRoles) : null;
+                    if (canManageRoles === false) {
+                        lines.push('❌ the bot lacks the **Manage Roles** permission → enable it in Server Settings → Roles → bot');
+                    }
+                }
+            }
+        }
+
         // --- live preview: the EXACT embed a real boost sends ---
         // interaction.member plays the role of "the booster". For the remove
         // preview, the streak start is the admin's real boost date when they
@@ -237,7 +267,7 @@ module.exports = async function (interaction) {
         }
 
         return safeEditReply(interaction, {
-            content: `${lines.join('\n')}\n\n${previewNote}\n\n🧪 **Simulation only** — nothing is recorded: boost history (\`/boosters\`), the server log and the live counters stay untouched.`
+            content: `${lines.join('\n')}\n\n${previewNote}\n\n🧪 **Simulation only** — nothing is recorded: boost history (\`/boosters\`), the server log and the live counters stay untouched, the booster role is never touched.`
         });
     }
 

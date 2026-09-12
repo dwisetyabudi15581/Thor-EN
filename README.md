@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.58** · 92 slash commands · 577 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.59** · 92 slash commands · 595 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -49,7 +49,7 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
 - Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity & transactions. **Live counter channels** (`/serverstats`) — the channel names themselves are auto-updating counters (members, bots, boosts, roles, channels — **pick which ones to show** via boolean options), rate-limit safe. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date. **`/help` category views are full per-command guides** — syntax, behavior + the answers to the most common questions, so members stop asking.
-- **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history) + **`/test-booster`** — simulate a boost add/remove to test the notification chain end-to-end (pure simulation, nothing recorded).
+- **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history) + **`/test-booster`** — simulate a boost add/remove to test the notification chain end-to-end (pure simulation, nothing recorded) + **booster auto role** — `/set-role booster @role` grants the role automatically when a member boosts (applied retroactively to existing boosters) and removes it when the boost ends.
 
 ### 🎭 And More
 
@@ -137,10 +137,11 @@ Slash commands register instantly to the guild set in `GUILD_ID`. For developmen
 8. `/set-channel audit-log #channel` — the audit log channel
 9. `/set-channel transcript #channel` — the ticket transcript archive channel (optional)
 10. `/set-channel server-booster #channel` — boost notifications (optional — `/boosters` works without it)
-11. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating; pick which counters to show via the `members`/`bots`/`boosts`/`roles`/`channels` boolean options)
-12. `/setup-verify` — install the verification panel
-13. `/setup-ticket` — install the ticket panel
-14. `/config-show` — verify all settings
+11. `/set-role booster @Booster` — booster auto role: granted while boosting, removed when the boost ends (optional — applied right away to existing boosters; `/test-booster` can check the chain)
+12. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating; pick which counters to show via the `members`/`bots`/`boosts`/`roles`/`channels` boolean options)
+13. `/setup-verify` — install the verification panel
+14. `/setup-ticket` — install the ticket panel
+15. `/config-show` — verify all settings
 
 The complete guide — including product examples, custom categories, and daily operations — is here: **[docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md)**.
 

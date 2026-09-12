@@ -99,6 +99,19 @@ async function onReady(client) {
             }
             const boostManager = require('../../data/boostManager');
             const { added, removed } = boostManager.reconcileBoosters(guild);
+            // v3.9.59: booster auto role — STATE sync (not event-based): every
+            // live booster missing the role gets it (offline boosts OR live
+            // assignments that once failed), boosts that ended while offline
+            // lose it. Manual grants to regular members are never touched.
+            try {
+                const { syncBoostRoles } = require('../boostHandler');
+                const roleRes = await syncBoostRoles(guild, removed);
+                if (roleRes.applied > 0 || roleRes.removed > 0) {
+                    console.log(`🎭 Booster role synced: ${roleRes.applied} granted, ${roleRes.removed} removed.`);
+                }
+            } catch (roleErr) {
+                console.warn(`⚠️ Booster role sync failed: ${roleErr.message}`);
+            }
             if (added.length > 0 || removed.length > 0) {
                 const lines = [];
                 if (added.length > 0) lines.push(`🚀 New booster(s) while the bot was offline: ${added.map(id => `<@${id}>`).join(' ')}`);

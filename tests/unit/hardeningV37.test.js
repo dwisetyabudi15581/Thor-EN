@@ -267,8 +267,8 @@ test('help v3.9.37: Auto-Split 3 categories (TRANSACTIONS/SUPPORT/ESCROW) + Midm
     assert.match(allText, /midman-deals/);
     assert.match(allText, /set-role midman/);
 
-    // The role list mentions midman.
-    assert.match(allText, /verified\/unverified\/admin\/\*\*midman\*\*/);
+    // The role list mentions midman (+ booster since v3.9.59).
+    assert.match(allText, /verified\/unverified\/admin\/midman\/\*\*booster\*\*/);
 
     // Dynamic version from package.json.
     const { version: pkgVersion } = require('../../package.json');

@@ -442,7 +442,8 @@ test('helpNav: old content intact in the catalog (regression v3.9.37/v3.9.38)', 
     assert.match(allText, /set-midman-fee/);
     assert.match(allText, /midman-deals/);
     assert.match(allText, /set-role midman/);
-    assert.match(allText, /verified\/unverified\/admin\/\*\*midman\*\*/);
+    // v3.9.59: the set-role line now mentions booster too.
+    assert.match(allText, /verified\/unverified\/admin\/midman\/\*\*booster\*\*/);
     // Panels & popular commands.
     assert.match(allText, /list-panels/);
     assert.match(allText, /update-panel/);

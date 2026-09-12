@@ -352,7 +352,7 @@ const HELP_CATEGORIES = [
         name: 'Roles & Self-Roles',
         short: 'System roles + member-choice role panels',
         lines: [
-            '• `/set-role verified @role` — system roles (verified/unverified/admin/**midman**) · `/remove-role`',
+            '• `/set-role verified @role` — system roles (verified/unverified/admin/midman/**booster**) · `/remove-role`',
             '• `/setup-selfrole title:... type:button` — member-choice role panel',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
             '💡 `requires_role:@Verified` — conditionally locked role'
@@ -361,6 +361,7 @@ const HELP_CATEGORIES = [
         detail: [
             '**System roles (bot logic)** — `/set-role tipe role`:',
             '• `tipe:verified` — granted after verification · `tipe:unverified` — held until then · `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers. `/remove-role tipe` clears one.',
+            '• `tipe:booster` (v3.9.59) — Booster role: granted **automatically** when a member boosts & removed when the boost ends; applied right away to existing boosters when set. Test the chain: `/test-booster`.',
             '',
             '**Self-role panels (member choice)** — members click to take/drop a role themselves:',
             '• `/setup-selfrole title description type:button|dropdown exclusive` — mount the panel. `exclusive:true` = only ONE role from the panel at a time.',
@@ -541,8 +542,8 @@ const HELP_CATEGORIES = [
             '• `/serverstats remove` — delete everything · `/serverstats refresh` — force an update now. To CHANGE the selection: `remove` then `setup` again.',
             '• Updates are automatic: member join/leave, boost add/remove, channel & role create/delete. Rate-limit safe (Discord allows 2 renames per channel / 10 min — updates are throttled and self-heal every ~5 min). Deleted counters warn you; all gone → auto-disable.',
             '',
-            '**Boost notifications:** a member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel tipe:server-booster #ch`), always recorded in the server log + `/boosters` history.',
-            '• **Test it yourself (v3.9.58):** `/test-booster tipe:add` (or `tipe:remove`) — checks the whole chain (channel set → exists → bot permissions), previews the EXACT embed right here, and with `live:true` also delivers it to the real channel. Pure simulation — nothing is recorded.',
+            '**Boost notifications:** a member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel tipe:server-booster #ch`), always recorded in the server log + `/boosters` history. When the booster role is set (`/set-role tipe:booster @role`), that role is granted/removed automatically along with the boost.',
+            '• **Test it yourself (v3.9.58):** `/test-booster tipe:add` (or `tipe:remove`) — checks the whole chain (channel set → exists → bot permissions, plus the booster role when set), previews the EXACT embed right here, and with `live:true` also delivers it to the real channel. Pure simulation — nothing is recorded.',
             '',
             '**Numbers & rankings**',
             '• `/stats` — server overview: live members, boosts, open tickets + tracked activity (messages, transactions). No revenue line — spending is personal.',
