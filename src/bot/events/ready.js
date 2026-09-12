@@ -33,7 +33,22 @@ const { getPending: getPendingAnns } = require('../../data/scheduledAnnouncement
 const { startAutoFlush: startStatsAutoFlush, init: initStats } = require('../../data/statsManager');
 const tempVoiceManager = require('../../data/tempVoiceManager');
 
-const GUILD_ID = process.env.GUILD_ID || null;
+// v3.11.0 phase 2: multi-guild allowlist. The guilds processed at startup +
+// command registration: ALLOWED_GUILD_IDS (fallback GUILD_ID; empty = open
+// mode — every cached guild).
+const { getAllowedGuildIds } = require('../../infra/guild');
+
+/**
+ * Guilds processed at startup — cached allowlist members, or EVERY cached
+ * guild when the allowlist is empty (open mode). Allowlisted guilds that are
+ * not cached yet (bot not invited / guild down) are skipped; the callers log
+ * a warning for them.
+ */
+function startupGuilds(client) {
+    const list = getAllowedGuildIds();
+    if (list.length === 0) return [...client.guilds.cache.values()];
+    return list.map((id) => client.guilds.cache.get(id)).filter(Boolean);
+}
 
 async function onReady(client) {
     console.log(`✅ Bot online as ${client.user.tag}`);
@@ -46,15 +61,10 @@ async function onReady(client) {
     // v3.9.49: server-booster joined the same check (boost notifications).
     try {
         const { getConfig } = require('../../data/configManager');
-        const guild = GUILD_ID
-            ? client.guilds.cache.get(GUILD_ID)
-            : client.guilds.cache.size > 0
-              ? client.guilds.cache.first()
-              : null;
-        if (guild) {
-            // v3.10.0 multi-guild: check this guild's channels (if GUILD_ID
-            // is unset, the first guild is used ONLY for the startup report —
-            // runtime handlers always use their own guild).
+        // v3.11.0: check channels for EVERY allowlisted guild (previously only
+        // GUILD_ID / the first guild was checked — now the report is complete
+        // per-server). Runtime handlers always use their own guild.
+        for (const guild of startupGuilds(client)) {
             const config = getConfig(guild.id);
             const CHANNEL_LABELS = {
                 welcome: 'welcome messages',
@@ -85,13 +95,9 @@ async function onReady(client) {
     // this. Reconcile the live state (guild members cache) against boosts.json,
     // then send ONE consolidated catch-up embed to the server-booster channel
     // when anything actually changed (no spam: one embed, not one per member).
+    // v3.11.0: runs per-guild for EVERY allowlisted guild (not just the first).
     try {
-        const guild = GUILD_ID
-            ? client.guilds.cache.get(GUILD_ID)
-            : client.guilds.cache.size > 0
-              ? client.guilds.cache.first()
-              : null;
-        if (guild) {
+        for (const guild of startupGuilds(client)) {
             // Members cache is empty right after login — fetch the roster first
             // so premiumSinceTimestamp is known for EVERY member, not just the
             // ones the bot happens to have cached.
@@ -156,12 +162,8 @@ async function onReady(client) {
     try {
         const serverstatsManager = require('../../data/serverstatsManager');
         if (serverstatsManager.isEnabled()) {
-            const guild = GUILD_ID
-                ? client.guilds.cache.get(GUILD_ID)
-                : client.guilds.cache.size > 0
-                  ? client.guilds.cache.first()
-                  : null;
-            if (guild) {
+            // v3.11.0: sync counters for EVERY allowlisted guild.
+            for (const guild of startupGuilds(client)) {
                 const result = await serverstatsManager.refreshServerStats(guild, { force: true });
                 if (result.disabled) {
                     console.warn('⚠️ Server stats counters: ALL channels are gone — the feature is disabled. Re-create with /serverstats setup.');
@@ -182,26 +184,41 @@ async function onReady(client) {
     // a successful restart. (The global wipe is still needed so old versions that
     // were once global don't get duplicated.)
 
-    // === 1. Register slash commands to a specific guild (instant) ===
+    // === 1. Register slash commands (v3.11.0: per-guild for EVERY allowlisted guild) ===
     let registeredToGuild = false;
     try {
-        if (!GUILD_ID) {
-            console.warn('⚠️ GUILD_ID is not set in .env. The bot falls back to global commands.');
-            console.warn('   Set GUILD_ID in the .env file for instant registration (1 second vs 1 hour).');
+        const allowed = getAllowedGuildIds();
+        if (allowed.length === 0) {
+            console.warn('⚠️ ALLOWED_GUILD_IDS / GUILD_ID is not set in .env — open mode: global commands.');
+            console.warn('   Every server that invites the bot can use every feature.');
+            console.warn(
+                '   Set ALLOWED_GUILD_IDS (or GUILD_ID) in .env for instant registration (1 second vs 1 hour) and to restrict the bot to the listed servers only.'
+            );
             // set() replaces the ENTIRE global list at once — no pre-wipe needed.
             await client.application.commands.set(getCommands());
         } else {
-            const guild = client.guilds.cache.get(GUILD_ID);
-            if (!guild) {
-                console.warn(
-                    `⚠️ Guild with ID ${GUILD_ID} not found. Make sure the bot has been invited to that server.`
-                );
-                console.warn('   Temporarily falling back to global commands (takes ~1 hour to appear).');
-                await client.application.commands.set(getCommands());
-            } else {
+            // v3.11.0: register the commands to EACH allowlisted guild — instant
+            // in every listed server at once, and guilds outside the list never
+            // see the commands at all (the event guard blocks them too).
+            const missing = [];
+            for (const gid of allowed) {
+                const guild = client.guilds.cache.get(gid);
+                if (!guild) {
+                    missing.push(gid);
+                    continue;
+                }
                 await guild.commands.set(getCommands());
                 registeredToGuild = true;
                 console.log(`✅ Slash Commands registered to guild: ${guild.name} (instant!)`);
+            }
+            for (const gid of missing) {
+                console.warn(
+                    `⚠️ Allowlisted guild with ID ${gid} not found. Make sure the bot has been invited to that server.`
+                );
+            }
+            if (!registeredToGuild) {
+                console.warn('   No allowlisted guild is reachable — temporarily falling back to global commands (takes ~1 hour).');
+                await client.application.commands.set(getCommands());
             }
         }
     } catch (err) {
@@ -302,7 +319,9 @@ async function onReady(client) {
     }
 
     // === 7. Init statsManager with the default guild for legacy migration ===
-    const defaultStatsGuildId = GUILD_ID || (client.guilds.cache.size > 0 ? client.guilds.cache.first().id : null);
+    // v3.11.0: the first allowlisted guild (fallback: the first cached guild).
+    const defaultStatsGuildId =
+        getAllowedGuildIds()[0] || (client.guilds.cache.size > 0 ? client.guilds.cache.first().id : null);
     if (defaultStatsGuildId) {
         try {
             initStats(defaultStatsGuildId);
@@ -399,5 +418,7 @@ async function onReady(client) {
 module.exports = {
     name: Events.ClientReady,
     once: true,
-    execute: onReady
+    execute: onReady,
+    // v3.11.0: exported for unit tests (startup guild selection).
+    _startupGuilds: startupGuilds
 };

@@ -9,12 +9,16 @@
 
 const { Events, AuditLogEvent } = require('discord.js');
 const { logServerEvent, findAuditExecutor, snip } = require('../../infra/serverLog');
+// v3.11.0: multi-guild allowlist guard (phase 2).
+const { isGuildAllowed } = require('../../infra/guild');
 
 async function onEvent(ban) {
     try {
         const { guild, user, reason } = ban;
         if (!guild?.id) return;
-        if (process.env.GUILD_ID && guild.id !== process.env.GUILD_ID) return;
+        // v3.11.0: allowlist guard — guilds outside ALLOWED_GUILD_IDS (fallback
+        // GUILD_ID) are ignored; an empty list = open mode (every guild processed).
+        if (!isGuildAllowed(guild.id)) return;
 
         // Executor + official reason from the audit log (the event's reason
         // parameter is often null for manual UI bans — the audit log is fuller).

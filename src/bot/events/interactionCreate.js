@@ -14,6 +14,8 @@
 const { Events, MessageFlags } = require('discord.js');
 const routeCommand = require('../../commands');
 const routeInteraction = require('../../interactions');
+// v3.11.0: multi-guild allowlist guard (phase 2).
+const { isGuildAllowed } = require('../../infra/guild');
 
 function isTransientNetworkError(err) {
     if (!err) return false;
@@ -43,12 +45,12 @@ function isIgnorableReplyError(err) {
 
 async function onInteractionCreate(interaction) {
     try {
-        // v3.9.26 (single-guild hardening): if GUILD_ID is set, ignore
-        // interactions from other guilds. Without this guard, commands could be
-        // used in a second guild (if the bot gets accidentally invited): global
-        // config → the main guild's roles/channels get used there → weird
-        // behavior + stray data.
-        if (process.env.GUILD_ID && interaction.guildId && interaction.guildId !== process.env.GUILD_ID) {
+        // v3.9.26 (single-guild hardening) → v3.11.0 (allowlist): ignore
+        // interactions from guilds outside ALLOWED_GUILD_IDS (fallback GUILD_ID;
+        // empty list = open mode). Without this guard, commands could be used in
+        // a foreign guild (if the bot gets invited there): that guild's
+        // roles/channels get used → weird behavior + stray data.
+        if (interaction.guildId && !isGuildAllowed(interaction.guildId)) {
             return;
         }
         if (interaction.isChatInputCommand()) {

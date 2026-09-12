@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.11.0] — 2026-09-12
+
+### Added — 🛡️ MULTI-GUILD PHASE 2: the ALLOWED_GUILD_IDS allowlist
+
+- 🟢 **The `ALLOWED_GUILD_IDS` guard** (`src/infra/guild.js` — `getAllowedGuildIds()` + `isGuildAllowed()`): a comma/space-separated list of server IDs allowed to use the bot (e.g. `ALLOWED_GUILD_IDS=111...,222...`). Priority: `ALLOWED_GUILD_IDS` > `GUILD_ID` > neither set (open mode = the v3.10.0 behavior). Phase 1 (v3.10.0) made per-server DATA safe, but any server that invited the bot was still served in full — phase 2 hands the admin a GATE: servers outside the list are ignored entirely (messages, joins, boosts, tickets, voice, interactions).
+- 🟢 **All 11 event handlers migrated to the allowlist guard** (messageCreate, messageUpdate, messageDelete, messageBulkDelete, interactionCreate, guildMemberAdd, guildMemberRemove, guildMemberUpdate, guildBanAdd, guildBanRemove, voiceStateUpdate) — the `process.env.GUILD_ID && x !== process.env.GUILD_ID` pattern replaced by `!isGuildAllowed(x)`. The previously visible skips (joins/leaves from a foreign guild) stay visible and now name the allowlist.
+- 🟢 **Slash command registration per-guild for EVERY allowlisted server** (ready.js): commands are registered to EACH guild on the list — instant in every listed server at once, and guilds outside the list never even see the commands (not merely blocked when used). An allowlisted guild that is not cached yet (not invited) → a clear warning, no crash; if NONE are reachable → the global-command fallback is kept (the old behavior).
+- 🟢 **Startup now runs per-guild for every allowlisted server:** the welcome/goodbye/booster channel check, the offline boost catch-up, and the server-stats counter sync now run for EACH allowlisted guild (previously only the GUILD_ID / first guild was checked — a second guild was never reconciled).
+- 🟢 **The v3.10.0 legacy config claim gate follows the allowlist:** a SINGLE-entry allowlist → only that guild may claim the old `config.json` (other servers cannot "steal" it); empty / multi-entry → the first caller (the v3.10.0 behavior).
+- 🟢 **`.env.example`** fully documented: the 3-mode priority + examples + how to add a new server (invite → add the ID → restart).
+- 🟢 **+15 unit tests (total 613):** `guildGuard.test.js` — list parsing (commas/spaces/empty entries/priority over GUILD_ID), the pure guard (open mode/members/null DMs), event handler guards (a foreign-guild join ignored + logged; a foreign interaction never routed), the legacy claim gate (a foreign guild gets DEFAULTS, the single allowlisted guild claims + `.migrated`), `startupGuilds` (allowlist/filter/skipping uncached guilds), and the ready.js static contract.
+
+### Compatibility
+- **Old .env files need NO changes** — without `ALLOWED_GUILD_IDS`, the old `GUILD_ID` automatically becomes a one-entry allowlist (exactly the v3.9.26/v3.10.0 behavior). Without either → open mode (exactly v3.10.0).
+- Adding a server: invite the bot → add its ID to `ALLOWED_GUILD_IDS` → restart.
+
 ## [3.10.0] — 2026-09-12
 
 ### Added — 🌍 MULTI-GUILD PHASE 1: per-server config

@@ -11,6 +11,8 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { incrementMessages: trackMessage } = require('../../data/statsManager');
 const { getConfig } = require('../../data/configManager');
+// v3.11.0: multi-guild allowlist guard (phase 2).
+const { isGuildAllowed } = require('../../infra/guild');
 
 // Data managers for the new features
 const responderManager = require('../../data/responderManager');
@@ -92,13 +94,13 @@ async function onMessageCreate(message) {
         if (!message.author || message.author.bot || message.webhookId) return;
         if (!message.guild) return;
 
-        // v3.9.26 (single-guild hardening): if GUILD_ID is set in .env, ignore
-        // messages from other guilds. This is a single-guild bot — if it gets
-        // accidentally invited to another server, without this guard: leveling
-        // runs (global config!), XP gets scattered into levels.json, the main
-        // guild's role IDs get added to the other guild's members (fails), and
-        // audit logs stray into the main guild's channel. The guard is cheap insurance.
-        if (process.env.GUILD_ID && message.guild.id !== process.env.GUILD_ID) return;
+        // v3.9.26 → v3.11.0 (allowlist): ignore messages from guilds outside
+        // ALLOWED_GUILD_IDS (fallback GUILD_ID; empty list = every guild).
+        // Without this guard, if the bot gets invited to a foreign server:
+        // leveling runs with the foreign guild's config, XP gets scattered,
+        // the wrong guild's role IDs get added, and audit logs stray.
+        // The guard is cheap insurance.
+        if (!isGuildAllowed(message.guild.id)) return;
 
         // Detect whether the Message Content Intent isn't enabled yet.
         // A user message that arrived with empty content AND isn't "empty by

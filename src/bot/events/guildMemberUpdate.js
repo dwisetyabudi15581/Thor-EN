@@ -28,6 +28,8 @@
 
 const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
+// v3.11.0: multi-guild allowlist guard (phase 2).
+const { isGuildAllowed } = require('../../infra/guild');
 // v3.9.49: boost notifications (server-booster channel + server log + history).
 // v3.9.59: applyBoostRole — booster auto role (called AFTER the notification
 // so the history stays recorded even when the role assignment fails).
@@ -39,7 +41,9 @@ const { markStatsDirty } = require('../../data/serverstatsManager');
 async function onEvent(oldMember, newMember) {
     try {
         if (!newMember?.guild?.id) return;
-        if (process.env.GUILD_ID && newMember.guild.id !== process.env.GUILD_ID) return;
+        // v3.11.0: allowlist guard — guilds outside ALLOWED_GUILD_IDS (fallback
+        // GUILD_ID) are ignored; an empty list = open mode (every guild processed).
+        if (!isGuildAllowed(newMember.guild.id)) return;
         if (newMember.user?.bot) return;
 
         const hasOldState = !!(oldMember && oldMember.roles && oldMember.roles.cache);

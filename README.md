@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.10.0** · 92 slash commands · 598 unit tests · discord.js v14 · Node.js 18+ · multi-guild
+> **v3.11.0** · 92 slash commands · 613 unit tests · discord.js v14 · Node.js 18+ · multi-guild (allowlist)
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
