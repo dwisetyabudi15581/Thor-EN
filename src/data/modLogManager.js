@@ -137,11 +137,26 @@ function modLogTypeLabel(type) {
     }
 }
 
+/**
+ * v3.9.60: reset the in-memory cache so the next read reloads from disk.
+ * Called by backupManager after a /restore-backup — modlogs.json is restored
+ * (v3.9.60) and a permanent `store` cache holding the PRE-restore state would
+ * otherwise be written back over the freshly restored file by the next
+ * addModLog() → silent loss of the restored moderation history (the exact
+ * bug class already fixed for stats/serverstats/boosts).
+ * @returns {Object} the freshly loaded store
+ */
+function reload() {
+    store = null;
+    return load();
+}
+
 module.exports = {
     addModLog,
     getModLogs,
     getModLogCount,
     modLogTypeLabel,
+    reload,
     _filePath: filePath,
     _resetForTests() {
         store = null;

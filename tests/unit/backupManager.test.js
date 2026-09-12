@@ -131,11 +131,163 @@ test('v3.9.24 GUARD: FILES_TO_BACKUP covers every live JSON file in data/', () =
         return; // fresh checkout without data — nothing can be missing
     }
     const liveFiles = fs.readdirSync(dataDir).filter(f => f.endsWith('.json'));
-    assert.ok(liveFiles.length > 0, 'data/ should contain at least a few JSON files in this dev repo');
+    if (liveFiles.length === 0) {
+        // v3.9.60 FIX: fresh checkout / CI — data/ exists (gitkeep) but holds no
+        // runtime JSON (all data/*.json are gitignored). Previously this branch
+        // FAILED the assertion below, making `npm test` red on every fresh clone.
+        // Nothing live on disk → nothing can be missing from FILES_TO_BACKUP.
+        // The registry itself is guarded by the dedicated regression tests below.
+        return;
+    }
     for (const f of liveFiles) {
         assert.ok(
             FILES_TO_BACKUP.includes(f),
             `Live data file "${f}" is NOT in FILES_TO_BACKUP — the backup has a hole! Add it to src/data/backupManager.js`
         );
+    }
+});
+
+// ====================================================
+// === v3.9.60 REGRESSION: FILES_TO_BACKUP registry completeness ===
+// ====================================================
+// The GUARD test above can only catch holes when data/ holds live runtime files
+// (never true on a fresh clone / CI — data/*.json are gitignored). These
+// registry assertions are order-independent and environment-independent, so the
+// holes caught in the wild are pinned here forever.
+
+test('v3.9.60 REGRESSION: modlogs.json is in FILES_TO_BACKUP (modLogManager v3.9.43 hole)', () => {
+    // Real bug: modLogManager (v3.9.43) writes data/modlogs.json (per-user
+    // timeout/kick/ban history shown by /warn-list), but the file was NEVER
+    // added to FILES_TO_BACKUP → /backup-now skipped it and /restore-backup
+    // silently lost all moderation history.
+    assert.ok(
+        FILES_TO_BACKUP.includes('modlogs.json'),
+        'modlogs.json must be in FILES_TO_BACKUP — moderation history was silently excluded from backups'
+    );
+});
+
+test('v3.9.60 REGRESSION: every data manager JSON file name is in FILES_TO_BACKUP', () => {
+    // Cross-check the managers that persist a data/<name>.json file (grep for
+    // path.join(..., 'data', '<file>.json') in src/data/*). A new manager added
+    // without a FILES_TO_BACKUP entry breaks this test — same invariant as the
+    // live-file GUARD above, but green on a fresh clone.
+    const managerFiles = [
+        'config.json',
+        'keys.json',
+        'scheduledRoles.json',
+        'selfRoles.json',
+        'giveaways.json',
+        'warns.json',
+        'polls.json',
+        'scheduledAnnouncements.json',
+        'stats.json',
+        'tempVoice.json',
+        'tickets.json',
+        'automod.json',
+        'levels.json',
+        'responders.json',
+        'afk.json',
+        'panels.json',
+        'deals.json',
+        'boosts.json',
+        'serverstats.json',
+        'modlogs.json'
+    ];
+    for (const f of managerFiles) {
+        assert.ok(
+            FILES_TO_BACKUP.includes(f),
+            `"${f}" (data-layer manager file) is missing from FILES_TO_BACKUP — add it to src/data/backupManager.js`
+        );
+    }
+});
+
+// ====================================================
+// === v3.9.60 REGRESSION: post-restore cache invalidation ===
+// ====================================================
+// Real bug: boosts.json has been restored since v3.9.49, but boostManager holds
+// a permanent in-memory `store` cache that was never invalidated post-restore
+// (only stats/serverstats/permissions/panels/automod/afk/responders/levels
+// were). The first boost event after a restore mutated the STALE pre-restore
+// object and save() wrote it over the freshly restored boosts.json → silent
+// loss of the restored history. modlogs.json (added to FILES_TO_BACKUP in
+// v3.9.60) has the same permanent-cache pattern → must be invalidated too.
+test('v3.9.60 REGRESSION: restoreBackup invalidates boostManager & modLogManager caches', () => {
+    // 1. Create a real backup with a boosts.json + modlogs.json in it.
+    const boostsPath = path.join(__dirname, '..', '..', 'data', 'boosts.json');
+    const modlogsPath = path.join(__dirname, '..', '..', 'data', 'modlogs.json');
+    const hadBoosts = fs.existsSync(boostsPath);
+    const hadModlogs = fs.existsSync(modlogsPath);
+    const oldBoosts = hadBoosts ? fs.readFileSync(boostsPath, 'utf8') : null;
+    const oldModlogs = hadModlogs ? fs.readFileSync(modlogsPath, 'utf8') : null;
+    fs.writeFileSync(
+        boostsPath,
+        JSON.stringify({ 'g1:u1': { guildId: 'g1', userId: 'u1', totalBoosts: 7 } }),
+        'utf8'
+    );
+    fs.writeFileSync(modlogsPath, JSON.stringify({ 'g1:u1': [{ id: 'mod_x', type: 'ban' }] }), 'utf8');
+    try {
+        const created = createBackup();
+        assert.ok(created.ok, 'createBackup should succeed');
+        assert.ok(created.filesCopied >= 2, 'boosts.json + modlogs.json should be in the backup');
+
+        // 2. Prime the managers' permanent caches with the current (live) state.
+        const boostManager = require('../../src/data/boostManager');
+        const modLogManager = require('../../src/data/modLogManager');
+        boostManager.getBoostHistory('g1'); // populates store cache
+        modLogManager.getModLogs('g1', 'u1'); // populates store cache
+
+        // 3. Change the live files to something DIFFERENT from the backup...
+        fs.writeFileSync(
+            boostsPath,
+            JSON.stringify({ 'g1:u1': { guildId: 'g1', userId: 'u1', totalBoosts: 99 } }),
+            'utf8'
+        );
+        fs.writeFileSync(modlogsPath, JSON.stringify({ 'g1:u1': [{ id: 'mod_y', type: 'kick' }] }), 'utf8');
+
+        // 4. Restore the backup (should copy the backed-up values back AND drop
+        //    the stale in-memory caches). The restore is sandboxed to the real
+        //    backups/ folder by the stash at the top of this file.
+        const restored = restoreBackup(created.backupName);
+        assert.ok(restored.ok, 'restoreBackup should succeed');
+        assert.strictEqual(
+            JSON.parse(fs.readFileSync(boostsPath, 'utf8'))['g1:u1'].totalBoosts,
+            7,
+            'boosts.json content should be the restored one'
+        );
+        assert.strictEqual(
+            JSON.parse(fs.readFileSync(modlogsPath, 'utf8'))['g1:u1'][0].id,
+            'mod_x',
+            'modlogs.json content should be the restored one'
+        );
+
+        // 5. THE REGRESSION: the caches must now reflect the RESTORED data, not
+        //    the pre-restore state (a permanent store cache that still holds
+        //    totalBoosts=99 / mod_y would overwrite the restored file on the
+        //    next save()).
+        assert.strictEqual(
+            boostManager.getBoostHistory('g1').find(e => e.userId === 'u1')?.totalBoosts,
+            7,
+            'boostManager cache must be reloaded from the RESTORED boosts.json (was stale → silent data loss)'
+        );
+        assert.strictEqual(
+            modLogManager.getModLogs('g1', 'u1')[0]?.id,
+            'mod_x',
+            'modLogManager cache must be reloaded from the RESTORED modlogs.json (was stale → silent data loss)'
+        );
+    } finally {
+        // 6. Restore the original (pre-test) state of the live files.
+        try {
+            if (oldBoosts !== null) fs.writeFileSync(boostsPath, oldBoosts, 'utf8');
+            else fs.rmSync(boostsPath, { force: true });
+            if (oldModlogs !== null) fs.writeFileSync(modlogsPath, oldModlogs, 'utf8');
+            else fs.rmSync(modlogsPath, { force: true });
+        } catch (_) {}
+        // Drop the caches so other tests / a later fresh start re-read from disk.
+        try {
+            require('../../src/data/boostManager').reload();
+            require('../../src/data/modLogManager').reload();
+        } catch (_) {}
+        void hadBoosts;
+        void hadModlogs;
     }
 });

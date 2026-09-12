@@ -68,7 +68,14 @@ const FILES_TO_BACKUP = [
     // restore-backup would lose the counter channel mapping → the counters
     // silently stop updating after a restore (the events mark a config that
     // no longer exists). The manager cache is also reloaded post-restore.
-    'serverstats.json'
+    'serverstats.json',
+    // v3.9.60 FIX: modlogs.json — per-user moderation action history
+    // (timeout/kick/ban, shown by /warn-list). modLogManager (v3.9.43) has
+    // written this file for 17 versions, but it was never added here →
+    // /backup-now skipped it and /restore-backup silently lost the whole
+    // moderation history. Its in-memory cache is invalidated post-restore
+    // (see _restoreBackupImpl) — same pattern as boosts below.
+    'modlogs.json'
 ];
 
 // v3.9.10: helper to resolve data file paths (to the data/ folder).
@@ -321,6 +328,26 @@ function _restoreBackupImpl(name) {
     try {
         const serverstats = require('./serverstatsManager');
         if (typeof serverstats.reload === 'function') serverstats.reload();
+    } catch (_) {}
+
+    // v3.9.60 FIX: boosts.json is restored (since v3.9.49) but boostManager
+    // holds a permanent in-memory `store` cache that was never dropped here.
+    // The first boost event after a restore mutated the STALE pre-restore
+    // object and save() wrote it over the freshly restored boosts.json →
+    // silent loss of the restored boost history. Same bug class as the
+    // stats/serverstats fixes above, just 11 versions late.
+    try {
+        const boostManager = require('./boostManager');
+        if (typeof boostManager.reload === 'function') boostManager.reload();
+    } catch (_) {}
+
+    // v3.9.60: modlogs.json is now restored (see FILES_TO_BACKUP) and
+    // modLogManager has the same permanent `store` cache — drop it too, or
+    // the next addModLog() would overwrite the restored moderation history
+    // with the pre-restore in-memory snapshot.
+    try {
+        const modLogManager = require('./modLogManager');
+        if (typeof modLogManager.reload === 'function') modLogManager.reload();
     } catch (_) {}
 
     // v3.9.4: invalidate the admin role permissions cache too.
