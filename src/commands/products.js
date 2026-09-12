@@ -28,6 +28,11 @@ const { MessageFlags, getConfig, saveConfig, Embeds, logAudit, safeEditReply, pa
  * v3.9.55 (user question: "does it support decimals like $2.5 USD?"):
  * DECIMAL prices with a non-Rp marker are valid ("$2.5", "$2.50", "€9.99") —
  * cents are recorded in the stats (2.5, not 3).
+ * v3.9.57 (user request: "make the /add-product price support decimals, e.g.
+ * 5.88"): MARKER-LESS decimals are valid too — "5.88" and "5,88" without a
+ * currency marker now record as 5.88 ("5.88" used to record as 588 — a bare
+ * dot was read as a thousands separator). 3-digit dot groups stay thousands
+ * ("50.000" → 50000).
  * Exported for unit tests (tests/unit/parsePrice.test.js).
  */
 function priceValidationError(price) {
@@ -37,7 +42,7 @@ function priceValidationError(price) {
     if (parsePriceNum(raw) > 0) return null; // parses to a positive amount — OK
     return (
         `❌ The price \`${raw}\` cannot be read as an amount — it would record **0** into the stats on every sale.\n` +
-        `✅ Accepted formats: \`25000\` · \`25.000\` · \`25,000\` · \`$3\` · \`$2.50\` · \`€25\` · \`Rp 30.000\` · \`30rb\` · \`3jt\` · \`3$ USD | Rp 25.000\` (the Rp part is recorded) · \`free\``
+        `✅ Accepted formats: \`25000\` · \`25.000\` · \`25,000\` · \`$3\` · \`$2.50\` · \`5.88\` · \`€25\` · \`Rp 30.000\` · \`30rb\` · \`3jt\` · \`3$ USD | Rp 25.000\` (the Rp part is recorded) · \`free\``
     );
 }
 

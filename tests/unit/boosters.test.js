@@ -24,6 +24,11 @@
  * boostedAt to the REAL premium_since (not the reconcile time); (e)
  * getRecentEvents limit + event shape; (f) $5.88 decimal price guard (v3.9.55
  * cents preservation).
+ *
+ * v3.9.57 (user request: "make the /add-product price support decimals, e.g.
+ * 5.88"): +1 test — MARKER-LESS decimal price guard at the command level:
+ * /add-product price:5.88 → saved + "Counted in stats as: 5.88" (without a
+ * currency marker too, a 1-2 digit dot fraction now reads as a decimal).
  */
 
 const test = require('node:test');
@@ -538,6 +543,42 @@ test('PRODUCT PRICE GUARD v3.9.55: /add-product accepts a $5.88 decimal → stat
     const configAfter = require('../../src/data/configManager').getConfig();
     assert.strictEqual(configAfter.products.length, 1, 'product saved');
     assert.strictEqual(configAfter.products[0].price, '$5.88', 'price saved exactly as the admin typed it');
+});
+
+test('PRODUCT PRICE GUARD v3.9.57: /add-product marker-less decimal 5.88 → stats records 5.88', async () => {
+    // User request: "make the /add-product price support decimals, e.g. 5.88" —
+    // WITHOUT any currency marker too, a 1-2 digit dot fraction now reads as a
+    // decimal (a bare "5.88" used to record as 588 in the stats — the dot was
+    // read as a thousands separator, a silent 100x error; the admin had to
+    // write "$5.88" or "5,88" to get 5.88).
+    writeTestConfig({});
+    const replies = [];
+    const interaction = {
+        commandName: 'add-product',
+        deferReply: async () => {},
+        editReply: async opts => {
+            replies.push(opts);
+            return {};
+        },
+        guild: { id: GUILD_ID, name: 'Boost Test Server' },
+        user: { id: 'admin_1', tag: 'Admin#0001' },
+        client: { channels: { cache: new Map() } },
+        options: {
+            getString: name => (name === 'price' ? '5.88' : name === 'label' ? 'Plain Decimal Product' : name === 'value' ? 'tp_plain_decimal' : null),
+            getBoolean: () => null
+        }
+    };
+
+    const productsCommand = require('../../src/commands/products');
+    await productsCommand(interaction);
+
+    assert.match(replies[0].content, /✅ Product added/);
+    // Bare "5.88" → 5.88 (en-US dot) — NOT "588" like the pre-v3.9.57 era, and
+    // not "5.9" (cents are preserved, max 2 decimals).
+    assert.match(replies[0].content, /Counted in stats as: \*\*5\.88\*\*/);
+    const configAfter = require('../../src/data/configManager').getConfig();
+    assert.strictEqual(configAfter.products.length, 1, 'product saved');
+    assert.strictEqual(configAfter.products[0].price, '5.88', 'price saved exactly as the admin typed it');
 });
 
 // ============ CLEANUP ============

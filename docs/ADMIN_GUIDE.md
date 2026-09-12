@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.56
+# 📖 Admin Guide — Thor Bot v3.9.57
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -121,9 +121,24 @@ The bot sends an embed + a "Verify Me" button to the channel where the command w
 
 - `label` — the name shown to members
 - `value` — unique ID (no spaces, e.g. `7d`, `30d`, `perm`)
-- `price` — free-form string, ANY currency (v3.9.54): `$3`, `€25`, `¥1000`, `₩25,000`, `25 usd`, `IDR 30.000`, Indonesian format (`Rp. 50.000`), plain numbers (`25000`, `25,000`), suffixes (`25rb`, `2jt`), or dual-currency (`3$ USD | Rp 25.000` — stats record the **Rp part**, 25.000; without an Rp part the FIRST amount is recorded). **Decimals keep their cents (v3.9.55):** with a non-Rp marker `$2.5` / `$2.50` → 2.5 and `$9.99` → 9.99, while a 3-digit dot group stays thousands (`$50.000` → 50.000). The bot is currency-agnostic: use ONE currency consistently — stats show plain numbers
+- `price` — free-form string, ANY currency (v3.9.54): `$3`, `€25`, `¥1000`, `₩25,000`, `25 usd`, `IDR 30.000`, Indonesian format (`Rp. 50.000`), plain numbers (`25000`, `25,000`), suffixes (`25rb`, `2jt`), or dual-currency (`3$ USD | Rp 25.000` — stats record the **Rp part**, 25.000; without an Rp part the FIRST amount is recorded). **Decimals are fully supported (v3.9.57):** `$2.5` / `$2.50` / `5.88` / `5,88` / `€9.99` all record with their cents (2.5 / 5.88 / 9.99) — with OR without a currency marker — while a 3-digit dot group stays thousands (`50.000` → 50.000). The bot is currency-agnostic: use ONE currency consistently — stats show plain numbers
 - `duration` — optional, informational only (it does not automatically become the role's expiry duration)
 - Maximum of 25 products (Discord dropdown limit)
+
+**Price spelling cheat sheet (v3.9.57):**
+
+| You type | Recorded in stats | Notes |
+|---|---|---|
+| `Rp 50.000` · `50.000` · `50000` · `50rb` · `2jt` | 50.000 · 2.000.000 | Indonesian format — dot groups are always 3 digits |
+| `25000` · `25,000` | 25.000 | plain numbers / comma thousands |
+| `$3` · `€25` · `25 usd` | 3 · 25 | any currency marker |
+| `5.88` · `5,88` · `$5.88` · `5.88 usd` | **5.88** | ✅ decimal — 1-2 digit fraction, with/without a marker |
+| `$2.5` · `0.99` · `12.99` | **2.5** · **0.99** · **12.99** | ✅ small decimals are valid too |
+| `1.50rb` · `9.99jt` | 1.500 · 9.990.000 | ✅ suffix + decimal, consistent |
+| `3$ USD \| Rp 25.000` | 25.000 | dual currency → the Rp part is recorded |
+| `cheap` · `negotiable` | ❌ rejected | the guard shows the format list during setup |
+
+**Watch out:** a **3-digit** fraction is always a thousands group — `5.880` = 5.880 (for a decimal, write `5.88`). Conversely, write thousands in their proper form: `150` (not `1.50` — that now reads as 1.5) and `10.000` (not `100.00` — that now reads as 100). **Escrow** deal amounts stay whole-numbers-only — `$2.5` is rejected (deal safety); for $5.88 enter `588` (in cents).
 
 ### Step 5: Set the Auto-Role for Each Product
 
@@ -905,6 +920,7 @@ Also check `/list-responder` to make sure the responder is registered. Triggers 
 - **Dual-currency prices are parsed correctly (v3.9.50):** `3$ USD | Rp. 25.000` records **Rp 25.000** per sale.
 - **Any currency works (v3.9.54):** USD-only and every other marker (`$3`, `€25`, `¥1000`, `25 usd`…) is accepted — the bot is currency-AGNOSTIC and records the numeric amount in your pricing currency (no conversion). Stats and escrow embeds show plain locale numbers (no hardcoded `Rp`).
 - **Decimal prices keep their cents (v3.9.55):** with a non-Rp currency marker, `$2.5` / `$2.50` records **2.5** and `$9.99` records **9.99** per sale — a single dot with a 1-2 digit fraction is a decimal, a 3-digit group stays thousands (`$50.000` → 50.000). Before v3.9.55, `$2.50` silently recorded 250 (100x off) and `$2.5` rounded to 3. Escrow deal amounts stay **whole-numbers-only** by design (deal safety).
+- **Marker-less decimals are valid too (v3.9.57):** `5.88` WITHOUT any currency marker now records **5.88** per sale (it used to read as 588 — a silent 100x error; admins had to write `$5.88` or `5,88`). A single dot with a 1-2 digit fraction is now always a decimal — with or without a marker — because a valid Indonesian thousands group is always 3 digits. Consequence: `1.50` now reads as 1.5 (was 150) — write `150` for 150; `5.880` stays 5.880 (a 3-digit group = thousands). See the price spelling cheat sheet in Step 4.
 - **`/add-product` rejects unparseable prices** (e.g. `murah`, `negosiasi`) with the accepted-format list, and shows `💰 Counted in stats as: 25,000 per sale` in the confirmation — a bad format can no longer record 0 silently. `/update-product` shows the counted amount too when the price changes. Fix a badly-formatted price with `/update-product value:... price:25.000`.
 - Personal spending counts **ticket orders + escrow completions** (price + fee) processed through the bot. Manual sales outside tickets/deals are not tracked. Sales recorded BEFORE these fixes keep their small historical amounts in `stats.json` (history is not recomputed).
 
@@ -1011,9 +1027,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.56) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.57) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
+
+- **v3.9.57** (2026-09-12) — 💬 **user request: "make the /add-product price support decimals, e.g. 5.88"**. MARKER-LESS decimals are now supported: `5.88` records as **5.88** (it used to read as 588 — a silent 100x error; admins had to write `$5.88` or `5,88`). A single dot with a 1-2 digit fraction is now always a decimal — with or without a currency marker — because a valid Indonesian thousands group is always 3 digits (`50.000`). A 3-digit fraction & multi-dot stay thousands; escrow stays whole-numbers-only; a price spelling cheat sheet was added in Step 4. +3 unit tests (total **566**).
 
 - **v3.9.56** (2026-09-12) — 🧪 **user request: "add booster tests too"**. +6 unit tests for the SERVER BOOSTER feature (total **563**): five previously unpinned `reconcileBoosters` paths — a lapsed-&-restarted streak while offline (boostedAt refreshed WITHOUT inflating totalBoosts), bot members skipped, the null/broken-guild guard, offline adds pinning boostedAt to the REAL premium_since, and getRecentEvents limit+event shape — plus a command-level decimal price guard `/add-product $5.88` (confirmation "Counted in stats as: 5.88"). No runtime changes — the tests pin the existing booster behavior contract.
 
@@ -1060,6 +1078,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.56
+**Document version:** v3.9.57
 **Last updated:** September 12, 2026
-**Bot version:** 3.9.56 · 91 slash commands · 563 unit tests
+**Bot version:** 3.9.57 · 91 slash commands · 566 unit tests

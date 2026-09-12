@@ -39,25 +39,27 @@ test('parsePrice: ID thousand separator (dot)', () => {
     assert.strictEqual(parsePrice('99.999'), 99999);
 });
 
-test('parsePrice: v3.9.8 FIX — ID format with 2-digit suffix', () => {
-    // v3.9.9 FIX: the heuristic was tightened again. "1.50" now → 150 (thousand),
-    // not 1.5 (decimal). For Rupiah, integer prices are far more common.
-    assert.strictEqual(parsePrice('1.50'), 150);
-    assert.strictEqual(parsePrice('10.50'), 1050);
-    assert.strictEqual(parsePrice('100.00'), 10000);
-    assert.strictEqual(parsePrice('99.99'), 9999);
+test('parsePrice v3.9.57: marker-less 2-digit fraction is a DECIMAL (no longer thousands)', () => {
+    // v3.9.8/9/17 (Rupiah-centric era): "1.50" → 150, "100.00" → 10000 — a
+    // marker-less dot was ALWAYS read as a thousands separator. v3.9.57 (user
+    // request: "make the /add-product price support decimals, e.g. 5.88"): a
+    // VALID Indonesian thousands group is always 3 digits, so a 1-2 digit
+    // fraction cannot be a correct Rupiah format — it now reads as a decimal,
+    // consistent with the v3.9.55 marker rule. Write 150 as "150" and 10000
+    // as "10.000".
+    assert.strictEqual(parsePrice('1.50'), 1.5);
+    assert.strictEqual(parsePrice('10.50'), 10.5);
+    assert.strictEqual(parsePrice('100.00'), 100);
+    assert.strictEqual(parsePrice('99.99'), 99.99);
 });
 
-test('parsePrice: actual decimal (only int < 10 + 1-digit fractional)', () => {
-    // v3.9.9: only int part < 10 AND a 1-digit fractional part → decimal.
-    // v3.9.55: cents are PRESERVED (currency-agnostic stats) — "2.5" → 2.5
-    // and "9.9" → 9.9, no longer rounded to 3 / 10.
+test('parsePrice: small marker-less decimals (1-digit fraction)', () => {
+    // v3.9.9: int part < 10 AND a 1-digit fraction → decimal. v3.9.55: cents
+    // are PRESERVED (currency-agnostic stats) — "2.5" → 2.5 and "9.9" → 9.9,
+    // no longer rounded to 3 / 10. v3.9.57: the same rule now applies to
+    // 2-digit fractions too (see the v3.9.57 block below).
     assert.strictEqual(parsePrice('2.5'), 2.5);
     assert.strictEqual(parsePrice('9.9'), 9.9);
-    // "9.99" still → 999 (thousand), not 9.99 (decimal) — no marker, so the
-    // Rp-centric heuristic applies (Rupiah prices under 10 with a 2-digit
-    // decimal are very rare). With a marker, "$9.99" → 9.99 (v3.9.55 below).
-    assert.strictEqual(parsePrice('9.99'), 999);
 });
 
 test('parsePrice: comma as thousand separator', () => {
@@ -266,13 +268,15 @@ test('parsePrice v3.9.55: 3-digit dot groups with a marker stay THOUSANDS', () =
     assert.strictEqual(parsePrice('$2.5k'), 2500);
 });
 
-test('parsePrice v3.9.55: Rp & marker-less legacy formats unchanged (no regression)', () => {
-    // The Rp branch never sets intl — dot heuristics stay Rupiah-centric.
+test('parsePrice v3.9.55/57: Rp formats & 3-digit thousands groups unchanged', () => {
+    // The Rp branch is untouched; 3-digit dot groups + multi-dot stay thousands.
     assert.strictEqual(parsePrice('Rp 2.5rb'), 2500);
     assert.strictEqual(parsePrice('Rp 25.000'), 25000);
     assert.strictEqual(parsePrice('50.000'), 50000);
-    assert.strictEqual(parsePrice('1.50'), 150);
-    assert.strictEqual(parsePrice('9.99'), 999);
+    // v3.9.57 (DELIBERATE change): marker-less decimals — "1.50" is now 1.5
+    // (was 150) and "9.99" is now 9.99 (was 999), consistent with "$1.50".
+    assert.strictEqual(parsePrice('1.50'), 1.5);
+    assert.strictEqual(parsePrice('9.99'), 9.99);
     // Dual-currency still records the Rp half (v3.9.50, unchanged).
     assert.strictEqual(parsePrice('$2.5 USD | Rp 25.000'), 25000);
 });
@@ -287,12 +291,52 @@ test('parsePriceNumber v3.9.55 (midman): escrow stays whole-amount only', () => 
     assert.strictEqual(mm.parsePriceNumber('$25,000'), 25000); // still fine
 });
 
-test('priceValidationError v3.9.55 (products): decimal prices are valid', () => {
+test('priceValidationError v3.9.55/57 (products): decimal prices are valid', () => {
     const products = require('../../src/commands/products');
     assert.strictEqual(products.priceValidationError('$2.5 USD'), null);
     assert.strictEqual(products.priceValidationError('$2.50'), null);
     assert.strictEqual(products.priceValidationError('€9.99'), null);
-    // The accepted-format list now shows a decimal example.
+    // v3.9.57: MARKER-LESS decimals are valid too — no currency marker needed.
+    assert.strictEqual(products.priceValidationError('5.88'), null);
+    assert.strictEqual(products.priceValidationError('5,88'), null);
+    // The accepted-format list now shows decimal examples (marked + marker-less).
     const junkErr = products.priceValidationError('murah');
     assert.ok(junkErr.includes('$2.50'), 'the format list shows a decimal example');
+    assert.ok(junkErr.includes('5.88'), 'the format list shows a marker-less decimal example (v3.9.57)');
+});
+
+// ============ v3.9.57 — MARKER-LESS DECIMALS (user request: "make the /add-product price support decimals, e.g. 5.88") ============
+// The v3.9.55 decimal rule that used to apply only with a currency marker
+// now applies to MARKER-LESS inputs too: a single dot with a 1-2 digit
+// fraction is a decimal ("5.88" → 5.88, used to read as 588 — a silent
+// 100x error), because a valid Indonesian thousands group is always 3
+// digits ("50.000").
+
+test('parsePrice v3.9.57: marker-less decimals supported — "5.88" reads as 5.88 (not 588)', () => {
+    // The exact format the user asked about + spelling variants.
+    assert.strictEqual(parsePrice('5.88'), 5.88);
+    assert.strictEqual(parsePrice('5,88'), 5.88); // decimal comma — correct for a long time
+    assert.strictEqual(parsePrice('0.99'), 0.99);
+    assert.strictEqual(parsePrice('12.99'), 12.99);
+    assert.strictEqual(parsePrice('2.50'), 2.5);
+    // Suffix + decimal: now consistent with the comma version, no longer 100x.
+    assert.strictEqual(parsePrice('1.50rb'), 1500); // was 150 × 1000 = 150,000
+    assert.strictEqual(parsePrice('1,50rb'), 1500); // comma version — correct for a long time
+    assert.strictEqual(parsePrice('9.99jt'), 9990000); // was 999 × 1M = 999 million
+    // Currency markers work exactly as before (v3.9.55 unchanged).
+    assert.strictEqual(parsePrice('$5.88'), 5.88);
+    assert.strictEqual(parsePrice('5.88 usd'), 5.88);
+});
+
+test('parsePrice v3.9.57: valid thousands & multi-dot UNCHANGED (no regression)', () => {
+    // 3-digit groups = thousands — correct Rupiah formats still read the same.
+    assert.strictEqual(parsePrice('5.880'), 5880);
+    assert.strictEqual(parsePrice('50.000'), 50000);
+    assert.strictEqual(parsePrice('1.000.000'), 1000000);
+    assert.strictEqual(parsePrice('25,000'), 25000);
+    assert.strictEqual(parsePrice('5.000rb'), 5000000);
+    // Escrow stays whole-amount only (untouched by v3.9.57).
+    const mm = require('../../src/data/midmanManager');
+    assert.strictEqual(mm.parsePriceNumber('5.88'), 0);
+    assert.strictEqual(mm.parsePriceNumber('$5.88'), 0);
 });

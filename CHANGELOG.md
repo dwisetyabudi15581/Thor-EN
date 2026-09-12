@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.57] — 2026-09-12
+
+### Fixed — 💬 user request: "make the /add-product price support decimals, e.g. 5.88"
+
+- 🟠 **MARKER-LESS decimals are now supported — "5.88" records as 5.88, not 588.** The v3.9.55 decimal rule that used to apply only when a currency marker was present (`$2.50`) now applies to marker-less inputs too: a single dot with a **1-2 digit fraction is a DECIMAL** (`5.88` → 5.88, `9.99` → 9.99, `0.99` → 0.99, `12.99` → 12.99), with or without a marker — the `intl` flag is gone, one rule for every input. Why it's safe: a VALID Indonesian thousands group is always **3 digits** (`50.000`), so `5.88` cannot be a correct Rupiah format — the most sensible reading is a decimal (the bot is currency-agnostic since v3.9.54). A 3-digit fraction (`50.000`, `5.880`) and multi-dot (`1.234.567`) stay THOUSANDS; the Rp branch, dual-currency prices, and escrow are untouched.
+- 🟡 **Deliberately changed behavior (inputs that were never valid Rupiah):** `1.50` is now 1.5 (was 150), `100.00` is now 100 (was 10000), `2.50` is now 2.5 (was 250) — write those thousands as `150` / `10.000` / `250`. Bonus: suffix+decimal used to explode 100x and now matches the comma version (`1.50rb` → 1500, was 150,000; `9.99jt` → 9,990,000, was 999,000,000).
+- 🟢 **`/add-product` / `/update-product`:** the accepted-format list now shows a marker-less decimal example (`5.88`), as do the slash-option descriptions (`Rp 50.000 / $3 / $2.50 / 5.88 / 25rb`). The `/help` "❓ Decimals?" FAQ is updated — marker-less decimals are valid, 3-digit groups stay thousands, escrow deal amounts stay whole-numbers-only.
+- 🟢 **+3 unit tests (total 566):** parsePrice.test.js — a marker-less decimal matrix (`5.88`/`5,88`/`0.99`/`2.50`/`1.50rb`/`1,50rb`/`9.99jt`/`$5.88`/`5.88 usd`) and valid-thousands & multi-dot unchanged (`5.880`/`50.000`/`1.000.000`/`5.000rb` + escrow still rejects decimals); 3 legacy pins from the Rupiah-centric era re-pinned to the new decimal values; priceValidationError accepts marker-less decimals. boosters.test.js — a command-level price guard `/add-product price:5.88` → confirmation `💰 Counted in stats as: **5.88** per sale` (the FULL command path, not just the parser).
+
 ## [3.9.56] — 2026-09-12
 
 ### Added — 🧪 user request: "add booster tests too"

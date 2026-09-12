@@ -359,6 +359,21 @@ function getServerStats(guildId) {
  * Escrow (midmanManager.parsePriceNumber) keeps its whole-amount strictness —
  * "$2.5" is rejected there on purpose (deal-safety, see its own docs).
  *
+ * v3.9.57 FIX (user request: "make the /add-product price support decimals,
+ * e.g. 5.88"): the v3.9.55 decimal rule above now applies to MARKER-LESS
+ * inputs too, not just currency-marked ones — "5.88" → 5.88 (used to read as
+ * 588, a silent 100x error), "9.99" → 9.99, "0.99" → 0.99. Why it's safe: a
+ * VALID Indonesian thousands group is always 3 digits ("50.000"), so a single
+ * dot with a 1-2 digit fraction cannot be a correct Rupiah format — it's far
+ * more likely the admin is writing a decimal (any cents-using currency; the
+ * bot is currency-agnostic since v3.9.54). A 3-digit fraction ("50.000",
+ * "5.880") and multi-dot ("1.234.567") stay THOUSANDS — the Rupiah format is
+ * untouched. Deliberate consequences: "1.50" is now 1.5 (was 150) and
+ * "100.00" is now 100 (was 10000) — write those thousands as "150" /
+ * "10.000"; suffix+decimal now matches the comma version ("1.50rb" → 1500,
+ * was 150,000; "9.99jt" → 9,990,000, was 999,000,000 — both used to explode
+ * 100x).
+ *
  * P2-13 FIX: before, `.replace(/\./g, '').replace(/,/g, '.')` was ambiguous:
  *   - "25,000" (US thousands) → "25.000" → parseFloat → 25 (WRONG, should be 25000)
  *   - "Rp. 50.000" (ID thousands) → 50000 → OK
@@ -371,10 +386,6 @@ function parsePrice(priceStr) {
     if (typeof priceStr === 'number') return isNaN(priceStr) ? 0 : Math.max(0, priceStr);
     if (!priceStr) return 0;
     let s = String(priceStr).toLowerCase().trim();
-    // v3.9.55: set when a NON-Rp currency marker is present — the decimal
-    // rules below then follow international conventions (cents) instead of
-    // the Rupiah-centric "dot is always thousands" heuristic.
-    let intl = false;
     // v3.9.50 FIX (user report: price entered as "3$ USD | Rp. 25.000" — the
     // actual product price format). parseFloat stops at the '$', so the dual
     // price recorded **Rp 3** per sale and the revenue looked frozen AGAIN.
@@ -406,7 +417,8 @@ function parsePrice(priceStr) {
         const m = s.match(/[0-9][0-9.,]*(?:\s*(?:juta|jt|rb)|[km])?/);
         if (!m) return 0; // a marker with no amount ("usd") → unparseable
         s = m[0];
-        intl = true; // v3.9.55: international decimal rules apply from here on
+        // (v3.9.57: the `intl` flag is no longer needed — one decimal rule
+        // for every input, see the hasDot branch below.)
     }
     s = s.replace(/\s/g, '');
     let multiplier = 1;
@@ -459,50 +471,35 @@ function parsePrice(priceStr) {
             s = s.replace(/,/g, '');
         }
     } else if (hasDot) {
-        // Only a dot. Assumption: thousands separator (ID format).
-        // E.g. "50.000" → 50000
+        // Only a dot (no comma). Two possibilities: a THOUSANDS group (ID
+        // format, e.g. "50.000" → 50000) or a DECIMAL (international, "5.88").
         //
-        // v3.9.8 FIX: the old `parts[1].length <= 2` heuristic treated it as a decimal,
-        // making "1.50" (ID = 150) wrongly 1.5, and "100.00" (ID = 10000) wrongly 100.
+        // v3.9.8/9/17 (Rupiah-centric era): a marker-less dot was ALWAYS
+        // thousands — only int < 10 + a 1-digit fraction ("2.5") read as a
+        // decimal, so "5.88" read as 588 and "9.99" as 999 (a silent 100x
+        // error).
         //
-        // v3.9.9 FIX: stricter heuristic. For Rupiah (an integer currency),
-        // a thousands separator is far more common than a decimal. Only treat it as
-        // a decimal when it's VERY clear (int part < 10 AND a 1-digit fraction).
-        // E.g. "2.5" → 2.5 (decimal), "9.9" → 9.9 (decimal).
-        // But "1.50" → 150 (thousands), "10.50" → 1050 (thousands), "2.50" → 250 (thousands).
+        // v3.9.55: with a non-Rp currency marker, a 1-2 digit fraction is a
+        // decimal ("$9.99" → 9.99); a 3-digit fraction stays thousands.
         //
-        // v3.9.17 FIX: for the Rupiah currency (an integer currency), a dot is ALWAYS
-        // a thousands separator. "1.5" as 1.5 Rupiah makes no sense — the admin most
-        // likely means 15 or 1500. But for backward compat, we keep the
-        // v3.9.9 heuristic for small numbers (< 10) so old tests don't break.
-        // Documentation: if an admin wants a price below 10 Rupiah with a decimal
-        // (very rare), just use the format "0.5" or "5".
-        //
-        // v3.9.55 FIX: the rules above are RUPIAH-centric — but when a non-Rp
-        // currency marker is present (intl) the currency almost certainly uses
-        // cents, and a 1-2 digit fraction after a single dot is a decimal:
-        // "$2.5" → 2.5, "$2.50" → 2.5, "$9.99" → 9.99, "$12.99" → 12.99,
-        // "$0.99" → 0.99 ("$2.0" → 2). A 3-digit fraction is a thousands
-        // group instead: "$50.000" (German style) → 50000. Multi-dot below
-        // ("$1.234.567") is unambiguous thousands in every convention.
+        // v3.9.57 FIX (user request: "make the /add-product price support
+        // decimals, e.g. 5.88"): the v3.9.55 rule now applies to MARKER-LESS
+        // inputs too — the `intl` flag is gone, one rule for every marker. The
+        // safety separator: a VALID Indonesian thousands group is always 3
+        // digits ("50.000"), so a single dot with a 1-2 digit fraction
+        // ("5.88", "9.99", "0.99") is not a correct Rupiah format — the most
+        // sensible reading is a decimal (currency-agnostic v3.9.54: the
+        // admin's currency can be anything, most use cents). Suffix+decimal
+        // now matches the comma version: "1.50rb" → 1.5 × 1000 = 1500 (was
+        // 150,000), "9.99jt" → 9.99 × 1,000,000 (was 999 million — both used
+        // to explode 100x).
         const parts = s.split('.');
-        if (parts.length === 2 && parts[0] !== '' && parts[1].length > 0) {
-            const intPart = parseInt(parts[0], 10);
-            if (intl) {
-                // v3.9.55: international decimal rules (see above).
-                if (parts[1].length >= 3) {
-                    s = s.replace(/\./g, ''); // thousands group ("$50.000")
-                }
-                // else: keep the dot → decimal ("$2.50", "$9.99")
-            } else if (!isNaN(intPart) && intPart < 10 && parts[1].length === 1 && parts[1] !== '0') {
-                // Dot as decimal (e.g. "2.5", "9.9")
-                // keep it
-            } else {
-                // Dot as thousands separator
-                s = s.replace(/\./g, '');
-            }
+        if (parts.length === 2 && parts[0] !== '' && parts[1].length > 0 && parts[1].length <= 2) {
+            // One dot, 1-2 digit fraction → DECIMAL — keep the dot for parseFloat
+            // ("5.88", "2.50", "9.99", "0.99", "12.99")
         } else {
-            // Multiple dots (e.g. "1.234.567") → thousands separators
+            // 3-digit fraction ("50.000", "5.880") or multi-dot ("1.234.567")
+            // → thousands groups: strip all dots
             s = s.replace(/\./g, '');
         }
     }

@@ -166,7 +166,7 @@ const HELP_CATEGORIES = [
             '• `/remove-product-role value` — stop granting it · `/list-product-roles` — see all.',
             '',
             '❓ **Price format?** ANY currency works: `30000`, `30.000`, `$3`, `€25`, `¥1000`, `Rp 30.000`, `30rb`, `3jt`. Dual-currency too (`3$ USD | Rp 25.000` — the Rp amount is recorded). Stats track the NUMBER, currency-agnostic — price everything in ONE currency.',
-            '❓ **Decimals?** Yes — `$2.5`, `$2.50`, `€9.99` all record with cents (stats show `2.5` / `9.99`). A 3-digit dot group stays thousands: `$50.000` → 50.000. Escrow deal amounts are whole numbers only.',
+            '❓ **Decimals?** Yes — `$2.5`, `5.88`, `9.99`, `€9,99` all record with cents (stats show `2.5` / `5.88` / `9.99`; valid without a currency marker too). A 3-digit dot group stays thousands: `50.000` → 50.000. Escrow deal amounts are whole numbers only.',
             '❓ **Buyers see the price?** Yes — the ticket panel price list uses your `label` + `price` exactly.'
         ]
     },

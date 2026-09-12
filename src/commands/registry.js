@@ -444,7 +444,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'price',
-                    description: 'Price (e.g. Rp 50.000 / $3 / $2.50 / 25k — max 100 chars)',
+                    description: 'Price (e.g. Rp 50.000 / $3 / $2.50 / 5.88 / 25k — max 100 chars)',
                     required: true,
                     max_length: 100
                 },
@@ -509,7 +509,7 @@ function getCommands() {
                 {
                     type: 3,
                     name: 'price',
-                    description: 'New price (e.g. "Rp 25.000" / "$3" / "$2.50")',
+                    description: 'New price (e.g. "Rp 25.000" / "$3" / "$2.50" / "5.88")',
                     required: false,
                     min_length: 1,
                     max_length: 100
