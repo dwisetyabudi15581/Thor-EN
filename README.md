@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.11.0** · 92 slash commands · 613 unit tests · discord.js v14 · Node.js 18+ · multi-guild (allowlist)
+> **v3.12.0** · 92 slash commands · 616 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style)
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -115,15 +115,15 @@ npm install
 
 # 3. Set up the environment
 cp .env.example .env
-# Fill in .env:
+# Fill in .env (the ONE place to configure your server — switching servers = edit this line):
 #   DISCORD_TOKEN=your_bot_token
-#   GUILD_ID=your_discord_server_id
-
+#   GUILD_ID=your_discord_server_id   ← leave empty for public mode (Dyno-style)
+#
 # 4. Run the bot
 npm start
 ```
 
-Slash commands register instantly to the guild set in `GUILD_ID`. For development with auto-restart: `npm run dev`.
+Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID` is left empty, the bot runs in **public Dyno-style mode**: commands are registered globally and appear automatically in every server that invites the bot (~1 hour propagation) — no manual guild id anywhere. For development with auto-restart: `npm run dev`.
 
 ### Initial Configuration (once the bot is online)
 
@@ -153,7 +153,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (436 tests)  |
+| `npm test`       | Run all unit tests (616 tests)  |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 
@@ -168,7 +168,7 @@ Tests use the `node:test` runner built into Node.js v18+ — no extra dependenci
 - **Corrupt file quarantine** — data files that fail to parse are renamed to `.corrupt-<ts>` and never silently overwritten.
 - **TOCTOU guard** — `userLock` prevents double-processing when a user double-clicks.
 - **Audit log** — keys are always masked; every admin action is recorded.
-- **Multi-guild (v3.10.0)** — config is now per-server: `data/config/<guildId>.json`. Server A's admin can no longer overwrite server B's settings. The other data layers (keys, warnings, stats, tickets, escrow deals) were already guild-scoped. The `GUILD_ID` guard is optional: set = single-guild mode (ignore other servers), empty = full multi-guild mode.
+- **Single-server / public mode — ONE `GUILD_ID` variable (v3.12.0)** — `GUILD_ID` set: instant commands + events from other servers ignored (insurance in case the bot is accidentally invited). `GUILD_ID` empty: **public Dyno-style mode** — global commands appear automatically in every server that invites the bot, and configs are isolated per-server (`data/config/<guildId>.json`) so server A's admin can never overwrite server B's settings. Guide to opening the bot to the public: [docs/ADMIN_GUIDE.md → Public Mode](./docs/ADMIN_GUIDE.md).
 
 ---
 
@@ -180,7 +180,7 @@ Check `DISCORD_TOKEN` in `.env` and make sure the bot has been invited to the se
 
 ### Slash commands don't appear
 
-Make sure `GUILD_ID` is correct (the server ID, not a user ID) and that the bot is a member of that guild. Restart the bot — re-registration is instant.
+Make sure `GUILD_ID` is correct (the server ID, not a user ID) and that the bot is a member of that guild. Restart the bot — re-registration is instant. Note: when `GUILD_ID` is empty (public mode), GLOBAL registration needs ~1 hour of Discord propagation — commands are not instant there, which is normal.
 
 ### Permission errors
 

@@ -11,7 +11,7 @@
 const { Events, EmbedBuilder } = require('discord.js');
 const { incrementMessages: trackMessage } = require('../../data/statsManager');
 const { getConfig } = require('../../data/configManager');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 
 // Data managers for the new features
@@ -94,8 +94,8 @@ async function onMessageCreate(message) {
         if (!message.author || message.author.bot || message.webhookId) return;
         if (!message.guild) return;
 
-        // v3.9.26 → v3.11.0 (allowlist): ignore messages from guilds outside
-        // ALLOWED_GUILD_IDS (fallback GUILD_ID; empty list = every guild).
+        // v3.9.26 → v3.12.0 (single GUILD_ID): ignore messages from guilds other
+        // than the GUILD_ID in .env (empty GUILD_ID = every guild — public mode).
         // Without this guard, if the bot gets invited to a foreign server:
         // leveling runs with the foreign guild's config, XP gets scattered,
         // the wrong guild's role IDs get added, and audit logs stray.

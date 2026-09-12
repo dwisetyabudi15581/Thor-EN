@@ -14,7 +14,7 @@
 const { Events, MessageFlags } = require('discord.js');
 const routeCommand = require('../../commands');
 const routeInteraction = require('../../interactions');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 
 function isTransientNetworkError(err) {
@@ -45,10 +45,10 @@ function isIgnorableReplyError(err) {
 
 async function onInteractionCreate(interaction) {
     try {
-        // v3.9.26 (single-guild hardening) → v3.11.0 (allowlist): ignore
-        // interactions from guilds outside ALLOWED_GUILD_IDS (fallback GUILD_ID;
-        // empty list = open mode). Without this guard, commands could be used in
-        // a foreign guild (if the bot gets invited there): that guild's
+        // v3.9.26 (single-guild hardening) → v3.12.0 (single GUILD_ID): ignore
+        // interactions from guilds other than the GUILD_ID in .env (empty
+        // GUILD_ID = public mode). Without this guard, commands could be used
+        // in a foreign guild (if the bot gets invited there): that guild's
         // roles/channels get used → weird behavior + stray data.
         if (interaction.guildId && !isGuildAllowed(interaction.guildId)) {
             return;

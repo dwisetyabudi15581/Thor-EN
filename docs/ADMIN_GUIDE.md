@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.11.0
+# 📖 Admin Guide — Thor Bot v3.12.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -19,6 +19,7 @@ The complete guide for Discord server admins running this bot — suitable both 
 9. [Troubleshooting](#9-troubleshooting)
 10. [Best Practices](#10-best-practices)
 11. [Version History](#11-version-history)
+12. [Public Mode (Dyno-style) + Developer Portal](#12-public-mode-dyno-style--developer-portal-phase-3)
 
 ---
 
@@ -47,10 +48,10 @@ npm start
 
 - The console shows: `✅ Bot online as YourBot`
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
-- In Discord, type `/` — all **91 slash commands** must appear
+- In Discord, type `/` — all **92 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
 
-> 🌍 **Multi-Guild (v3.10.0 + v3.11.0)** — the bot's config is **per-server** (`data/config/<guildId>.json`): server A's admin can no longer overwrite server B's settings. The mode is now controlled by the **allowlist** in `.env`: (1) `ALLOWED_GUILD_IDS=111...,222...` = only the listed servers are served — commands register **per-guild (INSTANT)** in each listed server, and guilds outside the list never even see the commands; (2) no `ALLOWED_GUILD_IDS` but `GUILD_ID` set = the old single-guild behavior (nothing changes); (3) neither set = **open mode** (every server that invited the bot is served, global commands in ~1 hour). The old `data/config.json` is migrated automatically the first time a legitimate guild reads it (the old file is renamed to `config.json.migrated` — not deleted). Want to invite the bot to a second server? Invite it there, add that server's ID to `ALLOWED_GUILD_IDS`, restart — that server's admin runs `/set-role admin` themselves and their whole configuration stays separate from yours.
+> 🌍 **ONE GUILD ID (v3.12.0)** — all server behavior is controlled by ONE line in `.env`: `GUILD_ID`. **Set** = single-server mode (default): slash commands register **instantly** to that server, and events from other servers (messages/joins/boosts/tickets) are ignored — insurance in case the bot is accidentally invited. **Empty** = **public Dyno-style mode**: global commands (appear automatically in every server that invites the bot, ~1 hour), **per-server** configs at `data/config/<guildId>.json` — server A's admin can never overwrite server B's settings. The old `data/config.json` is migrated automatically the first time a legitimate guild reads it (the old file is renamed to `config.json.migrated` — not deleted). Switching servers = edit that one line, period. Want to open the bot to the public? See [Section 12 — Public Mode (Dyno-style) + Developer Portal](#12-public-mode-dyno-style--developer-portal-phase-3).
 
 > 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in, 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. Since **v3.9.53 every category view is a FULL self-contained guide** — per-command syntax + behavior + ❓ answers to the most common member questions (the 📖 All Commands listing stays compact so it always fits one embed). All navigation happens inside one ephemeral message — it never floods the channel.
 
@@ -1031,11 +1032,12 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.11.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.12.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
-- **v3.11.0** (2026-09-12) — 🛡️ **MULTI-GUILD PHASE 2: the `ALLOWED_GUILD_IDS` allowlist**. A comma-separated list of server IDs allowed to use the bot — priority `ALLOWED_GUILD_IDS` > `GUILD_ID` > neither set (open mode). All 11 event handlers switched to the allowlist guard (`isGuildAllowed()`); slash command registration is now **per-guild for EVERY allowlisted server at once** (instant, and unlisted servers never see the commands at all); startup (channel checks, boost catch-up, server-stats sync) now runs for each allowlisted guild (previously only the first one); the legacy config claim gate follows the allowlist (a single-entry list → only that guild may claim). **Old .env files need no changes** — without `ALLOWED_GUILD_IDS`, `GUILD_ID` automatically becomes a one-entry allowlist. +15 unit tests (total **613**).
+- **v3.12.0** (2026-09-12) — 🎯 **ONE GUILD ID + PHASE 3: PUBLIC MODE (Dyno-style)**. `.env` now has exactly **one server variable: `GUILD_ID`** — the `ALLOWED_GUILD_IDS` allowlist (v3.11.0) is fully removed (no more confusion: switching servers = edit one line). **Set** = single-server mode (instant commands, other servers' events ignored); **empty** = public Dyno/MEE6-style mode (global commands — they appear automatically in every server within ~1 hour, no manual guild id). `src/infra/guild.js` simplified (`getPrimaryGuildId()`); the legacy config claim gate + command registration + startup follow suit; join/leave skip logs now mention `GUILD_ID`. Docs: a new **12 — Public Mode + Developer Portal** section (how Dyno works, the OAuth2 URL + `applications.commands` scope, Discord verification at 100 servers, a security checklist). `guildGuard.test.js` rewritten + 3 ANTI-CONFUSION PINS (no allowlist comeback; one `.env.example` variable; the export contract). +3 tests (total **616**).
+- **v3.11.0** (2026-09-12) — 🛡️ **MULTI-GUILD PHASE 2: the `ALLOWED_GUILD_IDS` allowlist**. A comma-separated list of server IDs allowed to use the bot — priority `ALLOWED_GUILD_IDS` > `GUILD_ID` > neither set (open mode). All 11 event handlers switched to the allowlist guard (`isGuildAllowed()`); slash command registration is now **per-guild for EVERY allowlisted server at once** (instant, and unlisted servers never see the commands at all); startup (channel checks, boost catch-up, server-stats sync) now runs for each allowlisted guild (previously only the first one); the legacy config claim gate follows the allowlist (a single-entry list → only that guild may claim). +15 unit tests (total **613**). *Note v3.12.0: this feature was replaced by the single-`GUILD_ID` configuration.*
 - **v3.10.0** (2026-09-12) — 🌍 **MULTI-GUILD PHASE 1: per-server config**. The global `data/config.json` (shared by every server that invited the bot — server A's admin overwriting server B's settings) is replaced by **`data/config/<guildId>.json`** — one file per server. One-time automatic migration on bot start (the old file becomes `config.json.migrated`). The internal `getConfig/saveConfig/setField` API now requires a `guildId` (fail-fast) via the new `resolveGuildId()` helper; the admin-role permission cache is per-guild (was global — server A's admin role was read by server B); backup/restore supports the recursive `config/` folder + backward-compat for old backups. 57 call sites across 24 src files + 19 test files updated; the total stays at **598 tests** green. An empty `GUILD_ID` = full multi-guild mode; currently single-server setups change nothing at all.
 
 - **v3.9.60** (2026-09-12) — 🧪 **backup/restore subsystem audit (code review)**. Fixed 3 real bugs: (1) **modlogs.json was never backed up** — since v3.9.43 the moderation history (timeout/kick/ban shown by `/warn-list`) was silently excluded from `/backup-now` and lost by `/restore-backup`; the file is now in FILES_TO_BACKUP and pinned by environment-independent regression tests (20-file registry cross-check). (2) **Post-restore stale-cache wipe for boosts.json** — boostManager's permanent in-memory store was never invalidated after a restore, so the first boost event overwrote the freshly restored history; `reload()` is now called in the restore flow (same for modLogManager). (3) **`npm test` was red on every fresh clone/CI** — the GUARD test assumed runtime data files exist; a fresh checkout now skips that scan and the guarantee lives in the new regression tests. +3 unit tests (total **598**). No new commands, no config changes — fully compatible with v3.9.59 data.
@@ -1078,6 +1080,57 @@ A summary of the latest versions:
 
 ---
 
+## 12. Public Mode (Dyno-style) + Developer Portal (Phase 3)
+
+> 🌍 **One variable, two modes (v3.12.0).** All server behavior is controlled by ONE line in `.env` — `GUILD_ID`. Set = single-server mode (instant commands, other servers' events ignored). Empty = **public mode**: the bot serves EVERY server that invites it, with data & configs isolated per-server. This closes out the multi-guild foundation: Phase 1 (v3.10.0) = per-server data, Phase 2 (v3.11.0) = mode selection (now simplified into the single `GUILD_ID`).
+
+### How can a bot like Dyno register slash commands without a guild id?
+
+Big public bots (Dyno, MEE6, Carl-bot) use **global application commands**: commands are registered ONCE to the *application* (not to any particular server), and Discord then displays them automatically in every server that invites the bot. No guild id is ever entered manually — neither during development nor when a new server joins.
+
+- **Global registration** uses the application endpoint (no guild id at all); Discord propagates the commands to every server within up to ~1 hour. That's why Dyno's slash commands are "just there" the moment the bot is invited.
+- **Guild-scoped registration** (what this bot's single-server mode uses) wins on exactly one thing: it's **INSTANT** (seconds) — ideal for your own server / development.
+- **Per-server settings:** Dyno never stores a guild id in a manual config. The server ID is captured automatically from Discord events (`interaction.guildId`, `message.guildId`), and each server's settings are stored in their database keyed by that ID. A new server's admin just runs the setup commands in their own server — their data fills itself in.
+
+Thor has used the exact same architecture since v3.10.0: empty `GUILD_ID` → automatic global registration (see the `ℹ️ GUILD_ID is empty — PUBLIC MODE` log at startup), and each server's config lives in `data/config/<guildId>.json`, filling itself in as that server's admin runs `/set-role` / `/set-channel`. So "becoming Dyno" = **just leave `GUILD_ID` empty** + follow the Developer Portal steps below.
+
+### Steps to open the bot to the public
+
+1. **`.env`: empty `GUILD_ID`** (or remove the line) → restart the bot. The console notes public mode and registers global commands.
+2. **Developer Portal** (discord.com/developers/applications → pick the bot's application → **Bot** tab):
+   - **Public Bot: ON** — without it only you can invite the bot.
+   - **Require OAuth2 Code Grant: OFF** (the default).
+   - Privileged Intents stay ON as usual (**SERVER MEMBERS INTENT** + **MESSAGE CONTENT INTENT**) — the bot needs both for welcome/leveling/AFK/automod.
+3. **Create the invite link** (**OAuth2 → URL Generator** tab):
+   - Scopes: check **`bot`** AND **`applications.commands`** — the second scope is MANDATORY so global slash commands also install into servers that invite the bot (without it the commands never appear even though the bot joins).
+   - Bot Permissions (least privilege, matching the features you use): View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Messages, Manage Roles, Manage Channels, Kick Members, Ban Members, Moderate Members, Connect, Speak, Move Members.
+   - Copy the generated URL — that's your bot's public invite link. Its basic format:
+     `https://discord.com/api/oauth2/authorize?client_id=<APP_ID>&scope=bot+applications.commands&permissions=<NUMBER>`
+4. **Test with a second server** (not your main one): invite via that URL, wait for global propagation (~1 hour), then that server's admin runs `/set-role admin` + `/set-channel ...` — everything is recorded into their own server's config, never touching your server's data.
+5. **Watch the console** — new-server activity shows up in the logs; every server's data stays separate (per-guild files under `data/`).
+
+### Discord verification — when is it mandatory?
+
+- **Under 75 servers:** nothing to do; the bot just works.
+- **75–100 servers:** Discord emails you to prepare for verification.
+- **Above 100 servers:** the bot MUST be verified — without verification it cannot join new servers. The process is free (a developer identity form in the Developer Portal → Verification: real name, identity verification, 2FA enabled; typically 1–7 business days). Your account also needs 2FA.
+
+As long as your bot is below 100 servers, you can ignore this part entirely.
+
+### Security checklist before going public
+
+- [ ] `DISCORD_TOKEN` lives only in `.env` (gitignored) — NEVER commit it or paste it into chats. If it ever leaks: **Reset Token** immediately in the Developer Portal.
+- [ ] **2FA enabled** on the Discord and GitHub accounts that own the repo.
+- [ ] Regular backups running (`/backup-now` + the autoBackup scheduler) — more servers means more data at stake.
+- [ ] Adequate hosting: this bot self-throttles (dirty-driven stats, best-effort audit), but watch RAM/CPU as the server count grows.
+- [ ] Moderation stays safe: `/ban`, `/purge`, etc. remain usable only by each server's admins (admin role + Discord permissions) — nothing to change.
+
+### Returning to single-server mode
+
+Fill `GUILD_ID` back in `.env` → restart. Other servers stop seeing the commands (registration is guild-scoped and instant again, to your server) and their events are ignored again. The per-server data that was created stays **fully intact** — public mode can be reopened at any time without losing anything.
+
+---
+
 ## 📞 Support
 
 If you hit a problem that isn't in Troubleshooting:
@@ -1090,6 +1143,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.11.0
+**Document version:** v3.12.0
 **Last updated:** September 12, 2026
-**Bot version:** 3.11.0 · 92 slash commands · 613 unit tests
+**Bot version:** 3.12.0 · 92 slash commands · 616 unit tests

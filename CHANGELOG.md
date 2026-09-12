@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.12.0] — 2026-09-12
+
+### Changed — 🎯 ONE GUILD ID + PHASE 3: PUBLIC MODE (Dyno-style)
+
+- 🟢 **`.env` now has exactly ONE server variable: `GUILD_ID`** (admin request: no more confusion). The v3.11.0 `ALLOWED_GUILD_IDS` allowlist is REMOVED — a multi-ID list only made switching servers confusing. Switching servers = edit the single `GUILD_ID` line in `.env`, done. Two modes: **set = single-server mode** (instant commands, events from other servers ignored) · **empty = public Dyno/MEE6-style mode** (global commands — they appear automatically in every server that invites the bot within ~1 hour, with no manual guild id anywhere).
+- 🟢 **`src/infra/guild.js` simplified:** `getAllowedGuildIds()` (the list) is replaced by `getPrimaryGuildId()` (the trimmed GUILD_ID, or null = public). `isGuildAllowed()` remains the guard for ALL 11 event handlers (the guard code is unchanged — only its source is now single). The foreign-guild join/leave skip logs now mention the `GUILD_ID .env` (still visible, the v3.9.48 pattern).
+- 🟢 **Command registration (ready.js):** GUILD_ID set → instant registration to that guild (an uncached guild → a "double-check the ID" warning + global fallback, no crash); GUILD_ID empty → GLOBAL commands — exactly how big public bots work (Dyno/MEE6): Discord propagates the commands to every server within ~1 hour, no manual guild id.
+- 🟢 **The legacy config claim gate (configManager):** GUILD_ID set → only that guild may claim the old `config.json`; empty → the first caller (the v3.10.0 behavior is kept).
+- 🟢 **PHASE 3 docs (ADMIN_GUIDE):** a new section **"Public Mode (Dyno-style) + Developer Portal"** — how public bots work (global commands + per-server configs captured automatically from event IDs), the Developer Portal steps (Public Bot ON, the OAuth2 URL Generator with the `bot` + `applications.commands` scopes), Discord verification rules (mandatory past 100 servers), and a security checklist before going public.
+- 🟡 **Test suite:** `guildGuard.test.js` rewritten for the v3.12.0 contract (18 tests, previously 15) — including **3 ANTI-CONFUSION PINS**: (1) `ALLOWED_GUILD_IDS`/`getAllowedGuildIds` must never reappear in `src/`, (2) `.env.example` has exactly one `GUILD_ID` variable + documents public mode, (3) the `guild.js` export contract is exactly 3 functions. Total **616**.
+- 🟡 `serverLog.test.js`: the static guard contract v3.11.0 → v3.12.0 (still `isGuildAllowed`, now sourced from the single GUILD_ID).
+
+### Compatibility
+
+- **.env using only `GUILD_ID` (the common deployment): NOTHING needs to change** — the behavior is identical to the v3.9.26/v3.11.0 single-guild mode.
+- **.env using `ALLOWED_GUILD_IDS` (v3.11.0):** that variable is now ignored. Move your main server's ID into `GUILD_ID` (one server per deployment). Serving many servers? Leave `GUILD_ID` empty → public mode, with per-server configs isolated automatically.
+
 ## [3.11.0] — 2026-09-12
 
 ### Added — 🛡️ MULTI-GUILD PHASE 2: the ALLOWED_GUILD_IDS allowlist

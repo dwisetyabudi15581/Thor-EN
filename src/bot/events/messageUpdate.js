@@ -16,15 +16,15 @@
 
 const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 
 async function onEvent(oldMessage, newMessage) {
     try {
         const msg = newMessage || oldMessage;
         if (!msg.guild?.id) return; // DM
-        // v3.11.0: allowlist guard — guilds outside ALLOWED_GUILD_IDS (fallback
-        // GUILD_ID) are ignored; an empty list = open mode (every guild processed).
+        // v3.12.0: single GUILD_ID guard — guilds that do not match the GUILD_ID
+        // in .env are ignored; an empty GUILD_ID = public mode (every guild).
         if (!isGuildAllowed(msg.guild.id)) return;
         if (msg.author?.bot) return;
 

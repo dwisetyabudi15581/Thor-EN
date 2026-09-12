@@ -28,7 +28,7 @@
 
 const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 // v3.9.49: boost notifications (server-booster channel + server log + history).
 // v3.9.59: applyBoostRole — booster auto role (called AFTER the notification
@@ -41,8 +41,8 @@ const { markStatsDirty } = require('../../data/serverstatsManager');
 async function onEvent(oldMember, newMember) {
     try {
         if (!newMember?.guild?.id) return;
-        // v3.11.0: allowlist guard — guilds outside ALLOWED_GUILD_IDS (fallback
-        // GUILD_ID) are ignored; an empty list = open mode (every guild processed).
+        // v3.12.0: single GUILD_ID guard — guilds that do not match the GUILD_ID
+        // in .env are ignored; an empty GUILD_ID = public mode (every guild).
         if (!isGuildAllowed(newMember.guild.id)) return;
         if (newMember.user?.bot) return;
 

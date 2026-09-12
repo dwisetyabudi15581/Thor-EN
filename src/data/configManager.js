@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { safeWriteJSON, quarantineCorruptFile } = require('../infra/safeWrite');
-// v3.11.0 phase 2: the legacy claim gate now uses the allowlist.
-const { getAllowedGuildIds } = require('../infra/guild');
+// v3.12.0: the legacy claim gate now uses the single GUILD_ID.
+const { getPrimaryGuildId } = require('../infra/guild');
 
 // ============================================================
 // v3.10.0 MULTI-GUILD: config is now PER-GUILD.
@@ -133,15 +133,14 @@ let legacyClaimed = false;
  * doesn't exist yet, so there's no risk of overwriting a live guild config.
  *
  * Claim rules (prevent another server from "stealing" the old config):
- *   - If the allowlist holds EXACTLY ONE guild (a single ALLOWED_GUILD_IDS
- *     entry or the GUILD_ID fallback — the v3.9.26 single-guild mode): only
- *     the matching guild may claim. Other guilds get pure DEFAULTS, not a
- *     copy of the main server's config.
- *   - If the allowlist is empty / holds several guilds (multi-guild mode):
- *     the FIRST guild to call getConfig() claims the legacy. For a bot that
- *     has been used on one server and then opened up to multi-guild, that old
- *     server is almost certainly the first caller (ready/interaction events).
- *     A clear log is printed so the admin can audit who claimed it.
+ *   - If GUILD_ID is set in .env (single-server mode — the default
+ *     deployment): only the matching guild may claim. Other guilds get pure
+ *     DEFAULTS, not a copy of the main server's config.
+ *   - If GUILD_ID is empty (public mode): the FIRST guild to call
+ *     getConfig() claims the legacy. For a bot that has been used on one
+ *     server and then opened to the public, that old server is almost
+ *     certainly the first caller (ready/interaction events). A clear log is
+ *     printed so the admin can audit who claimed it.
  *
  * @returns {Object} the old raw config (not merged yet), or {} if none.
  */
@@ -149,11 +148,10 @@ function _claimLegacyConfigIfNeeded(guildId) {
     if (legacyClaimed) return {};
     if (!fs.existsSync(LEGACY_CONFIG_PATH)) return {};
 
-    // v3.11.0: the claim gate uses the allowlist — a single guild (from a
-    // single ALLOWED_GUILD_IDS entry / the GUILD_ID fallback) means only it
-    // may claim; empty / several guilds means the first caller claims.
-    const allowed = getAllowedGuildIds();
-    if (allowed.length === 1 && allowed[0] !== guildId) return {};
+    // v3.12.0: the claim gate uses the single GUILD_ID — when set, only that
+    // guild may claim; empty (public mode) means the first caller claims.
+    const primary = getPrimaryGuildId();
+    if (primary && primary !== guildId) return {};
 
     try {
         const raw = JSON.parse(fs.readFileSync(LEGACY_CONFIG_PATH, 'utf8'));

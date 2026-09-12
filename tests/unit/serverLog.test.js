@@ -219,9 +219,9 @@ test('v3.9.43 #19 index.js: 6 server-log events registered + GuildBans intent on
 // === E. Guards per event file (static) ===
 // ====================================================
 
-test('v3.9.43 #20 event files: allowlist guard + bot skips + best-effort audit log', () => {
-    // Guild guard in all event files — v3.11.0: now via the allowlist
-    // (isGuildAllowed — GUILD_ID fallback, see src/infra/guild.js).
+test('v3.9.43 #20 event files: GUILD_ID guard + bot skips + best-effort audit log', () => {
+    // Guild guard in all event files — v3.12.0: via the single GUILD_ID
+    // (isGuildAllowed, see src/infra/guild.js).
     for (const rel of [
         'src/bot/events/messageDelete.js',
         'src/bot/events/messageUpdate.js',
@@ -231,7 +231,7 @@ test('v3.9.43 #20 event files: allowlist guard + bot skips + best-effort audit l
         'src/bot/events/guildMemberUpdate.js'
     ]) {
         const src = readSrc(rel);
-        assert.ok(src.includes('isGuildAllowed('), `${rel}: the allowlist guard is mandatory (v3.11.0 pattern)`);
+        assert.ok(src.includes('isGuildAllowed('), `${rel}: the GUILD_ID guard is mandatory (v3.9.26+ pattern)`);
         assert.ok(src.includes('try'), `${rel}: the handler must use try/catch (event errors must not crash the bot)`);
     }
 

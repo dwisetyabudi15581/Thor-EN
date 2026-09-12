@@ -13,20 +13,20 @@
 const { Events } = require('discord.js');
 const { onMemberAdd } = require('../memberHandler');
 const { logServerEvent } = require('../../infra/serverLog');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 // v3.9.51: live server stats counters.
 const { markStatsDirty } = require('../../data/serverstatsManager');
 
 async function onEvent(member) {
     try {
-        // v3.9.26 → v3.11.0 (allowlist): ignore members from guilds outside
-        // ALLOWED_GUILD_IDS (fallback GUILD_ID; empty list = every guild).
+        // v3.9.26 → v3.12.0 (single GUILD_ID): ignore members from guilds other
+        // than the GUILD_ID in .env (empty GUILD_ID = every guild — public mode).
         // v3.9.48: this skip is now VISIBLE (was a silent return — a member joined
         // in the other guild and the admin could not tell why no welcome appeared).
         if (member.guild?.id && !isGuildAllowed(member.guild.id)) {
             console.warn(
-                `⚠️ Ignored a member join from another guild (ID: ${member.guild.id}) — that guild is not on the allowlist (ALLOWED_GUILD_IDS / fallback GUILD_ID). Welcome messages only run in allowlisted guilds.`
+                `⚠️ Ignored a member join from another guild (ID: ${member.guild.id}) — this ID does not match the GUILD_ID in .env (single-server mode). Welcome only runs in that server.`
             );
             return;
         }

@@ -11,19 +11,19 @@
 const { Events, AuditLogEvent } = require('discord.js');
 const { onMemberRemove } = require('../memberHandler');
 const { logServerEvent, findAuditExecutor } = require('../../infra/serverLog');
-// v3.11.0: multi-guild allowlist guard (phase 2).
+// v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 // v3.9.51: live server stats counters.
 const { markStatsDirty } = require('../../data/serverstatsManager');
 
 async function onEvent(member) {
     try {
-        // v3.9.26 → v3.11.0 (allowlist): ignore members from guilds outside
-        // ALLOWED_GUILD_IDS (fallback GUILD_ID; empty list = every guild).
+        // v3.9.26 → v3.12.0 (single GUILD_ID): ignore members from guilds other
+        // than the GUILD_ID in .env (empty GUILD_ID = every guild — public mode).
         // v3.9.48: this skip is now VISIBLE (was a silent return).
         if (member.guild?.id && !isGuildAllowed(member.guild.id)) {
             console.warn(
-                `⚠️ Ignored a member leave from another guild (ID: ${member.guild.id}) — that guild is not on the allowlist (ALLOWED_GUILD_IDS / fallback GUILD_ID). Goodbye messages only run in allowlisted guilds.`
+                `⚠️ Ignored a member leave from another guild (ID: ${member.guild.id}) — this ID does not match the GUILD_ID in .env (single-server mode). Goodbye only runs in that server.`
             );
             return;
         }

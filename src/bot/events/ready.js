@@ -33,21 +33,21 @@ const { getPending: getPendingAnns } = require('../../data/scheduledAnnouncement
 const { startAutoFlush: startStatsAutoFlush, init: initStats } = require('../../data/statsManager');
 const tempVoiceManager = require('../../data/tempVoiceManager');
 
-// v3.11.0 phase 2: multi-guild allowlist. The guilds processed at startup +
-// command registration: ALLOWED_GUILD_IDS (fallback GUILD_ID; empty = open
-// mode — every cached guild).
-const { getAllowedGuildIds } = require('../../infra/guild');
+// v3.12.0: ONE GUILD ID. The guilds processed at startup + command
+// registration are decided by GUILD_ID in .env: set = that one server only
+// (instant); empty = public Dyno-style mode (global commands) — EVERY cached guild.
+const { getPrimaryGuildId } = require('../../infra/guild');
 
 /**
- * Guilds processed at startup — cached allowlist members, or EVERY cached
- * guild when the allowlist is empty (open mode). Allowlisted guilds that are
- * not cached yet (bot not invited / guild down) are skipped; the callers log
- * a warning for them.
+ * Guilds processed at startup: the GUILD_ID guild when set & cached, or EVERY
+ * cached guild when GUILD_ID is empty (public mode). A GUILD_ID that is not
+ * cached (bot not invited / wrong ID) is skipped; the callers log a warning.
  */
 function startupGuilds(client) {
-    const list = getAllowedGuildIds();
-    if (list.length === 0) return [...client.guilds.cache.values()];
-    return list.map((id) => client.guilds.cache.get(id)).filter(Boolean);
+    const primary = getPrimaryGuildId();
+    if (!primary) return [...client.guilds.cache.values()];
+    const guild = client.guilds.cache.get(primary);
+    return guild ? [guild] : [];
 }
 
 async function onReady(client) {
@@ -61,9 +61,10 @@ async function onReady(client) {
     // v3.9.49: server-booster joined the same check (boost notifications).
     try {
         const { getConfig } = require('../../data/configManager');
-        // v3.11.0: check channels for EVERY allowlisted guild (previously only
-        // GUILD_ID / the first guild was checked — now the report is complete
-        // per-server). Runtime handlers always use their own guild.
+        // v3.12.0: check channels for the GUILD_ID guild (single-server mode) or
+        // EVERY cached guild (public mode) — previously only the first guild was
+        // checked, now the report is complete per-server. Runtime handlers
+        // always use their own guild.
         for (const guild of startupGuilds(client)) {
             const config = getConfig(guild.id);
             const CHANNEL_LABELS = {
@@ -95,7 +96,8 @@ async function onReady(client) {
     // this. Reconcile the live state (guild members cache) against boosts.json,
     // then send ONE consolidated catch-up embed to the server-booster channel
     // when anything actually changed (no spam: one embed, not one per member).
-    // v3.11.0: runs per-guild for EVERY allowlisted guild (not just the first).
+    // v3.12.0: runs per-guild — the GUILD_ID guild (single-server mode) or
+    // EVERY cached guild (public mode).
     try {
         for (const guild of startupGuilds(client)) {
             // Members cache is empty right after login — fetch the roster first
@@ -162,7 +164,7 @@ async function onReady(client) {
     try {
         const serverstatsManager = require('../../data/serverstatsManager');
         if (serverstatsManager.isEnabled()) {
-            // v3.11.0: sync counters for EVERY allowlisted guild.
+            // v3.12.0: sync counters for the GUILD_ID guild / every guild (public mode).
             for (const guild of startupGuilds(client)) {
                 const result = await serverstatsManager.refreshServerStats(guild, { force: true });
                 if (result.disabled) {
@@ -184,40 +186,36 @@ async function onReady(client) {
     // a successful restart. (The global wipe is still needed so old versions that
     // were once global don't get duplicated.)
 
-    // === 1. Register slash commands (v3.11.0: per-guild for EVERY allowlisted guild) ===
+    // === 1. Register slash commands (v3.12.0: single guild / Dyno-style global) ===
     let registeredToGuild = false;
     try {
-        const allowed = getAllowedGuildIds();
-        if (allowed.length === 0) {
-            console.warn('⚠️ ALLOWED_GUILD_IDS / GUILD_ID is not set in .env — open mode: global commands.');
-            console.warn('   Every server that invites the bot can use every feature.');
+        const primary = getPrimaryGuildId();
+        if (!primary) {
+            // GUILD_ID empty = PUBLIC MODE — exactly how big public bots work
+            // (Dyno/MEE6): commands are registered GLOBALLY once and appear
+            // automatically in every server that invites the bot (~1 hour
+            // propagation). No manual guild id anywhere.
+            console.warn('ℹ️ GUILD_ID is empty in .env — PUBLIC MODE: slash commands are registered GLOBALLY.');
+            console.warn('   Commands appear automatically in every server that invites the bot (~1 hour propagation).');
             console.warn(
-                '   Set ALLOWED_GUILD_IDS (or GUILD_ID) in .env for instant registration (1 second vs 1 hour) and to restrict the bot to the listed servers only.'
+                '   Set GUILD_ID in .env if the bot is for a single server (instant registration + event guard).'
             );
             // set() replaces the ENTIRE global list at once — no pre-wipe needed.
             await client.application.commands.set(getCommands());
         } else {
-            // v3.11.0: register the commands to EACH allowlisted guild — instant
-            // in every listed server at once, and guilds outside the list never
-            // see the commands at all (the event guard blocks them too).
-            const missing = [];
-            for (const gid of allowed) {
-                const guild = client.guilds.cache.get(gid);
-                if (!guild) {
-                    missing.push(gid);
-                    continue;
-                }
+            // GUILD_ID set = SINGLE-SERVER MODE: register commands to that guild —
+            // INSTANT (seconds, not ~1 hour), and other guilds never see the
+            // commands at all (the event guard blocks them too).
+            const guild = client.guilds.cache.get(primary);
+            if (guild) {
                 await guild.commands.set(getCommands());
                 registeredToGuild = true;
                 console.log(`✅ Slash Commands registered to guild: ${guild.name} (instant!)`);
-            }
-            for (const gid of missing) {
+            } else {
                 console.warn(
-                    `⚠️ Allowlisted guild with ID ${gid} not found. Make sure the bot has been invited to that server.`
+                    `⚠️ GUILD_ID (${primary}) does not match any server the bot is in — double-check the ID, or the bot has not been invited to that server yet.`
                 );
-            }
-            if (!registeredToGuild) {
-                console.warn('   No allowlisted guild is reachable — temporarily falling back to global commands (takes ~1 hour).');
+                console.warn('   Temporarily falling back to global commands (takes ~1 hour).');
                 await client.application.commands.set(getCommands());
             }
         }
@@ -319,9 +317,9 @@ async function onReady(client) {
     }
 
     // === 7. Init statsManager with the default guild for legacy migration ===
-    // v3.11.0: the first allowlisted guild (fallback: the first cached guild).
+    // v3.12.0: GUILD_ID (fallback: the first cached guild in public mode).
     const defaultStatsGuildId =
-        getAllowedGuildIds()[0] || (client.guilds.cache.size > 0 ? client.guilds.cache.first().id : null);
+        getPrimaryGuildId() || (client.guilds.cache.size > 0 ? client.guilds.cache.first().id : null);
     if (defaultStatsGuildId) {
         try {
             initStats(defaultStatsGuildId);
@@ -419,6 +417,7 @@ module.exports = {
     name: Events.ClientReady,
     once: true,
     execute: onReady,
-    // v3.11.0: exported for unit tests (startup guild selection).
+    // v3.11.0: exported for unit tests (startup guild selection) —
+    // v3.12.0: still used, the source is now the single GUILD_ID.
     _startupGuilds: startupGuilds
 };
