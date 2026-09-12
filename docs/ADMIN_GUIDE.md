@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.59
+# 📖 Admin Guide — Thor Bot v3.9.60
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -824,7 +824,7 @@ The bot replies automatically when a member's message matches a trigger (case-in
 /backup-now
 ```
 
-The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all 16 data files** from the `data/` folder: config, keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels.
+The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all 20 data files** from the `data/` folder: config, keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels, deals, boosts, serverstats, modlogs (v3.9.60 — moderation history).
 
 ### Auto-Backup
 
@@ -851,7 +851,7 @@ Shows all backups, including the `pre-restore_*` safety backups (if you have eve
 1. The bot sends a confirmation embed with 2 buttons: **⚠️ Yes, Restore Now** and **❌ Cancel**
 2. An admin presses the button → the restore runs
 3. The bot automatically creates a `pre-restore_*` safety backup before overwriting (protection against restoring the wrong one)
-4. After the restore finishes, every in-memory cache is reloaded automatically (stats, panels, permissions, automod, afk, responders, levels)
+4. After the restore finishes, every in-memory cache is reloaded automatically (stats, serverstats, panels, permissions, automod, afk, responders, levels, boosts, modlogs — v3.9.60: the boost history & moderation history caches are reloaded too, so nothing overwrites the restored files)
 5. **Restarting the bot** (`Ctrl+C` then `npm start`) is still recommended for full consistency
 
 **Protections:**
@@ -1029,10 +1029,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.59) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.60) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.9.60** (2026-09-12) — 🧪 **backup/restore subsystem audit (code review)**. Fixed 3 real bugs: (1) **modlogs.json was never backed up** — since v3.9.43 the moderation history (timeout/kick/ban shown by `/warn-list`) was silently excluded from `/backup-now` and lost by `/restore-backup`; the file is now in FILES_TO_BACKUP and pinned by environment-independent regression tests (20-file registry cross-check). (2) **Post-restore stale-cache wipe for boosts.json** — boostManager's permanent in-memory store was never invalidated after a restore, so the first boost event overwrote the freshly restored history; `reload()` is now called in the restore flow (same for modLogManager). (3) **`npm test` was red on every fresh clone/CI** — the GUARD test assumed runtime data files exist; a fresh checkout now skips that scan and the guarantee lives in the new regression tests. +3 unit tests (total **598**). No new commands, no config changes — fully compatible with v3.9.59 data.
 - **v3.9.59** (2026-09-12) — 💬 **user request: "auto booster role — those who boost the server should get a role"**. New **`tipe:booster`** in `/set-role`: the Booster role is **automatically** granted when a member boosts the server and removed when the boost ends (Discord's built-in Server Booster semantics, but with your own role — order/color configurable). Applied **retroactively** to existing boosters when set (the reply states the count), synced at startup for boosts that happened while the bot was offline, and **never revokes** manual grants to regular members. Every skip/failure leaves a cause + fix log line (not set, ghost role, position above the bot role, Manage Roles permission); `/test-booster` also diagnoses the role chain without touching the role (the simulation stays pure); `/remove-role booster` disables the automation without revoking granted roles. +18 unit tests (total **595**).
 
 - **v3.9.58** (2026-09-12) — 🧪 **user request: "command test booster"**. New **`/test-booster`** (92nd command, admin): the boost feature's `/test-welcome` — admins cannot simulate a real boost (it costs real money), so this command proves the whole notification chain works: server-booster channel set → exists → bot View/Send/Embed permissions, plus a **live preview of the exact embed** a real boost sends (same builders as the live event — no drift). `tipe:add` → pink 🚀 preview with the mention; `tipe:remove` → gray 💔 preview. The `live:true` option ALSO delivers the preview to the REAL server-booster channel — the full end-to-end delivery test. **Pure simulation — nothing is recorded** (boost history, server log and counters stay clean). +11 unit tests (total **577**).
@@ -1084,6 +1085,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.59
+**Document version:** v3.9.60
 **Last updated:** September 12, 2026
-**Bot version:** 3.9.59 · 92 slash commands · 595 unit tests
+**Bot version:** 3.9.60 · 92 slash commands · 598 unit tests
