@@ -219,6 +219,10 @@ test('v3.9.60 REGRESSION: restoreBackup invalidates boostManager & modLogManager
     const hadModlogs = fs.existsSync(modlogsPath);
     const oldBoosts = hadBoosts ? fs.readFileSync(boostsPath, 'utf8') : null;
     const oldModlogs = hadModlogs ? fs.readFileSync(modlogsPath, 'utf8') : null;
+    // v3.9.60: a fresh clone may have NO data/ folder at all (only a .gitkeep
+    // in this repo — a clone without it would ENOENT) — make sure it exists
+    // before writing the test fixture files.
+    fs.mkdirSync(path.join(__dirname, '..', '..', 'data'), { recursive: true });
     fs.writeFileSync(
         boostsPath,
         JSON.stringify({ 'g1:u1': { guildId: 'g1', userId: 'u1', totalBoosts: 7 } }),
