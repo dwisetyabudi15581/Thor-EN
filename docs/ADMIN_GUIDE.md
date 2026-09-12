@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.60
+# 📖 Admin Guide — Thor Bot v3.10.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -49,6 +49,8 @@ npm start
 - The console shows: `✅ Slash Commands registered to guild: Your Server (instant!)`
 - In Discord, type `/` — all **91 slash commands** must appear
 - If a command doesn't show up, make sure `GUILD_ID` in `.env` is correct
+
+> 🌍 **Multi-Guild (v3.10.0)** — as of this version the bot's config is **per-server** (`data/config/<guildId>.json`): server A's admin can no longer overwrite server B's settings. `GUILD_ID` in `.env` is now **optional**: set = single-guild mode as usual (the bot ignores other servers); **empty = full multi-guild mode** (every server that invited the bot is served, commands register globally in ~1 hour). The old `data/config.json` is migrated automatically the first time the bot reads it (the old file is renamed to `config.json.migrated` — not deleted). Want to invite the bot to a second server? Just share the invite link — that server's admin runs `/set-role admin` themselves and their whole configuration stays separate from yours.
 
 > 💡 **Forgot what a command is called?** Type `/help` — since v3.9.39 it's an **interactive navigator** (no more one giant embed you have to scroll), and since **v3.9.44** the catalog is reorganized into **20 categories ordered by usage priority**: the 🏠 home now opens with a **"What do you need right now?"** section (member trouble? → Moderation · setting up sales? → Quick Start · want oversight? → Logging & Channels · quiet server? → Giveaways & Leveling), the 📂 **category dropdown** to jump straight in, 🔍 **Search Commands** for free keyword search (`key`, `panel`, `warn`...), or `/help search:<keyword>` directly. Since **v3.9.53 every category view is a FULL self-contained guide** — per-command syntax + behavior + ❓ answers to the most common member questions (the 📖 All Commands listing stays compact so it always fits one embed). All navigation happens inside one ephemeral message — it never floods the channel.
 
@@ -824,7 +826,7 @@ The bot replies automatically when a member's message matches a trigger (case-in
 /backup-now
 ```
 
-The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all 20 data files** from the `data/` folder: config, keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels, deals, boosts, serverstats, modlogs (v3.9.60 — moderation history).
+The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all data** from the `data/` folder: the per-guild `config/` folder (v3.10.0 — one file per server, copied recursively) + 19 other files: keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels, deals, boosts, serverstats, modlogs (v3.9.60 — moderation history). Old backups (pre-v3.10.0, flat config.json) can still be restored — the legacy file is claimed by the automatic migration, without overwriting any already-active guild config.
 
 ### Auto-Backup
 
@@ -1029,9 +1031,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.60) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.10.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
+
+- **v3.10.0** (2026-09-12) — 🌍 **MULTI-GUILD PHASE 1: per-server config**. The global `data/config.json` (shared by every server that invited the bot — server A's admin overwriting server B's settings) is replaced by **`data/config/<guildId>.json`** — one file per server. One-time automatic migration on bot start (the old file becomes `config.json.migrated`). The internal `getConfig/saveConfig/setField` API now requires a `guildId` (fail-fast) via the new `resolveGuildId()` helper; the admin-role permission cache is per-guild (was global — server A's admin role was read by server B); backup/restore supports the recursive `config/` folder + backward-compat for old backups. 57 call sites across 24 src files + 19 test files updated; the total stays at **598 tests** green. An empty `GUILD_ID` = full multi-guild mode; currently single-server setups change nothing at all.
 
 - **v3.9.60** (2026-09-12) — 🧪 **backup/restore subsystem audit (code review)**. Fixed 3 real bugs: (1) **modlogs.json was never backed up** — since v3.9.43 the moderation history (timeout/kick/ban shown by `/warn-list`) was silently excluded from `/backup-now` and lost by `/restore-backup`; the file is now in FILES_TO_BACKUP and pinned by environment-independent regression tests (20-file registry cross-check). (2) **Post-restore stale-cache wipe for boosts.json** — boostManager's permanent in-memory store was never invalidated after a restore, so the first boost event overwrote the freshly restored history; `reload()` is now called in the restore flow (same for modLogManager). (3) **`npm test` was red on every fresh clone/CI** — the GUARD test assumed runtime data files exist; a fresh checkout now skips that scan and the guarantee lives in the new regression tests. +3 unit tests (total **598**). No new commands, no config changes — fully compatible with v3.9.59 data.
 - **v3.9.59** (2026-09-12) — 💬 **user request: "auto booster role — those who boost the server should get a role"**. New **`tipe:booster`** in `/set-role`: the Booster role is **automatically** granted when a member boosts the server and removed when the boost ends (Discord's built-in Server Booster semantics, but with your own role — order/color configurable). Applied **retroactively** to existing boosters when set (the reply states the count), synced at startup for boosts that happened while the bot was offline, and **never revokes** manual grants to regular members. Every skip/failure leaves a cause + fix log line (not set, ghost role, position above the bot role, Manage Roles permission); `/test-booster` also diagnoses the role chain without touching the role (the simulation stays pure); `/remove-role booster` disables the automation without revoking granted roles. +18 unit tests (total **595**).
@@ -1085,6 +1089,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.60
+**Document version:** v3.10.0
 **Last updated:** September 12, 2026
-**Bot version:** 3.9.60 · 92 slash commands · 598 unit tests
+**Bot version:** 3.10.0 · 92 slash commands · 598 unit tests
