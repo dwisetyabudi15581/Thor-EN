@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.13.0** · 96 slash commands · 645 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style) · self-service key selling (premium SaaS)
+> **v3.13.0** · 96 slash commands · 644 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style) · self-service key selling (premium SaaS)
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -155,7 +155,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (645 tests) |
+| `npm test`       | Run all unit tests (644 tests) |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 
