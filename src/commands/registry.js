@@ -1141,6 +1141,36 @@ function getCommands() {
             name: 'boosters',
             description: 'List the current server boosters + recent boost history (public)'
         },
+        // v3.9.58 (user request: "command test booster"): the boost feature's
+        // /test-welcome — admins cannot simulate a real boost (it costs real
+        // money), so this command proves the whole notification chain works:
+        // config → channel → bot permissions, plus a LIVE PREVIEW of the exact
+        // embed the real event sends (same builders as boostHandler — no drift
+        // possible). PURE SIMULATION: nothing is recorded — boost history
+        // (/boosters), the server log and the live counters stay untouched.
+        {
+            name: 'test-booster',
+            description: 'Diagnose & preview the boost add/remove notification (find out why it does not appear)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 3,
+                    name: 'tipe',
+                    description: 'Which one to test',
+                    required: true,
+                    choices: [
+                        { name: 'Boost added', value: 'add' },
+                        { name: 'Boost ended', value: 'remove' }
+                    ]
+                },
+                {
+                    type: 5,
+                    name: 'live',
+                    description: 'Also send the preview to the REAL server-booster channel (delivery test)',
+                    required: false
+                }
+            ]
+        },
         // v3.9.51: live server stats counter channels (the "ServerStats bot"
         // experience): channel NAMES are auto-updating counters (members,
         // bots, boosts, roles, channels). setup/remove/refresh — see

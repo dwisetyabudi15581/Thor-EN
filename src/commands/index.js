@@ -198,6 +198,8 @@ const COMMAND_TO_DOMAIN = {
     'my-stats': 'stats',
     // v3.9.49: server booster list (live + history)
     boosters: 'stats',
+    // v3.9.58: boost notification diagnostics + live preview (simulation)
+    'test-booster': 'stats',
 
     // poll
     poll: 'poll',

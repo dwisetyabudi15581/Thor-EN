@@ -21,7 +21,7 @@
  *   4. /serverstats refresh: forces one immediate update.
  *   5. Event wiring: guildMemberAdd marks the stats dirty; channelCreate
  *      marks them dirty.
- *   6. Contracts: registry (91 commands, 3 subcommands), router mapping +
+ *   6. Contracts: registry (92 commands, 3 subcommands), router mapping +
  *      NOT public, FILES_TO_BACKUP, help catalog line + the 5800 budget,
  *      index.js registers the 4 new event files.
  */
@@ -611,7 +611,7 @@ test('CONTRACT registry/router: /serverstats registered with 3 subcommands, admi
     resetManager();
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
-    assert.strictEqual(cmds.length, 91, '91 commands (90 + /serverstats)');
+    assert.strictEqual(cmds.length, 92, '92 commands (91 + /test-booster v3.9.58)');
 
     const cmd = cmds.find(c => c.name === 'serverstats');
     assert.ok(cmd, '/serverstats exists in the registry');

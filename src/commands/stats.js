@@ -46,9 +46,11 @@
 const {
     EmbedBuilder,
     MessageFlags,
+    PermissionFlagsBits,
     getUserStats,
     getTopUsersStats,
     getServerStatsAll,
+    getConfig,
     safeEditReply
 } = require('./_shared');
 
@@ -57,7 +59,8 @@ const { getActiveTicketCount } = require('../data/ticketManager');
 
 // v3.9.49: /boosters — live booster list + tracked history. The embed is built
 // in boostHandler (single source of truth — same builders the live event uses).
-const { buildBoostersEmbed } = require('../bot/boostHandler');
+// v3.9.58: /test-booster previews those SAME add/remove builders (no drift).
+const { buildBoostersEmbed, buildBoostAddEmbed, buildBoostRemoveEmbed } = require('../bot/boostHandler');
 const { getRecentEvents: getRecentBoostEvents } = require('../data/boostManager');
 
 module.exports = async function (interaction) {
@@ -137,6 +140,105 @@ module.exports = async function (interaction) {
         const recent = getRecentBoostEvents(guild.id, 5);
         const embed = buildBoostersEmbed(guild, boosters, recent);
         return safeEditReply(interaction, { embeds: [embed] });
+    }
+
+    // ====================================================
+    // === /test-booster (v3.9.58) ===
+    // ====================================================
+    // The boost feature's /test-welcome: admins CANNOT simulate a real boost
+    // (it costs real money), so this command proves the whole chain works —
+    // config → channel exists → bot permissions — and sends a LIVE PREVIEW of
+    // the exact embed a real boost sends (the SAME buildBoostAddEmbed /
+    // buildBoostRemoveEmbed the live event uses — no drift possible).
+    // PURE SIMULATION: nothing is recorded — boost history (/boosters), the
+    // server log and the live counters stay untouched, so it is safe to run
+    // any time. Optional `live:true` ALSO delivers the preview to the REAL
+    // server-booster channel (full end-to-end delivery test).
+    if (interaction.commandName === 'test-booster') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const tipe = interaction.options.getString('tipe'); // 'add' | 'remove'
+        const live = interaction.options.getBoolean('live') === true;
+        const guild = interaction.guild;
+        const config = getConfig();
+        const configuredId = config.channels['server-booster'];
+        const me = guild.members.me;
+
+        // --- diagnose every link in the chain (v3.9.48 pattern) ---
+        const lines = [];
+        let channel = null;
+        if (!configuredId) {
+            lines.push(`❌ **server-booster channel: not set** → fix with \`/set-channel server-booster #channel\``);
+        } else {
+            channel = guild.channels.cache.get(configuredId);
+            if (!channel) {
+                lines.push(
+                    `❌ **server-booster channel: not found** (ID \`${configuredId}\`) — deleted, or the ID belongs to another server → re-set with \`/set-channel server-booster #channel\``
+                );
+            } else {
+                lines.push(`✅ **server-booster channel:** ${channel} (\`${channel.id}\`)`);
+                if (me) {
+                    const perms = channel.permissionsFor(me);
+                    const canSend = perms?.has?.(PermissionFlagsBits.SendMessages) ?? false;
+                    const canEmbed = perms?.has?.(PermissionFlagsBits.EmbedLinks) ?? false;
+                    const canView = perms?.has?.(PermissionFlagsBits.ViewChannel) ?? true;
+                    lines.push(
+                        `${canView ? '✅' : '❌'} View Channel · ${canSend ? '✅' : '❌'} Send Messages · ${canEmbed ? '✅' : '❌'} Embed Links (bot permissions in that channel)`
+                    );
+                    if (!canSend || !canEmbed) {
+                        lines.push('→ fix: Server Settings → that channel → add the bot → enable **Send Messages** + **Embed Links**');
+                    }
+                }
+            }
+        }
+        // Boost detection = the guildMemberUpdate premium_since diff (Discord
+        // fires no dedicated boost event) — an online bot proves the
+        // GuildMembers intent is ON (a disabled privileged intent crashes the
+        // login, it never runs silently).
+        lines.push('ℹ️ Boost detection: ✅ active (guildMemberUpdate premium_since diff — the bot is online with the GuildMembers intent)');
+        // Current live boost state — what a REAL boost would change.
+        const boostCount = guild.premiumSubscriptionCount ?? 0;
+        lines.push(`ℹ️ Server now: Level ${guild.premiumTier ?? 0} · ${boostCount} boost(s)`);
+
+        // --- live preview: the EXACT embed a real boost sends ---
+        // interaction.member plays the role of "the booster". For the remove
+        // preview, the streak start is the admin's real boost date when they
+        // are boosting, else a plausible simulated one (3 days ago).
+        const simulatedSince = interaction.member?.premiumSinceTimestamp || Date.now() - 3 * 86400000;
+        const embed =
+            tipe === 'add'
+                ? buildBoostAddEmbed(interaction.member)
+                : buildBoostRemoveEmbed(interaction.member, simulatedSince);
+        let previewNote;
+        try {
+            await interaction.channel.send({
+                content: tipe === 'add' ? `<@${interaction.user.id}>` : undefined,
+                embeds: [embed]
+            });
+            previewNote = `🧪 Preview sent to **this channel** — the real ${tipe === 'add' ? 'boost notification' : 'boost-ended notice'} goes to ${channel ? channel : 'the server-booster channel you set'}. It uses your own data as "the booster".`;
+        } catch (sendErr) {
+            previewNote = `⚠️ Preview could NOT be sent to this channel: ${sendErr.message}\nCheck the bot's Send Messages + Embed Links permissions HERE too — the server-booster channel likely has the same problem.`;
+        }
+
+        // --- optional live delivery: the REAL channel, still a simulation ---
+        if (live) {
+            if (channel) {
+                try {
+                    await channel.send({
+                        content: tipe === 'add' ? `<@${interaction.user.id}>` : undefined,
+                        embeds: [embed]
+                    });
+                    lines.push(`🧪 Live delivery: ✅ also sent to the REAL server-booster channel — the full chain works end-to-end.`);
+                } catch (err) {
+                    lines.push(`🧪 Live delivery: ❌ failed in the server-booster channel: ${err.message} — check the bot's Send Messages + Embed Links permissions there.`);
+                }
+            } else {
+                lines.push('🧪 Live delivery: skipped — the server-booster channel is not set (or was deleted). Fix it above first.');
+            }
+        }
+
+        return safeEditReply(interaction, {
+            content: `${lines.join('\n')}\n\n${previewNote}\n\n🧪 **Simulation only** — nothing is recorded: boost history (\`/boosters\`), the server log and the live counters stay untouched.`
+        });
     }
 
     // ====================================================

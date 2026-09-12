@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.9.58] — 2026-09-12
+
+### Added — 🧪 user request: "command test booster"
+
+- 🟢 **NEW `/test-booster` (92nd command, admin) — the boost feature's `/test-welcome`.** Admins cannot simulate a real boost (it costs real money), so until now the whole notification chain was untestable until an actual booster showed up. `/test-booster tipe:add` (or `tipe:remove`) now diagnoses **every link in the chain** — server-booster channel set → exists → bot View/Send/Embed permissions — and sends a **live preview of the EXACT embed** a real boost sends (the same `buildBoostAddEmbed`/`buildBoostRemoveEmbed` the live event uses — no drift possible), with your own data playing "the booster". The reply also shows the live boost state (level + count) and the intent note (boost detection = the guildMemberUpdate premium_since diff; the bot being online proves the GuildMembers intent is ON).
+- 🟢 **`live:true` option — the full end-to-end delivery test.** Also delivers the preview to the **REAL server-booster channel**, proving the embed actually arrives where real notifications go. Without the option nothing is sent there; with a broken/missing channel the live send is skipped with a clear reason (never crashes).
+- 🟢 **PURE SIMULATION — nothing is recorded.** Boost history (`/boosters`), the server log and the live counters are untouched — the command is safe to run any time, and the unit tests pin `boosts.json` byte-identical after add + remove + live runs.
+- 🟢 **`/help` updated (budget-safe):** the Statistics compact line list gains `/test-booster` (lines compacted to keep the All-Commands embed at **5.786/5.800** — 20 categories intact), the Statistics guide explains the command + `live:true`, and the Logging & Channels FAQ now points to `/test-booster` for boost channels.
+- 🟢 **+11 unit tests (total 577):** registry contract (choices, ManageGuild, optional boolean), router mapping, all-healthy diagnostics + pink preview with mention content, remove → gray embed without mention, channel-not-set / ghost-ID / missing-permission diagnostics, `live:true` delivery + skip path, and the boosts.json purity guard.
+
 ## [3.9.57] — 2026-09-12
 
 ### Fixed — 💬 user request: "make the /add-product price support decimals, e.g. 5.88"

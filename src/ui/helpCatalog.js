@@ -292,7 +292,7 @@ const HELP_CATEGORIES = [
             '• `tipe:invoice` — purchase invoices (one per completed order).',
             '• `tipe:server-booster` — 🚀 boost add/remove is auto-announced as a pink embed, and is ALWAYS recorded in the server log + boost history even when this channel is not set.',
             '• `/remove-channel tipe` — turn one off (the events keep flowing to the server log where applicable).',
-            '❓ **Set a channel but nothing arrives?** Run `/test-welcome` for welcome/goodbye, or check the bot\'s View + Send + Embed permissions on that channel.',
+            '❓ **Set a channel but nothing arrives?** Run `/test-welcome` for welcome/goodbye, `/test-booster` for boosts, or check the bot\'s View + Send + Embed permissions on that channel.',
             '❓ **Channel deleted?** Re-set it with `/set-channel` — a dead channel ID is detected and reported at startup.'
         ]
     },
@@ -523,11 +523,13 @@ const HELP_CATEGORIES = [
         // v3.9.51: + /serverstats (live counter channels). Lines compacted so
         // the All-Commands embed stays within the 5800 budget with all 20
         // categories intact (re-measured after every line change).
+        // v3.9.58: + /test-booster — stats lines compacted a bit more to fit it.
         lines: [
-            '• `/stats` — live server stats + tracked activity',
-            '• `/serverstats` — live counter channels (members/boosts)',
-            '• `/boosters` — current boosters + history',
-            '• `/leaderboard` — rankings (messages/spending/wins)',
+            '• `/stats` — live server stats',
+            '• `/serverstats` — live counter channels',
+            '• `/boosters` — boosters + history',
+            '• `/test-booster` — test boost notifications + preview',
+            '• `/leaderboard` — top-10 rankings',
             '• `/my-stats` — your messages & transactions'
         ],
         // v3.9.53: full self-contained guide (category view = detail only) —
@@ -540,6 +542,7 @@ const HELP_CATEGORIES = [
             '• Updates are automatic: member join/leave, boost add/remove, channel & role create/delete. Rate-limit safe (Discord allows 2 renames per channel / 10 min — updates are throttled and self-heal every ~5 min). Deleted counters warn you; all gone → auto-disable.',
             '',
             '**Boost notifications:** a member starts/stops boosting → pink embed auto-sent to the server-booster channel (`/set-channel tipe:server-booster #ch`), always recorded in the server log + `/boosters` history.',
+            '• **Test it yourself (v3.9.58):** `/test-booster tipe:add` (or `tipe:remove`) — checks the whole chain (channel set → exists → bot permissions), previews the EXACT embed right here, and with `live:true` also delivers it to the real channel. Pure simulation — nothing is recorded.',
             '',
             '**Numbers & rankings**',
             '• `/stats` — server overview: live members, boosts, open tickets + tracked activity (messages, transactions). No revenue line — spending is personal.',

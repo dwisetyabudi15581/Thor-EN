@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.9.57** · 91 slash commands · 566 unit tests · discord.js v14 · Node.js 18+ · single-guild
+> **v3.9.58** · 92 slash commands · 577 unit tests · discord.js v14 · Node.js 18+ · single-guild
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -49,7 +49,7 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 - XP per message (anti-spam cooldown) + role rewards per level + `/rank` + `/leaderboard-level`.
 - Server stats: live member count, boosts, open tickets (straight from Discord) + tracked activity & transactions. **Live counter channels** (`/serverstats`) — the channel names themselves are auto-updating counters (members, bots, boosts, roles, channels — **pick which ones to show** via boolean options), rate-limit safe. Leaderboards by messages/purchases/spending/wins; `/my-stats` shows the real join date. **`/help` category views are full per-command guides** — syntax, behavior + the answers to the most common questions, so members stop asking.
-- **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history).
+- **Server Boosters:** boost add/remove notifications to a dedicated booster channel + offline catch-up + public `/boosters` list (live roster + recent boost history) + **`/test-booster`** — simulate a boost add/remove to test the notification chain end-to-end (pure simulation, nothing recorded).
 
 ### 🎭 And More
 

@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.9.57
+# 📖 Admin Guide — Thor Bot v3.9.58
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -91,7 +91,7 @@ The order below is a **recommendation** for a new server. Skip any step you have
 - `invoice` — the transaction testimonial channel (filled in automatically on every Set Key / Deliver Order / Order Successful — **once per ticket**, never duplicated)
 - `audit-log` — the channel where the bot records ALL admin actions (63 action types; automatically retried once if delivery fails due to rate limits/network)
 - `transcript` — the ticket transcript archive channel (chat history is saved automatically every time a ticket is closed)
-- `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off.
+- `server-booster` — (v3.9.49, optional) the boost notification channel: a pink `🚀 NEW SERVER BOOST!` embed when a member starts boosting, a gray `💔 BOOST ENDED` when they stop, plus one consolidated catch-up embed at startup for changes that happened while the bot was offline. Boosts are also always recorded in the **server log**. Without this channel, `/boosters` still works — only the notifications are off. **Want to test it without waiting for a real boost?** Run `/test-booster tipe:add` (v3.9.58) — it diagnoses the whole chain and previews the exact embed; add `live:true` to also deliver the preview to this channel. Pure simulation, nothing is recorded.
 
 > 📊 **Live server stats counters (v3.9.51, optional):** `/serverstats setup` creates a `📊 SERVER STATS` category at the TOP of the channel list with display-only channels whose NAMES are live counters — `👥 Members: 123`, `🤖 Bots: 2`, `🚀 Boosts: 5`, `🎭 Roles: 9`, `📺 Channels: 12` — the "ServerStats bot" experience without another bot. **v3.9.53: pick which counters to show** — the `members`/`bots`/`boosts`/`roles`/`channels` boolean options are all ON by default; set one to False to skip it (all-False is refused). They update automatically on member/boost/role/channel changes (rate-limit safe: unchanged numbers make zero API calls, and each channel is renamed at most once per 5 minutes — Discord's 2-per-10-min limit). Manage with `/serverstats refresh` (force an update now) and `/serverstats remove` (delete them all — then `setup` again to change the selection). The bot needs **Manage Channels + Manage Roles** for the setup.
 
@@ -1027,9 +1027,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.9.57) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.9.58) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
+
+- **v3.9.58** (2026-09-12) — 🧪 **user request: "command test booster"**. New **`/test-booster`** (92nd command, admin): the boost feature's `/test-welcome` — admins cannot simulate a real boost (it costs real money), so this command proves the whole notification chain works: server-booster channel set → exists → bot View/Send/Embed permissions, plus a **live preview of the exact embed** a real boost sends (same builders as the live event — no drift). `tipe:add` → pink 🚀 preview with the mention; `tipe:remove` → gray 💔 preview. The `live:true` option ALSO delivers the preview to the REAL server-booster channel — the full end-to-end delivery test. **Pure simulation — nothing is recorded** (boost history, server log and counters stay clean). +11 unit tests (total **577**).
 
 - **v3.9.57** (2026-09-12) — 💬 **user request: "make the /add-product price support decimals, e.g. 5.88"**. MARKER-LESS decimals are now supported: `5.88` records as **5.88** (it used to read as 588 — a silent 100x error; admins had to write `$5.88` or `5,88`). A single dot with a 1-2 digit fraction is now always a decimal — with or without a currency marker — because a valid Indonesian thousands group is always 3 digits (`50.000`). A 3-digit fraction & multi-dot stay thousands; escrow stays whole-numbers-only; a price spelling cheat sheet was added in Step 4. +3 unit tests (total **566**).
 
@@ -1078,6 +1080,6 @@ If you hit a problem that isn't in Troubleshooting:
 
 ---
 
-**Document version:** v3.9.57
+**Document version:** v3.9.58
 **Last updated:** September 12, 2026
-**Bot version:** 3.9.57 · 91 slash commands · 566 unit tests
+**Bot version:** 3.9.58 · 92 slash commands · 577 unit tests
