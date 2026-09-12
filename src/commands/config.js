@@ -525,16 +525,10 @@ module.exports = async function (interaction) {
         const keyLines = [
             `• Total keys stored: **${keyStats.total}**`,
             `• Active: **${keyStats.active}**${keyStats.permanent > 0 ? ` (including ${keyStats.permanent} permanent)` : ''}`,
-            // v3.13.0: stock keys (available) — minted by /gen-key, not yet
-            // redeemed by anyone. Their duration isn't running; they are
-            // not counted as active/permanent.
-            keyStats.available > 0
-                ? `• 🏷️ Ready-to-sell stock (not yet redeemed): **${keyStats.available}** — manage via \`/list-stock\``
-                : null,
             keyStats.expired > 0
                 ? `• ⚠️ Expired (waiting for the scheduler to clean up): **${keyStats.expired}**`
                 : `• Expired: **0** ✅`
-        ].filter(Boolean);
+        ];
 
         // --- Stats: Scheduled Role Removals ---
         // v3.9.4: scoped per guild — previously getAllScheduledActive() returned a global list.

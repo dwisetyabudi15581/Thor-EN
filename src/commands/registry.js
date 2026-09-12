@@ -736,68 +736,6 @@ function getCommands() {
             ]
         },
 
-        // === v3.13.0: PREMIUM SAAS — STOCK KEYS + SELF-SERVICE REDEMPTION ===
-        // /gen-key + /redeem = admins sell keys without being online 24/7
-        // (completing the public v3.12.0 Dyno-style mode).
-        {
-            name: 'gen-key',
-            description: 'Mint product stock keys to sell (members redeem them via /redeem)',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [
-                { type: 3, name: 'value', description: 'Product value (e.g. vip30)', required: true },
-                {
-                    type: 4,
-                    name: 'count',
-                    description: 'How many keys to mint at once (1-10, default 1)',
-                    required: false,
-                    min_value: 1,
-                    max_value: 10
-                },
-                {
-                    type: 3,
-                    name: 'note',
-                    description: 'Internal note (e.g. top.gg order #123)',
-                    required: false,
-                    max_length: 100
-                }
-            ]
-        },
-        {
-            // PUBLIC command (no defaultMemberPermissions) — members redeem
-            // their purchased keys themselves; safety comes from the rate
-            // limiter + generic error messages (see src/commands/premium.js).
-            name: 'redeem',
-            description: 'Redeem your purchased key for a VIP role (duration starts when redeemed)',
-            options: [
-                {
-                    type: 3,
-                    name: 'key',
-                    description: 'The key you bought (format XXXXX-XXXXX-XXXXX)',
-                    required: true,
-                    max_length: 100
-                }
-            ]
-        },
-        {
-            name: 'list-stock',
-            description: 'View all unredeemed stock keys on this server',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild
-        },
-        {
-            name: 'revoke-key',
-            description: 'Cancel a (not yet redeemed) stock key that leaked / was minted by mistake',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [
-                {
-                    type: 3,
-                    name: 'key',
-                    description: 'The stock key to cancel',
-                    required: true,
-                    max_length: 100
-                }
-            ]
-        },
-
         // === FLEXIBLE SELF-ROLE ===
         {
             name: 'setup-selfrole',

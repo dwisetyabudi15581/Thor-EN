@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.14.0] — 2026-09-13
+
+### Removed — 🗑️ SELF-SERVICE STOCK KEYS REMOVED (USER REQUEST)
+
+The user's premium keys are **minted by their external VIP website** (used for web login) — bot-minted keys are worthless there, so the entire v3.13.0 feature is removed.
+
+- 🔴 **`/gen-key` `/redeem` `/list-stock` `/revoke-key` REMOVED** — the `src/commands/premium.js` handler, the 10 stock functions in `keyManager`, the `premium` router domain, the `/redeem` entry in `PUBLIC_COMMANDS`, the stock line in `/config-show`, and the 2-flow Key category in `/help` (back to the single classic flow).
+- 🔴 **`tests/unit/premiumKeys.test.js` DELETED** — 28 feature tests removed with it. Registry 96 → **92 slash commands**; total tests 644 → **616**.
+- 🟢 **The classic `/set-key` flow is UNTOUCHED** — it remains the official bridge from external web keys to Discord roles (admins enter a key from the VIP website in a transaction ticket).
+- 🟢 Premium monetization moves to a **separate web dashboard** (Discord OAuth + web-key verification); bot roadmap: a REST API bridge for the dashboard.
+
 ## [3.13.0] — 2026-09-12
 
 ### Added — 💰 PREMIUM SAAS: STOCK KEYS + SELF-SERVICE REDEMPTION

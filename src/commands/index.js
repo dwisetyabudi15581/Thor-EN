@@ -76,9 +76,6 @@ const midmanHandler = require('./midman');
 const moderationHandler = require('./moderation');
 // v3.9.51: live server stats counter channels (/serverstats setup|remove|refresh)
 const serverstatsHandler = require('./serverstats');
-// v3.13.0: premium SaaS — stock keys + self-service redemption (/gen-key
-// /redeem /list-stock /revoke-key)
-const premiumHandler = require('./premium');
 
 const DOMAIN_HANDLERS = {
     help: helpHandler,
@@ -110,9 +107,7 @@ const DOMAIN_HANDLERS = {
     // v3.9.43
     moderation: moderationHandler,
     // v3.9.51: live server stats counter channels
-    serverstats: serverstatsHandler,
-    // v3.13.0: premium SaaS (stock keys + self-service redemption)
-    premium: premiumHandler
+    serverstats: serverstatsHandler
 };
 
 // Mapping commandName → domain key (in DOMAIN_HANDLERS).
@@ -156,12 +151,6 @@ const COMMAND_TO_DOMAIN = {
     'set-key': 'keys',
     'list-keys': 'keys',
     'clear-schedule': 'keys',
-
-    // v3.13.0: premium SaaS — stock keys + self-service redemption
-    'gen-key': 'premium',
-    redeem: 'premium',
-    'list-stock': 'premium',
-    'revoke-key': 'premium',
 
     // selfrole
     'setup-selfrole': 'selfrole',
@@ -277,9 +266,7 @@ const COMMAND_TO_DOMAIN = {
 
 // Commands that regular members (non-admins) may use.
 // v3.9.13: added afk, afk-clear, rank, leaderboard-level (public community features)
-// v3.13.0: added redeem — members redeem their purchased keys themselves
-// (self-service premium; safety lives in the data layer: rate limiter + generic messages).
-const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'boosters', 'afk', 'afk-clear', 'rank', 'leaderboard-level', 'redeem'];
+const PUBLIC_COMMANDS = ['leaderboard', 'my-stats', 'boosters', 'afk', 'afk-clear', 'rank', 'leaderboard-level'];
 
 // v3.9.43: moderation commands — usable by non-admin moderators as long as
 // they hold the matching Discord permission (role hierarchy is still checked
