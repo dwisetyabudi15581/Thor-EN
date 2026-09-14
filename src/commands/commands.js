@@ -22,6 +22,8 @@ const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { getCommands } = require('./registry');
 const { getConfig, saveConfig } = require('../data/configManager');
 const { logAudit, safeEditReply } = require('./_shared');
+// v3.20.0: custom commands are managed by the Command Manager too (list/toggle).
+const customCommandManager = require('../data/customCommandManager');
 
 // Commands that can never be disabled — the management door stays open.
 const PROTECTED_COMMANDS = ['commands'];
@@ -31,12 +33,16 @@ const PROTECTED_COMMANDS = ['commands'];
  * dashServer.js (re-exported below) so the rules are identical on Discord
  * and the web — single source of truth.
  *
+ * v3.20.0: second parameter `extraNames` — the custom command names of the
+ * guild in question (from customCommandManager). Custom commands can be
+ * disabled via /commands toggle AND the web Command Manager too.
+ *
  * @returns {{ ok: true, value: string[] } | { ok: false, error: string }}
  */
-function normalizeDisabledList(list) {
+function normalizeDisabledList(list, extraNames = []) {
     if (!Array.isArray(list)) return { ok: false, error: 'Invalid command list (must be an array)' };
     if (list.length > 100) return { ok: false, error: 'At most 100 commands can be disabled' };
-    const known = new Set(getCommands().map((c) => c.name));
+    const known = new Set([...getCommands().map((c) => c.name), ...extraNames]);
     const seen = new Set();
     for (const raw of list) {
         const name = String(raw);
@@ -62,16 +68,22 @@ module.exports = async function (interaction) {
     // === /commands list ===
     if (sub === 'list') {
         const disabled = getDisabledCommands(config);
-        const total = getCommands().length;
+        const customCommands = customCommandManager.getGuildCommands(guildId);
+        const total = getCommands().length + customCommands.length;
         const embed = new EmbedBuilder()
             .setTitle('🧩 Command Manager')
             .setColor(disabled.length > 0 ? 0xe67e22 : 0x2ecc71)
             .setDescription(
-                disabled.length === 0
+                (disabled.length === 0
                     ? `✅ All **${total} commands are enabled** on this server.\n\nDisable them via \`/commands toggle\` or the web dashboard.`
                     : `⚠️ **${disabled.length}/${total} commands disabled**:\n\n` +
                       disabled.map((c) => `• \`/${c}\``).join('\n') +
-                      `\n\nRe-enable them via \`/commands toggle\` or \`/commands enable-all\`.`
+                      `\n\nRe-enable them via \`/commands toggle\` or \`/commands enable-all\`.`) +
+                (customCommands.length > 0
+                    ? `\n\n🧪 **${customCommands.length} custom commands** (created via the web): ${customCommands
+                        .map((c) => `\`/${c.name}\``)
+                        .join(' ')}`
+                    : '')
             )
             .setFooter({ text: `Disabled commands are rejected by the bot · /commands` })
             .setTimestamp();
@@ -84,7 +96,10 @@ module.exports = async function (interaction) {
         const name = (interaction.options.getString('command') || '').trim().toLowerCase();
         const enabled = interaction.options.getBoolean('enabled');
 
-        const known = new Set(getCommands().map((c) => c.name));
+        const known = new Set([
+            ...getCommands().map((c) => c.name),
+            ...customCommandManager.getGuildCommands(guildId).map((c) => c.name)
+        ]);
         if (!known.has(name)) {
             return safeEditReply(interaction, {
                 content: `❌ Unknown command \`/${name || '(empty)'}\`. Check the spelling in \`/help\`.`
@@ -98,7 +113,10 @@ module.exports = async function (interaction) {
 
         const disabled = getDisabledCommands(config);
         const next = enabled ? disabled.filter((c) => c !== name) : [...new Set([...disabled, name])];
-        const normalized = normalizeDisabledList(next);
+        const normalized = normalizeDisabledList(
+            next,
+            customCommandManager.getGuildCommands(guildId).map((c) => c.name)
+        );
         if (!normalized.ok) {
             return safeEditReply(interaction, { content: `❌ ${normalized.error}` });
         }

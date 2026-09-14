@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.20.0] — 2026-09-15
+
+### Added — 🪄 CUSTOM COMMANDS FROM THE WEB + FULL EMBED BUILDER (BUILD ON THE WEB, DELIVERED TO THE SERVER)
+
+Dyno-style: admins can now CREATE content on the web dashboard and the bot delivers it to the server — custom commands become REAL slash commands, embeds are built in full with a Discord-style live preview.
+
+- 🟢 **Custom Commands (new dashboard module, 18 → 19)**: build your own slash command on the web — name, description, text + embed reply, ephemeral option. Once saved, the command is **automatically registered on Discord** (per-guild registration via `guild.commands.set`, appears within ± 1 minute) and every member can use it. Max 20 per server; names must not collide with built-ins; all validation centralized in `customCommandManager`.
+- 🟢 **Automatic two-way sync**: web create/update/delete → Discord registration refreshed instantly (`customCommandSync.js`); startup syncs too (anti-drift after a backup restore). Single-server mode: customs merge with built-ins on the primary guild; public mode: customs register per-guild (built-ins stay global).
+- 🟢 **Command Manager parity**: custom commands appear in the web Command Manager list AND `/commands toggle` on Discord — temporarily disable them from either side (`normalizeDisabledList` now accepts that guild's custom names).
+- 🟢 **Full Embed Builder (Embed module upgrade)**: complete parity with `/embed-builder` — text outside the embed, author (name + icon URL), title, color, **fields** (add/remove/reorder/inline 3-per-row, max 25), thumbnail, image, footer (text + icon), timestamp. **Live preview mimics Discord chat** (bot avatar, BOT badge, side color, inline field layout) — admins see exactly what will be sent.
+- 🟢 **Centralized embed validation** (`embedPayload.js`): every Discord API limit enforced in ONE place (title 256, description 4096, footer 2048, fields 25×(256/1024), total 6000, http/https URLs) — shared by the web embed endpoint, custom commands, and the router — web and Discord can never disagree about the rules.
+- 🟢 **New DASH API**: `POST /guilds/:id/custom-commands` (upsert + sync), `DELETE /guilds/:id/custom-commands/:name` (delete + sync); `POST /guilds/:id/embed` now accepts the full shape (`content` + `embed` object — legacy flat fields still compatible). Dashboard payload gains `customCommands` (full definitions) + custom entries in `commands.list`.
+- 🟢 **`data/customCommands/<guildId>.json`** per-server storage (15s read-through cache, responderManager pattern); **included in backup/restore** (`FILES_TO_BACKUP` + post-restore cache invalidation — without this a restore would silently delete every custom command).
+
+### Changed
+
+- 🟢 Unit tests 670 → **693** (23 new: embed caps/URL/total validation, upsert/delete/guild isolation, normalizeDisabledList parity); landing page 16 → **18 module cards** (Embed Builder + Custom Command).
+
 ## [3.19.0] — 2026-09-15
 
 ### Added — 🧩 DYNO-STYLE COMMAND MANAGER + 18 DASHBOARD MODULES (WEB = DISCORD, PICK EITHER)

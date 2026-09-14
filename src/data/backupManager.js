@@ -80,7 +80,14 @@ const FILES_TO_BACKUP = [
     // /backup-now skipped it and /restore-backup silently lost the whole
     // moderation history. Its in-memory cache is invalidated post-restore
     // (see _restoreBackupImpl) — same pattern as boosts below.
-    'modlogs.json'
+    'modlogs.json',
+    // v3.20.0: customCommands/ — per-guild directory (one JSON per server)
+    // holding admin-made custom command definitions (created from the web
+    // dashboard). Without this, restore-backup silently deletes ALL of a
+    // server's custom commands (they vanish from Discord on the next sync).
+    // Copied recursively like 'config'; the customCommandManager cache is
+    // invalidated post-restore (re-sync is done by the caller).
+    'customCommands'
 ];
 
 // v3.9.10: helper to resolve data file paths (to the data/ folder).
@@ -444,7 +451,16 @@ function _restoreBackupImpl(name) {
     // v3.9.26: invalidate the caches of managers that now have read-through caches
     // (automod/afk/responders/levels). All of these files get restored — without
     // invalidation, the hot path keeps reading a 15-second cache holding OLD data.
-    for (const mod of ['./automodManager', './afkManager', './responderManager', './levelManager']) {
+    // v3.20.0: customCommandManager added (the customCommands/ folder is
+    // restored too; its guild cache must be dropped so restored commands are
+    // immediately visible to the router + Discord sync).
+    for (const mod of [
+        './automodManager',
+        './afkManager',
+        './responderManager',
+        './levelManager',
+        './customCommandManager'
+    ]) {
         try {
             const m = require(mod);
             if (typeof m.invalidateCache === 'function') m.invalidateCache();

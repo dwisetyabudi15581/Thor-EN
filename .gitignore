@@ -13,6 +13,8 @@ node_modules/
 data/*.json
 # v3.10.0: config per-guild — data/config/<guildId>.json (multi-guild).
 data/config/
+# v3.20.0: custom commands per-guild — data/customCommands/<guildId>.json.
+data/customCommands/
 config.json
 scheduledRoles.json
 keys.json

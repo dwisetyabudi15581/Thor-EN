@@ -355,6 +355,62 @@ function seedGuild({ id, name, icon, memberCount }) {
         guildId: id,
       },
     ],
+    // v3.20.0: demo custom commands — a realistic sample of the Custom
+    // Command module's output.
+    customCommands: [
+      {
+        name: "socials",
+        description: "All of our social media links",
+        ephemeral: false,
+        content: "Follow our socials!",
+        embed: {
+          title: "📱 SERVER SOCIAL MEDIA",
+          description: "All of our official channels are here.",
+          color: 5793266,
+          authorName: "",
+          authorIconURL: "",
+          thumbnail: "",
+          image: "",
+          footerText: "Updated regularly by the admins",
+          footerIconURL: "",
+          timestamp: true,
+          fields: [
+            { name: "Instagram", value: "@thorbot", inline: true },
+            { name: "TikTok", value: "@thorbot", inline: true },
+            { name: "YouTube", value: "Thor Community", inline: true },
+          ],
+        },
+        createdBy: "333333333333333333",
+        createdByTag: "Owner#0001",
+        createdAt: Date.now() - 345600000,
+        updatedAt: Date.now() - 86400000,
+        useCount: 47,
+      },
+      {
+        name: "rules",
+        description: "Short version of the server rules",
+        ephemeral: true,
+        content: "",
+        embed: {
+          title: "📜 SERVER RULES",
+          description: "1. Be polite\n2. No spam\n3. No ads without permission\n4. Stay on topic per channel",
+          color: 15105570,
+          authorName: "",
+          authorIconURL: "",
+          thumbnail: "",
+          image: "",
+          footerText: "Violations = warn / mute / ban",
+          footerIconURL: "",
+          timestamp: false,
+          fields: [],
+        },
+        createdBy: "333333333333333333",
+        createdByTag: "Owner#0001",
+        createdAt: Date.now() - 691200000,
+        updatedAt: Date.now() - 691200000,
+        useCount: 128,
+      },
+    ],
   };
   guilds.set(id, { meta, data });
   return guilds.get(id);
@@ -430,7 +486,20 @@ const server = http.createServer(async (req, res) => {
     return entry ? send(200, entry.meta) : send(404, { error: "The bot is not in this server" });
   }
   if (req.method === "GET" && rest[0] === "dashboard") {
-    return entry ? send(200, entry.data) : send(404, { error: "The bot is not in this server" });
+    if (!entry) return send(404, { error: "The bot is not in this server" });
+    // v3.20.0: custom commands join the Command Manager list (domain
+    // 'custom') — same as the real bot's payload (dashServer.js).
+    const payload = {
+      ...entry.data,
+      commands: {
+        ...entry.data.commands,
+        list: [
+          ...entry.data.commands.list,
+          ...entry.data.customCommands.map((c) => ({ name: c.name, description: c.description, domain: "custom", custom: true })),
+        ],
+      },
+    };
+    return send(200, payload);
   }
 
   if (!entry) return send(404, { error: "The bot is not in this server" });
@@ -451,16 +520,80 @@ const server = http.createServer(async (req, res) => {
   }
 
   // v3.19.0: Command Manager — save the disabled list
+  // v3.20.0: this guild's custom commands may be disabled too.
   if (req.method === "PUT" && rest[0] === "commands" && rest.length === 1) {
     const body = await readBody();
     const disabled = Array.isArray(body?.disabled) ? body.disabled : null;
     if (!disabled) return send(422, { error: "Invalid command list (must be an array)" });
-    const known = new Set(entry.data.commands.list.map((c) => c.name));
+    const known = new Set([...entry.data.commands.list.map((c) => c.name), ...entry.data.customCommands.map((c) => c.name)]);
     const bad = disabled.filter((n) => !known.has(String(n)));
     if (bad.length) return send(422, { error: `Unknown command \`${bad[0]}\`` });
     if (disabled.includes("commands")) return send(422, { error: "The `/commands` command cannot be disabled — it is the command management door" });
     entry.data.commands.disabled = [...new Set(disabled.map(String))];
-    return send(200, { ok: true, disabled: entry.data.commands.disabled, total: entry.data.commands.list.length });
+    return send(200, { ok: true, disabled: entry.data.commands.disabled, total: known.size });
+  }
+
+  // v3.20.0: Custom Commands — create/update + delete from the web
+  if (rest[0] === "custom-commands") {
+    if (req.method === "POST" && rest.length === 1) {
+      const body = await readBody();
+      const name = String(body?.name || "").trim().toLowerCase();
+      const description = String(body?.description || "").trim();
+      const content = String(body?.content || "").trim();
+      const embed = body?.embed && typeof body.embed === "object" ? body.embed : {};
+      if (!/^[a-z0-9_-]{1,32}$/.test(name)) return send(422, { error: "Command name may only use lowercase letters, numbers, - and _ (1-32 characters)" });
+      if (entry.data.commands.list.some((c) => c.name === name)) return send(422, { error: `The name \`/${name}\` is already used by a built-in bot command — pick another name` });
+      if (!description || description.length > 100) return send(422, { error: "Description is required (1-100 characters)" });
+      const embedHasContent = [embed.title, embed.description, embed.authorName, embed.footerText, embed.image, embed.thumbnail].some((v) => String(v || "").trim()) || (Array.isArray(embed.fields) && embed.fields.length > 0);
+      if (!content && !embedHasContent) return send(422, { error: "Set at least reply text OR an embed — both are empty" });
+      if (!entry.data.customCommands.some((c) => c.name === name) && entry.data.customCommands.length >= 20) {
+        return send(422, { error: "Maximum 20 custom commands per server" });
+      }
+      const now = Date.now();
+      const existing = entry.data.customCommands.find((c) => c.name === name);
+      const normalizedEmbed = {
+        title: String(embed.title || ""),
+        description: String(embed.description || ""),
+        color: Number.isInteger(embed.color) ? embed.color : 0x5865f2,
+        authorName: String(embed.authorName || ""),
+        authorIconURL: String(embed.authorIconURL || ""),
+        thumbnail: String(embed.thumbnail || ""),
+        image: String(embed.image || ""),
+        footerText: String(embed.footerText || ""),
+        footerIconURL: String(embed.footerIconURL || ""),
+        timestamp: embed.timestamp === true,
+        fields: (Array.isArray(embed.fields) ? embed.fields : []).filter((f) => String(f?.name || "").trim() || String(f?.value || "").trim()).map((f) => ({ name: String(f.name || ""), value: String(f.value || ""), inline: f.inline === true })),
+      };
+      let command;
+      if (existing) {
+        Object.assign(existing, { description, ephemeral: body?.ephemeral === true, content, embed: normalizedEmbed, updatedAt: now });
+        command = existing;
+      } else {
+        command = {
+          name,
+          description,
+          ephemeral: body?.ephemeral === true,
+          content,
+          embed: normalizedEmbed,
+          createdBy: String(body?.actor?.id || "mock"),
+          createdByTag: String(body?.actor?.tag || "Dashboard"),
+          createdAt: now,
+          updatedAt: now,
+          useCount: 0,
+        };
+        entry.data.customCommands.push(command);
+      }
+      return send(existing ? 200 : 201, { ok: true, command, synced: true });
+    }
+    if (req.method === "DELETE" && rest.length === 2) {
+      const name = decodeURIComponent(rest[1]);
+      const before = entry.data.customCommands.length;
+      entry.data.customCommands = entry.data.customCommands.filter((c) => c.name !== name);
+      if (entry.data.customCommands.length === before) return send(404, { error: `Custom command \`/${name}\` not found` });
+      // Stale disable flags are cleaned from the disabled list too.
+      entry.data.commands.disabled = entry.data.commands.disabled.filter((n) => n !== name);
+      return send(200, { ok: true, synced: true });
+    }
   }
 
   // v3.19.0: Giveaway from the web
@@ -521,14 +654,15 @@ const server = http.createServer(async (req, res) => {
     return send(201, { ok: true, poll });
   }
 
-  // v3.19.0: Embed from the web
+  // v3.19.0: Embed from the web — v3.20.0: full shape (content + embed object)
   if (req.method === "POST" && rest[0] === "embed" && rest.length === 1) {
     const body = await readBody();
     const channelId = String(body?.channelId || "");
-    const title = String(body?.title || "").trim();
-    const description = String(body?.description || "").trim();
     if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "Invalid channelId" });
-    if (!title && !description) return send(400, { error: "At least a title or description is required" });
+    const content = String(body?.content || "").trim();
+    const embed = body?.embed && typeof body.embed === "object" ? body.embed : { title: body?.title, description: body?.description };
+    const hasEmbed = [embed.title, embed.description, embed.authorName, embed.footerText, embed.image, embed.thumbnail].some((v) => String(v || "").trim()) || (Array.isArray(embed.fields) && embed.fields.some((f) => String(f?.name || "").trim() || String(f?.value || "").trim()));
+    if (!content && !hasEmbed) return send(400, { error: "At least a title, description, or content is required" });
     return send(201, { ok: true, messageId: `mock_${Date.now()}`, url: "https://discord.com/channels/mock/mock" });
   }
 

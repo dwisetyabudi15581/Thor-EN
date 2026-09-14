@@ -237,6 +237,22 @@ async function onReady(client) {
         }
     }
 
+    // === 1c. v3.20.0: sync per-guild custom commands (created from the web) ===
+    // Custom commands live in data/customCommands/<guildId>.json and are
+    // registered at GUILD level (per-server, exactly Dyno's model). Files
+    // may change while the bot is down (backup restore / manual edits) →
+    // the startup sync prevents drift: Discord's list is aligned with the
+    // data files. Guilds without custom commands are skipped.
+    try {
+        const { syncAllGuilds } = require('../../services/customCommandSync');
+        const res = await syncAllGuilds(client, (m) => console.log(m));
+        if (res.synced > 0 || res.failed > 0) {
+            console.log(`🧪 Custom commands synced: ${res.synced} guild(s) OK, ${res.failed} failed.`);
+        }
+    } catch (err) {
+        console.warn('⚠️ Custom command startup sync failed:', err.message);
+    }
+
     // v3.9.24 FIX (IMPORTANT): the startup steps below were previously wrapped in
     // ONE giant try/catch. If an early step threw (e.g. removeExpiredKeys →
     // saveKeys → disk full), then auto-backup, auto-flush, and the ENTIRE 60-second

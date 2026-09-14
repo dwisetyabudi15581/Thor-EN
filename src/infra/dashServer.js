@@ -68,6 +68,11 @@ const roleScheduler = require('../data/roleScheduler');
 const { getCommands } = require('../commands/registry');
 const { normalizeDisabledList, PROTECTED_COMMANDS } = require('../commands/commands');
 const { COMMAND_TO_DOMAIN } = require('../commands/index.js');
+// v3.20.0: Custom Commands (created on the web -> real slash commands on the
+// server) + full embed builder (validation centralized in embedPayload.js).
+const customCommandManager = require('../data/customCommandManager');
+const { syncGuildCustomCommands } = require('../services/customCommandSync');
+const { normalizeEmbedDef, buildEmbedFromDef, isEmbedEmpty } = require('./embedPayload');
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -496,14 +501,28 @@ function createDashHandler({ client, token, log = () => {} }) {
             // single source of truth) + per-guild disabled state. `protected`
             // = commands that can never be disabled (the management door).
             commands: {
-                list: getCommands().map((c) => ({
-                    name: c.name,
-                    description: c.description,
-                    domain: COMMAND_TO_DOMAIN[c.name] || 'other'
-                })),
+                // v3.20.0: this guild's custom commands are appended to the
+                // list (domain 'custom') so they can be toggled from the web
+                // Command Manager — full parity with /commands toggle.
+                list: [
+                    ...getCommands().map((c) => ({
+                        name: c.name,
+                        description: c.description,
+                        domain: COMMAND_TO_DOMAIN[c.name] || 'other'
+                    })),
+                    ...customCommandManager.getGuildCommands(guildId).map((c) => ({
+                        name: c.name,
+                        description: c.description,
+                        domain: 'custom',
+                        custom: true
+                    }))
+                ],
                 disabled: Array.isArray(config?.disabledCommands) ? config.disabledCommands : [],
                 protected: PROTECTED_COMMANDS
             },
+            // v3.20.0: full custom command definitions (Custom Command module —
+            // create/edit/delete here, writes go through the endpoints below).
+            customCommands: customCommandManager.getGuildCommands(guildId),
             // v3.19.0: new module data (read-only; writes go through endpoints).
             giveaways: giveawayManager.getByGuild(guildId),
             polls: pollManager.getByGuild(guildId),
@@ -822,7 +841,10 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // shared — one source of truth across both interfaces).
                 if (method === 'PUT' && rest[0] === 'commands' && rest.length === 1) {
                     const body = await readBody(req);
-                    const normalized = normalizeDisabledList(body?.disabled ?? []);
+                    // v3.20.0: this guild's custom command names are allowed
+                    // in the disabled list too (same rules as /commands toggle).
+                    const customNames = customCommandManager.getGuildCommands(guildId).map((c) => c.name);
+                    const normalized = normalizeDisabledList(body?.disabled ?? [], customNames);
                     if (!normalized.ok) return sendJson(res, 422, { error: normalized.error });
                     const config = getConfig(guildId);
                     config.disabledCommands = normalized.value;
@@ -831,8 +853,48 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return sendJson(res, 200, {
                         ok: true,
                         disabled: normalized.value,
-                        total: getCommands().length
+                        total: getCommands().length + customNames.length
                     });
+                }
+
+                // ---- v3.20.0: Custom Commands — create/update from the web ----
+                // Definition -> data/customCommands/<guildId>.json -> Discord
+                // registration sync (guild.commands.set) -> the command shows
+                // up as a REAL slash command on the server within seconds.
+                if (method === 'POST' && rest[0] === 'custom-commands' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const builtinNames = getCommands().map((c) => c.name);
+                    const result = customCommandManager.upsertCommand(guildId, body, builtinNames, {
+                        id: String(body?.actor?.id || 'web'),
+                        tag: String(body?.actor?.tag || 'web dashboard')
+                    });
+                    if (!result.ok) return sendJson(res, 422, { error: result.error });
+
+                    // Sync to Discord (best-effort: data is already saved;
+                    // sync failure is reported but doesn't roll anything back).
+                    const sync = await syncGuildCustomCommands(client, guildId);
+                    log(
+                        `[dash] custom command ${result.created ? 'created' : 'updated'}: /${result.command.name} (${guildId}) by ${body?.actor?.tag || 'unknown'}` +
+                            (sync.ok ? '' : ` — SYNC FAILED: ${sync.error}`)
+                    );
+                    return sendJson(res, result.created ? 201 : 200, {
+                        ok: true,
+                        command: result.command,
+                        synced: sync.ok,
+                        syncError: sync.ok ? undefined : sync.error
+                    });
+                }
+
+                // ---- v3.20.0: Custom Commands — delete from the web ----
+                if (method === 'DELETE' && rest[0] === 'custom-commands' && rest.length === 2) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const name = decodeURIComponent(rest[1]);
+                    const result = customCommandManager.deleteCommand(guildId, name);
+                    if (!result.ok) return sendJson(res, 404, { error: result.error });
+                    const sync = await syncGuildCustomCommands(client, guildId);
+                    log(`[dash] custom command deleted: /${name} (${guildId})` + (sync.ok ? '' : ` — SYNC FAILED: ${sync.error}`));
+                    return sendJson(res, 200, { ok: true, synced: sync.ok, syncError: sync.ok ? undefined : sync.error });
                 }
 
                 // ---- Giveaway: create from the web (parity with /giveaway create) ----
@@ -999,35 +1061,53 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return sendJson(res, 201, { ok: true, poll: pollManager.get(poll.id) });
                 }
 
-                // ---- Embed: send an embed to a channel (parity with /embed-builder) ----
+                // ---- Embed: send a FULL embed to a channel (parity with /embed-builder) ----
+                // v3.20.0: accepts the complete shape (content + embed {title,
+                // description, color, authorName, authorIconURL, fields[],
+                // thumbnail, image, footerText, footerIconURL, timestamp}).
+                // Legacy flat fields (title/description/footer/color/image/
+                // thumbnail on the body root) still work — older web modules
+                // and third-party clients don't break.
                 if (method === 'POST' && rest[0] === 'embed' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
                     const body = await readBody(req);
                     const channelId = String(body?.channelId || '');
-                    const title = String(body?.title || '').trim();
-                    const description = String(body?.description || '').trim();
                     if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
-                    if (!title && !description) return sendJson(res, 400, { error: 'At least a title or description is required' });
-                    if (title.length > 256) return sendJson(res, 400, { error: 'Title must be at most 256 characters' });
-                    if (description.length > 4096) return sendJson(res, 400, { error: 'Description must be at most 4096 characters' });
-                    const color = Number.isInteger(body?.color) && body.color >= 0 && body.color <= 0xffffff ? body.color : 0x5865f2;
-                    const footer = body?.footer ? String(body.footer).slice(0, 2048) : null;
-                    const image = body?.image ? String(body.image).slice(0, 500) : null;
-                    const thumbnail = body?.thumbnail ? String(body.thumbnail).slice(0, 500) : null;
+
+                    const content = body?.content ? String(body.content).slice(0, 2000).trim() : '';
+
+                    // Legacy shape -> folded into the new embed (backward compat).
+                    const rawEmbed =
+                        body?.embed && typeof body.embed === 'object'
+                            ? body.embed
+                            : {
+                                  title: body?.title,
+                                  description: body?.description,
+                                  color: body?.color,
+                                  footerText: body?.footer ? String(body.footer).slice(0, 2048) : undefined,
+                                  image: body?.image,
+                                  thumbnail: body?.thumbnail
+                              };
+
+                    const embedRes = normalizeEmbedDef(rawEmbed);
+                    if (!embedRes.ok) return sendJson(res, 400, { error: embedRes.error });
+                    const def = embedRes.value;
+
+                    if (!content && isEmbedEmpty(def)) {
+                        return sendJson(res, 400, { error: 'At least a title, description, or content is required' });
+                    }
 
                     const channel = await client.channels.fetch(channelId).catch(() => null);
                     if (!channel || channel.type !== ChannelType.GuildText) {
                         return sendJson(res, 400, { error: 'Channel must be a text channel' });
                     }
 
-                    const embed = new EmbedBuilder().setColor(color).setTimestamp();
-                    if (title) embed.setTitle(title);
-                    if (description) embed.setDescription(normalizeNewlines(description));
-                    if (footer) embed.setFooter({ text: footer });
-                    if (image) embed.setImage(image);
-                    if (thumbnail) embed.setThumbnail(thumbnail);
+                    const embed = buildEmbedFromDef(def, EmbedBuilder);
+                    const payload = {};
+                    if (content) payload.content = normalizeNewlines(content);
+                    if (!isEmbedEmpty(def)) payload.embeds = [embed];
 
-                    const msg = await channel.send({ embeds: [embed] }).catch(() => null);
+                    const msg = await channel.send(payload).catch(() => null);
                     if (!msg) return sendJson(res, 502, { error: 'Failed to send the embed — check the bot permissions in that channel' });
                     log(`[dash] embed sent to ${channelId} (${guildId}) by ${body?.actor?.tag || 'unknown'}`);
                     return sendJson(res, 201, { ok: true, messageId: msg.id, url: msg.url });

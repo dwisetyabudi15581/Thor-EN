@@ -33,6 +33,8 @@ import {
   Gift,
   KeyRound,
   Vote,
+  SquarePen,
+  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -290,7 +292,7 @@ function Hero({ config, busy, onLoginDiscord }: LandingProps) {
         <div className="mt-14 grid grid-cols-2 divide-zinc-800/70 border-y border-zinc-800/70 md:grid-cols-4 md:divide-x">
           {[
             { v: "90+", l: "slash commands ready to use" },
-            { v: "12", l: "modules configurable from the web" },
+            { v: "18", l: "modules configurable from the web" },
             { v: "670+", l: "unit tests — stable & battle-tested" },
             { v: "$0", l: "free forever, no tiers" },
           ].map((s) => (
@@ -392,6 +394,8 @@ const MODULES = [
   { icon: Terminal, name: "Command Manager", desc: "Enable/disable each slash command per server — Dyno-style." },
   { icon: Gift, name: "Giveaway", desc: "Start giveaways with Join/Leave buttons from the web." },
   { icon: KeyRound, name: "VIP Keys", desc: "Grant product keys — role + auto-expiry included." },
+  { icon: SquarePen, name: "Embed Builder", desc: "Build complete embeds with a Discord-style live preview, send them to any channel." },
+  { icon: Wand2, name: "Custom Command", desc: "Build your own slash command from the web — instantly registered on Discord for members." },
   { icon: Vote, name: "Poll", desc: "Interactive polls with vote buttons." },
 ];
 
@@ -403,7 +407,7 @@ function ModulesSection() {
           All Modules
         </motion.p>
         <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
-          16 modules. All free. All configurable from the web.
+          18 modules. All free. All configurable from the web.
         </motion.h2>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((m) => (

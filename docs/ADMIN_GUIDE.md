@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.19.0
+# 📖 Admin Guide — Thor Bot v3.20.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -827,7 +827,7 @@ The bot replies automatically when a member's message matches a trigger (case-in
 /backup-now
 ```
 
-The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all data** from the `data/` folder: the per-guild `config/` folder (v3.10.0 — one file per server, copied recursively) + 19 other files: keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels, deals, boosts, serverstats, modlogs (v3.9.60 — moderation history). Old backups (pre-v3.10.0, flat config.json) can still be restored — the legacy file is claimed by the automatic migration, without overwriting any already-active guild config.
+The bot creates a `backups/YYYY-MM-DD_HH-mm-ss/` folder containing copies of **all data** from the `data/` folder: the per-guild `config/` folder (v3.10.0 — one file per server, copied recursively) + the per-guild `customCommands/` folder (v3.20.0 — web-made custom command definitions) + 19 other files: keys, scheduledRoles, selfRoles, giveaways, polls, warns, stats, scheduledAnns, tempVoice, tickets, automod, levels, responders, afk, panels, deals, boosts, serverstats, modlogs (v3.9.60 — moderation history). Old backups (pre-v3.10.0, flat config.json) can still be restored — the legacy file is claimed by the automatic migration, without overwriting any already-active guild config.
 
 ### Auto-Backup
 
@@ -1032,10 +1032,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.19.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.20.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.20.0** (2026-09-15) — 🪄 **CUSTOM COMMANDS FROM THE WEB + FULL EMBED BUILDER**. Admins can now CREATE content on the dashboard and the bot delivers it to the server — Dyno-style: the **Custom Command** module (build your own slash command: name, description, text + embed reply, ephemeral; once saved it is automatically registered on Discord within ± 1 minute, max 20/server) and the **Embed** module upgraded into a full builder (author, inline/full reorderable fields, thumbnail, image, footer, timestamp, outer text) with a **live preview mimicking Discord chat**. Custom commands can be disabled via the web Command Manager / `/commands toggle` — full parity. New data file `data/customCommands/<guildId>.json` included in backup/restore. New DASH API endpoints `POST/DELETE /guilds/:id/custom-commands`; `POST /guilds/:id/embed` accepts the full shape. Dashboard 18 → 19 modules; tests 670 → 693.
 - **v3.19.0** (2026-09-15) — 🧩 **DYNO-STYLE COMMAND MANAGER + 18 DASHBOARD MODULES**. All 93 slash commands can now be enabled/disabled per server from the web (Command Manager module: search + groups + bulk actions) or Discord (`/commands list|toggle|enable-all`) — one config, two interfaces. 7 new dashboard modules: Backup (create/restore), Moderation (warn + modlog history), VIP Keys (parity with /set-key), Giveaway, Embed, Poll, + the Command Manager. FIXED silent data loss in the products validator (roleId/days are no longer stripped when saving from the web). Registry 92 → 93 commands, tests 639 → 670.
 - **v3.18.0** (2026-09-14) — 🌐 **WEB DASHBOARD MOVED INTO THE BOT REPO (MONOREPO)**. The Dyno-style dashboard now lives in this repo's `dashboard/` folder (Next.js 16 + Prisma SQLite, 11 modules, slimmed to 12 runtime packages, fully in English) — clone once, `./setup.sh`, `./start.sh`, and the bot + web run together. New root scripts (`setup.sh` / `start.sh` / `dev.sh` / `ecosystem.config.cjs` for pm2), DEPLOY.md rewritten as the one-repo guide. Bot & tests unchanged (92 commands, 639 tests).
 - **v3.17.0** (2026-09-14) — 🌐 **DASH API FOR THE WEB DASHBOARD + VERSION ALIGNMENT WITH THE INDONESIAN REPO — BOT 100% FREE**. Ported from the Indonesian repo (its v3.16.0): `src/infra/dashServer.js` — a localhost HTTP API (`127.0.0.1:8788`, secret `DASH_API_TOKEN`, safe by default — without the token it does not run) read/written by the Next.js web dashboard: **two ways to configure the bot** (slash commands OR the web) writing ONE shared data source (`data/config/<guildId>.json`). Validated dot-path config updates, automod merge patches, responders/announce/selfroles CRUD, actor-audited writes. `index.js` starts/stops it with the bot lifecycle; `/health` reports the version from `package.json`. +23 tests (total **639**). New `DEPLOY.md` (the VPS + pm2 guide). The Indonesian repo's premium system (added there in v3.15.0, completely removed in its v3.17.0 — the owner made the bot free) never existed in this EN repo; the version aligns to 3.17.0 so both repos stay in lockstep. Registry stays **92 commands**.

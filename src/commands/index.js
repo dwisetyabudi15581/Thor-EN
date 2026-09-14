@@ -78,6 +78,10 @@ const moderationHandler = require('./moderation');
 const serverstatsHandler = require('./serverstats');
 // v3.19.0: Command Manager, Dyno-style (/commands list|toggle|enable-all)
 const commandsHandler = require('./commands');
+// v3.20.0: admin-made custom commands (created from the web dashboard) —
+// dynamic per-guild, so they can't be statically mapped in COMMAND_TO_DOMAIN.
+const customHandler = require('./custom');
+const customCommandManager = require('../data/customCommandManager');
 const { getConfig } = require('../data/configManager');
 
 const DOMAIN_HANDLERS = {
@@ -299,10 +303,17 @@ async function routeCommand(interaction) {
     const modPerm = MODERATION_COMMANDS[interaction.commandName];
     const allowedModerator =
         modPerm && interaction.member?.permissions?.has(modPerm);
+    // v3.20.0: custom commands are PUBLIC by default (server info made by
+    // an admin for everyone to use — exactly Dyno's Custom Commands model).
+    // Cheap lookup: read-through cache in customCommandManager.
+    const isCustomCommand =
+        !!interaction.guildId &&
+        !!customCommandManager.getCommand(interaction.guildId, interaction.commandName);
     if (
         !checkIsAdmin(interaction.member) &&
         !PUBLIC_COMMANDS.includes(interaction.commandName) &&
-        !allowedModerator
+        !allowedModerator &&
+        !isCustomCommand
     ) {
         return interaction.reply({
             content:
@@ -340,6 +351,16 @@ async function routeCommand(interaction) {
     const handler = domain ? DOMAIN_HANDLERS[domain] : null;
     if (handler) {
         return handler(interaction);
+    }
+
+    // === v3.20.0: CUSTOM COMMAND DISPATCH ===
+    // Name not in the built-in mapping -> check whether it's a custom
+    // command of this guild (created by an admin on the web dashboard). The
+    // disabledCommands gate above already ran — so a custom command disabled
+    // via the Command Manager is rejected with the same message. Full
+    // parity: enable/disable custom commands from the web OR /commands toggle.
+    if (isCustomCommand) {
+        return customHandler(interaction);
     }
 
     // Unknown command — send an ephemeral error so the admin knows the command isn't supported yet.

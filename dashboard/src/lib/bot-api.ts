@@ -202,7 +202,7 @@ export type Announcement = {
 
 // ==== v3.19.0: new modules (Command Manager, Giveaway, Poll, Backup, Moderation, Keys) ====
 
-export type CommandInfo = { name: string; description: string; domain: string };
+export type CommandInfo = { name: string; description: string; domain: string; custom?: boolean };
 
 export type CommandsSection = {
   list: CommandInfo[];
@@ -280,6 +280,37 @@ export type KeyRecord = {
   guildId: string;
 };
 
+// ==== v3.20.0: Custom Commands + full Embed Builder ====
+
+/** Normalized embed def — the same shape the bot uses (embedPayload.js). */
+export type EmbedDef = {
+  title: string;
+  description: string;
+  color: number;
+  authorName: string;
+  authorIconURL: string;
+  thumbnail: string;
+  image: string;
+  footerText: string;
+  footerIconURL: string;
+  timestamp: boolean;
+  fields: Array<{ name: string; value: string; inline: boolean }>;
+};
+
+/** Admin-made custom command (created on the web -> real slash command on the server). */
+export type CustomCommand = {
+  name: string;
+  description: string;
+  ephemeral: boolean;
+  content: string;
+  embed: EmbedDef;
+  createdBy: string | null;
+  createdByTag: string | null;
+  createdAt: number;
+  updatedAt: number;
+  useCount?: number;
+};
+
 export type DashboardPayload = {
   config: GuildConfig;
   automod: AutoModConfig;
@@ -295,6 +326,8 @@ export type DashboardPayload = {
   warns: WarnRecord[];
   modlogs: ModLogRecord[];
   keys: KeyRecord[];
+  // v3.20.0
+  customCommands: CustomCommand[];
 };
 
 export type GuildMeta = {

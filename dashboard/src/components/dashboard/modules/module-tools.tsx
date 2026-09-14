@@ -2,6 +2,10 @@
 
 // Dashboard tool modules (v3.19.0) — Command Manager (Dyno-style) + new
 // modules: Giveaway, Poll, Embed, Backup, Moderation (warn/modlog), Keys (VIP).
+// v3.20.0 — FULL Embed Builder (parity with /embed-builder: author, fields,
+// image, thumbnail, timestamp + a Discord-style live preview) + the Custom
+// Command module: build your own command on the web -> a REAL slash command
+// on the server (Dyno Custom Commands).
 //
 // All actions go straight through call() → web proxy → the bot's DASH API
 // (no SaveBar), following the ModuleActionProps contract from
@@ -13,14 +17,19 @@ import { useMemo, useState } from "react";
 import {
   Plus, Trash2, Loader2, RefreshCw, Search, ToggleLeft, ToggleRight,
   CheckCircle2, XCircle, KeyRound, Gift, BarChart3, ShieldAlert, Download,
+  Wand2, Pencil, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect,
   RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
 } from "../fields";
-import type { DashboardPayload, GuildMeta } from "@/lib/bot-api";
+import type { CustomCommand, DashboardPayload, GuildMeta } from "@/lib/bot-api";
 import type { ModuleActionProps } from "./module-actions";
+import {
+  EmbedEditor, EmbedLivePreview, EMPTY_EMBED, embedDraftFromDef, embedDraftToApi,
+  isEmbedDraftEmpty, type EmbedDraft,
+} from "./embed-editor";
 
 /* ============================================================
  * Command domain labels (Dyno-style grouping)
@@ -52,6 +61,9 @@ const DOMAIN_META: Array<{ key: string; label: string }> = [
   { key: "serverstats", label: "Server Stats" },
   { key: "tempvoice", label: "Temp Voice" },
   { key: "afk", label: "AFK" },
+  // v3.20.0: admin-made commands (created via the web) — listed at the
+  // bottom so built-ins vs custom stay visually distinct.
+  { key: "custom", label: "Custom Commands" },
 ];
 
 function domainLabel(key: string) {
@@ -483,28 +495,21 @@ export function PollModule({ draft, meta, call, refresh, toast }: ModuleActionPr
 }
 
 /* ============================================================
- * MODULE: Embed Builder (send embed)
+ * MODULE: Embed Builder (send a FULL embed — parity with /embed-builder)
  * ============================================================ */
 
 export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
   const [channelId, setChannelId] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [footer, setFooter] = useState("");
-  const [color, setColor] = useState(0x5865f2);
+  const [draftEmbed, setDraftEmbed] = useState<EmbedDraft>({ ...EMPTY_EMBED, fields: [] });
   const [busy, setBusy] = useState(false);
   const [lastUrl, setLastUrl] = useState<string | null>(null);
 
   async function send() {
     setBusy(true);
     try {
-      const res = (await call("embed", "POST", { channelId, title: title.trim(), description: description.trim(), footer: footer.trim() || undefined, color })) as {
-        url?: string;
-      };
+      const api = embedDraftToApi(draftEmbed);
+      const res = (await call("embed", "POST", { channelId, ...api })) as { url?: string };
       setLastUrl(res?.url ?? null);
-      setTitle("");
-      setDescription("");
-      setFooter("");
       toast("Embed sent to the channel.");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed to send the embed.", "err");
@@ -515,46 +520,40 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
 
   return (
     <div className="space-y-5">
-      <Section title="Send an Embed" desc="A quick alternative to /embed-builder & /send-message — perfect for one-off announcements.">
-        <Field label="Channel">
+      <Section
+        title="Send an Embed"
+        desc="Build a complete embed here and send it to any channel — exactly what /embed-builder & /send-message can do, without opening Discord."
+      >
+        <Field label="Target Channel">
           <ChannelSelect value={channelId} onChange={setChannelId} channels={meta.channels} />
         </Field>
-        <Field label="Title" hint="Optional when a description is filled. Max 256.">
-          <TextInput value={title} onChange={setTitle} placeholder="Embed title" />
-        </Field>
-        <Field label="Color">
-          <ColorInput value={color} onChange={setColor} />
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Body (description)" hint="Supports **bold**, *italic*, and new lines. Max 4096.">
-            <TextArea value={description} onChange={setDescription} rows={5} placeholder="Write the message content here…" />
-          </Field>
-        </div>
-        <div className="md:col-span-2">
-          <Field label="Footer (optional)">
-            <TextInput value={footer} onChange={setFooter} placeholder="e.g. From the Admins" />
-          </Field>
-        </div>
-        <div className="flex items-end md:col-span-2">
+        <div className="flex items-end gap-2">
           <Button
             onClick={send}
-            disabled={busy || !channelId || (!title.trim() && !description.trim())}
-            className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            disabled={busy || !channelId || (!draftEmbed.content.trim() && isEmbedDraftEmpty(draftEmbed))}
+            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
             Send Embed
           </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDraftEmbed({ ...EMPTY_EMBED, fields: [] })}
+            disabled={busy}
+            className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset
+          </Button>
         </div>
       </Section>
 
+      <EmbedEditor value={draftEmbed} onChange={setDraftEmbed} />
+
       <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Preview</h3>
-        <div className="mt-4 overflow-hidden rounded-lg border-l-4 bg-zinc-800/40 p-4" style={{ borderColor: `#${color.toString(16).padStart(6, "0")}` }}>
-          <p className="text-sm font-semibold text-zinc-100">{title.trim() || <span className="text-zinc-600">(no title)</span>}</p>
-          <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-300">
-            {description.trim() || <span className="text-zinc-600">(no body)</span>}
-          </p>
-          {footer.trim() ? <p className="mt-3 text-[11px] text-zinc-500">{footer.trim()}</p> : null}
+        <h3 className="text-sm font-semibold text-zinc-100">Preview (Discord look)</h3>
+        <p className="mt-1 text-xs text-zinc-500">An approximation of the message in Discord — markdown formatting (bold/italic) is rendered by Discord on send.</p>
+        <div className="mt-4">
+          <EmbedLivePreview draft={draftEmbed} />
         </div>
         {lastUrl ? (
           <a href={lastUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-300 hover:underline">
@@ -562,6 +561,241 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
           </a>
         ) : null}
       </section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: Custom Command (build your own command -> a real slash command)
+ * ============================================================ */
+
+type CustomFormState = {
+  name: string;
+  description: string;
+  ephemeral: boolean;
+  embedDraft: EmbedDraft;
+};
+
+function formFromCommand(c: CustomCommand): CustomFormState {
+  return {
+    name: c.name,
+    description: c.description,
+    ephemeral: c.ephemeral === true,
+    embedDraft: { ...embedDraftFromDef(c.embed), content: c.content ?? "" },
+  };
+}
+
+function emptyForm(): CustomFormState {
+  return { name: "", description: "", ephemeral: false, embedDraft: { ...EMPTY_EMBED, fields: [] } };
+}
+
+export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActionProps) {
+  const [form, setForm] = useState<CustomFormState | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const customCommands = draft.customCommands ?? [];
+  const maxReached = customCommands.length >= 20;
+
+  async function save() {
+    if (!form) return;
+    setBusy(true);
+    try {
+      const api = embedDraftToApi(form.embedDraft);
+      const res = (await call("custom-commands", "POST", {
+        name: form.name.trim().toLowerCase(),
+        description: form.description.trim(),
+        ephemeral: form.ephemeral,
+        content: api.content,
+        embed: api.embed,
+      })) as { synced?: boolean; syncError?: string; command?: { name: string } };
+      const name = res?.command?.name ?? form.name.trim().toLowerCase();
+      await refresh();
+      setForm(null);
+      toast(
+        res?.synced === false
+          ? `/${name} saved, BUT the Discord sync failed: ${res.syncError ?? "try restarting the bot"} — data is safe.`
+          : `/${name} saved & registered on Discord — members can use it right away.`
+      );
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to save the custom command.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(name: string) {
+    setBusy(true);
+    try {
+      const res = (await call(`custom-commands/${encodeURIComponent(name)}`, "DELETE")) as { synced?: boolean; syncError?: string };
+      await refresh();
+      setConfirmDelete(null);
+      toast(res?.synced === false ? `/${name} deleted, but the Discord sync failed — restart the bot to refresh.` : `/${name} removed from the server.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to delete.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const canSave =
+    !!form &&
+    /^[a-z0-9_-]{1,32}$/.test(form.name.trim().toLowerCase()) &&
+    form.description.trim().length > 0 &&
+    form.description.trim().length <= 100 &&
+    (form.embedDraft.content.trim().length > 0 || !isEmbedDraftEmpty(form.embedDraft));
+
+  return (
+    <div className="space-y-5">
+      <Section
+        title="Custom Command"
+        desc={
+          <>
+            Build your own slash command for this server — <span className="text-zinc-300">exactly Dyno's Custom Commands feature</span>.
+            Once saved, the command is registered on Discord instantly (usually &lt; 1 minute) and every member can use it.
+          </>
+        }
+      >
+        <div className="flex flex-wrap items-end gap-2 md:col-span-2">
+          <Button
+            onClick={() => setForm(emptyForm())}
+            disabled={busy || maxReached}
+            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+          >
+            <Wand2 className="h-4 w-4" aria-hidden="true" /> New Command
+          </Button>
+          {maxReached ? <Pill tone="red">Max of 20 reached</Pill> : <Pill>{customCommands.length}/20 created</Pill>}
+        </div>
+        <div className="md:col-span-2">
+          <p className="text-[11px] leading-relaxed text-zinc-500">
+            Temporarily disable one via the Command Manager (or <code className="rounded bg-zinc-800 px-1 text-[10px] text-amber-200">/commands toggle</code>),
+            permanently remove it with the button in the list. Every change syncs to Discord automatically.
+          </p>
+        </div>
+      </Section>
+
+      {/* Existing commands */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
+        <h3 className="text-sm font-semibold text-zinc-100">
+          Custom Commands <span className="font-normal text-zinc-500">({customCommands.length})</span>
+        </h3>
+        {customCommands.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs text-zinc-500">
+            No custom commands yet. Example uses: <code className="text-amber-200">/socials</code> (social media links),{" "}
+            <code className="text-amber-200">/prices</code> (price list), <code className="text-amber-200">/rules</code> (server rules) — the reply can be text, an embed, or both.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {customCommands.map((c) => (
+              <div key={c.name} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm font-semibold text-amber-200">/{c.name}</p>
+                    <p className="mt-0.5 truncate text-xs text-zinc-400">{c.description}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {c.content?.trim() ? <Pill>text</Pill> : null}
+                    {c.embed && !isEmbedDraftEmpty(embedDraftFromDef(c.embed)) ? <Pill>embed</Pill> : null}
+                    {c.ephemeral ? <Pill tone="amber">ephemeral</Pill> : null}
+                    {draft.commands.disabled.includes(c.name) ? <Pill tone="red">disabled</Pill> : null}
+                    <span className="text-[10px] text-zinc-600">used {c.useCount ?? 0}x</span>
+                  </div>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[10px] text-zinc-600">
+                    created by {c.createdByTag ?? "—"} · updated {fmtDate(c.updatedAt)}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setForm(formFromCommand(c))}
+                      disabled={busy}
+                      className="h-8 border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                    >
+                      <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+                    </Button>
+                    {confirmDelete === c.name ? (
+                      <>
+                        <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)} disabled={busy} className="h-8 border-zinc-700 bg-transparent text-zinc-400">
+                          Cancel
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => void remove(c.name)} disabled={busy} className="h-8 border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50">
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Yes, delete
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmDelete(c.name)}
+                        disabled={busy}
+                        className="h-8 border-zinc-700 bg-transparent text-red-300/90 hover:bg-red-950/40 hover:text-red-300"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Create/edit form */}
+      {form ? (
+        <>
+          <Section title={form.name && customCommands.some((c) => c.name === form.name) ? `Edit /${form.name}` : "New Command"}>
+            <Field
+              label="Command Name"
+              hint="Lowercase letters, numbers, - and _ (max 32). Becomes /<name> on Discord. Must not collide with a built-in command."
+            >
+              <TextInput
+                value={form.name}
+                onChange={(v) => setForm({ ...form, name: v.toLowerCase() })}
+                placeholder="e.g. socials"
+                invalid={form.name.length > 0 && !/^[a-z0-9_-]{1,32}$/.test(form.name)}
+              />
+            </Field>
+            <Field label="Description" hint="Shown in Discord while members type the command (1-100 characters).">
+              <TextInput
+                value={form.description}
+                onChange={(v) => setForm({ ...form, description: v })}
+                placeholder="e.g. All of our social media links"
+                invalid={form.description.length > 100}
+              />
+            </Field>
+            <div className="md:col-span-2">
+              <Toggle
+                checked={form.ephemeral}
+                onChange={(v) => setForm({ ...form, ephemeral: v })}
+                label="Reply visible only to the user (ephemeral)"
+                desc="On = the reply briefly appears only for whoever used the command (great for private info). Off = the reply is visible to everyone in the channel."
+              />
+            </div>
+          </Section>
+
+          <p className="text-[13px] font-medium text-zinc-300">Command Reply</p>
+          <EmbedEditor value={form.embedDraft} onChange={(d) => setForm({ ...form, embedDraft: d })} />
+
+          <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+            <h3 className="text-sm font-semibold text-zinc-100">Preview (Discord look)</h3>
+            <div className="mt-4">
+              <EmbedLivePreview draft={form.embedDraft} />
+            </div>
+          </section>
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => void save()} disabled={busy || !canSave} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+              Save &amp; Register on Discord
+            </Button>
+            <Button variant="outline" onClick={() => setForm(null)} disabled={busy} className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
+              Cancel
+            </Button>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

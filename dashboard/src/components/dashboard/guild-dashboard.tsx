@@ -21,7 +21,7 @@ import {
   Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
-  ShieldAlert, KeyRound, Gift, SquarePen, Vote,
+  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
@@ -36,7 +36,7 @@ import {
 // Backup/Moderation/Keys. All actions go straight through call() (Discord ↔ web parity).
 import {
   CommandManagerModule, GiveawayModule, PollModule, EmbedModule,
-  BackupModule, ModerationModule, KeysModule,
+  BackupModule, ModerationModule, KeysModule, CustomCommandsModule,
 } from "./modules/module-tools";
 
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
@@ -45,7 +45,9 @@ type ModuleId =
   | "overview" | "general" | "tickets" | "automod" | "leveling"
   | "responders" | "selfroles" | "announce" | "tempvoice" | "midman" | "serverstats"
   // v3.19.0
-  | "commands" | "backup" | "moderation" | "keys" | "giveaway" | "embed" | "poll";
+  | "commands" | "backup" | "moderation" | "keys" | "giveaway" | "embed" | "poll"
+  // v3.20.0
+  | "custom";
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
@@ -65,6 +67,7 @@ const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard
   { id: "tempvoice", label: "Temp Voice", icon: Mic, group: "Community" },
   { id: "serverstats", label: "Server Stats", icon: BarChart3, group: "Community" },
   { id: "embed", label: "Embed", icon: SquarePen, group: "Tools" },
+  { id: "custom", label: "Custom Command", icon: Wand2, group: "Tools" },
   { id: "poll", label: "Poll", icon: Vote, group: "Tools" },
 ];
 
@@ -85,7 +88,8 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   moderation: { title: "Moderation", desc: "Warn history and moderator actions (timeout/kick/ban)." },
   keys: { title: "VIP Keys", desc: "Grant product keys to members — role + auto-expiry included." },
   giveaway: { title: "Giveaway", desc: "Start a giveaway with Join/Leave buttons straight from the web." },
-  embed: { title: "Send Embed", desc: "Build & send an embed to any channel." },
+  embed: { title: "Embed Builder", desc: "Build a complete embed (author, fields, images, footer) with a Discord-style live preview, then send it to any channel." },
+  custom: { title: "Custom Command", desc: "Build your own slash command from the web — automatically registered on Discord and usable by every member (Dyno Custom Commands)." },
   poll: { title: "Poll", desc: "Create a poll with interactive vote buttons." },
 };
 
@@ -376,6 +380,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           {module === "keys" && actionProps ? <KeysModule {...actionProps} /> : null}
           {module === "giveaway" && actionProps ? <GiveawayModule {...actionProps} /> : null}
           {module === "embed" && actionProps ? <EmbedModule {...actionProps} /> : null}
+          {/* v3.20.0 */}
+          {module === "custom" && actionProps ? <CustomCommandsModule {...actionProps} /> : null}
           {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
         </main>
       </div>
