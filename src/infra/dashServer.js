@@ -56,6 +56,25 @@ const announcements = require('../data/scheduledAnnouncements');
 const serverstatsManager = require('../data/serverstatsManager');
 const { buildPanelEmbed, buildPanelComponents } = require('../ui/selfRolePanelBuilder');
 const { normalizeNewlines } = require('./text');
+// v3.19.0: new modules for the Command Manager + web Giveaway / Poll /
+// Embed / Backup / Moderation / Keys modules.
+const giveawayManager = require('../data/giveawayManager');
+const pollManager = require('../data/pollManager');
+const backupManager = require('../data/backupManager');
+const warnManager = require('../data/warnManager');
+const modLogManager = require('../data/modLogManager');
+const keyManager = require('../data/keyManager');
+const roleScheduler = require('../data/roleScheduler');
+const { getCommands } = require('../commands/registry');
+const { normalizeDisabledList, PROTECTED_COMMANDS } = require('../commands/commands');
+const { COMMAND_TO_DOMAIN } = require('../commands/index.js');
+const {
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType
+} = require('discord.js');
 
 // Version straight from package.json — never goes stale (v3.17.0).
 const BOT_VERSION = require('../../package.json').version;
@@ -211,6 +230,17 @@ const SECTION_VALIDATORS = {
             if (p.duration && !isStr(String(p.duration), 100)) return { ok: false, error: 'Invalid duration' };
             if (p.category && !/^[a-z0-9_-]{2,32}$/.test(String(p.category))) return { ok: false, error: 'Invalid product category' };
             if (p.requiresKey !== undefined && typeof p.requiresKey !== 'boolean') return { ok: false, error: 'requiresKey must be a boolean' };
+            // v3.19.0 FIX (data loss): roleId + days used to be STRIPPED when
+            // products were saved from the web — even though /set-product-role
+            // stores them on the product object. Editing the price list via
+            // web silently dropped every auto-role mapping. Both are now
+            // preserved + validated (full Discord ↔ web parity).
+            if (p.roleId !== undefined && p.roleId !== null && !SNOWFLAKE_RE.test(String(p.roleId))) {
+                return { ok: false, error: 'Product roleId must be a valid Discord ID' };
+            }
+            if (p.days !== undefined && p.days !== null && (!Number.isInteger(Number(p.days)) || Number(p.days) < 0 || Number(p.days) > 3650)) {
+                return { ok: false, error: 'Product days must be an integer 0-3650 (0 = permanent)' };
+            }
         }
         return {
             ok: true,
@@ -223,6 +253,9 @@ const SECTION_VALIDATORS = {
                     requiresKey: !!p.requiresKey
                 };
                 if (p.duration) out.duration = String(p.duration);
+                // v3.19.0: keep the role mapping (set via /set-product-role).
+                if (p.roleId) out.roleId = String(p.roleId);
+                if (p.days !== undefined && p.days !== null) out.days = Number(p.days);
                 return out;
             })
         };
@@ -441,8 +474,9 @@ function createDashHandler({ client, token, log = () => {} }) {
 
     function dashboardPayload(guildId) {
         const tempVoiceCfg = tempVoiceManager.getGuildConfig(guildId);
+        const config = getConfig(guildId);
         return {
-            config: getConfig(guildId),
+            config,
             automod: automodManager.getGuildConfig(guildId),
             responders: responderManager.getGuildResponders(guildId),
             selfroles: selfRoleManager.getPanelsByGuild(guildId),
@@ -457,7 +491,30 @@ function createDashHandler({ client, token, log = () => {} }) {
             serverstats: {
                 enabled: serverstatsManager.isEnabled(),
                 config: serverstatsManager.getConfig()
-            }
+            },
+            // v3.19.0: Command Manager — the command list (from the registry,
+            // single source of truth) + per-guild disabled state. `protected`
+            // = commands that can never be disabled (the management door).
+            commands: {
+                list: getCommands().map((c) => ({
+                    name: c.name,
+                    description: c.description,
+                    domain: COMMAND_TO_DOMAIN[c.name] || 'other'
+                })),
+                disabled: Array.isArray(config?.disabledCommands) ? config.disabledCommands : [],
+                protected: PROTECTED_COMMANDS
+            },
+            // v3.19.0: new module data (read-only; writes go through endpoints).
+            giveaways: giveawayManager.getByGuild(guildId),
+            polls: pollManager.getByGuild(guildId),
+            backups: backupManager.listBackups().slice(0, 25),
+            warns: warnManager.getGuildWarns(guildId, 50),
+            modlogs: modLogManager.getGuildModLogs(guildId, 50),
+            keys: keyManager
+                .getAllKeys()
+                .filter((k) => k.guildId === guildId)
+                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                .slice(0, 100)
         };
     }
 
@@ -754,6 +811,349 @@ function createDashHandler({ client, token, log = () => {} }) {
                     const ok = tempVoiceManager.removeGuild(guildId);
                     if (!ok) return sendJson(res, 404, { error: 'Temp voice setup not found' });
                     return sendJson(res, 200, { ok: true, note: 'Config detached; physical channels are not deleted — remove them manually if needed.' });
+                }
+
+                // ========================================================
+                // ==== v3.19.0: COMMAND MANAGER + NEW WEB MODULES       ====
+                // ========================================================
+
+                // ---- Command Manager: save the disabled list ----
+                // Same rules as /commands toggle (normalizeDisabledList is
+                // shared — one source of truth across both interfaces).
+                if (method === 'PUT' && rest[0] === 'commands' && rest.length === 1) {
+                    const body = await readBody(req);
+                    const normalized = normalizeDisabledList(body?.disabled ?? []);
+                    if (!normalized.ok) return sendJson(res, 422, { error: normalized.error });
+                    const config = getConfig(guildId);
+                    config.disabledCommands = normalized.value;
+                    saveConfig(guildId, config);
+                    log(`[dash] command manager ${guildId}: ${normalized.value.length} command(s) disabled by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, {
+                        ok: true,
+                        disabled: normalized.value,
+                        total: getCommands().length
+                    });
+                }
+
+                // ---- Giveaway: create from the web (parity with /giveaway create) ----
+                if (method === 'POST' && rest[0] === 'giveaway' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const channelId = String(body?.channelId || '');
+                    const prize = String(body?.prize || '').trim();
+                    const winners = Number(body?.winners ?? 1);
+                    const durationMin = Number(body?.durationMin);
+                    const requiredRoleId = body?.requiredRoleId ? String(body.requiredRoleId) : null;
+
+                    // Validation identical to /giveaway create (so web and
+                    // Discord behavior can never diverge).
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+                    if (!isStr(prize, 200)) return sendJson(res, 400, { error: 'Prize is required, max 200 characters' });
+                    if (!Number.isInteger(durationMin) || durationMin < 1 || durationMin > 60 * 24 * 30) {
+                        return sendJson(res, 400, { error: 'Duration must be 1 minute to 30 days (43200 minutes)' });
+                    }
+                    if (!Number.isInteger(winners) || winners < 1 || winners > 20) {
+                        return sendJson(res, 400, { error: 'Winners must be 1-20' });
+                    }
+                    if (requiredRoleId && !SNOWFLAKE_RE.test(requiredRoleId)) {
+                        return sendJson(res, 400, { error: 'Invalid requiredRoleId' });
+                    }
+
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel || channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'Channel must be a text channel' });
+                    }
+
+                    const endsAt = Date.now() + durationMin * 60000;
+                    const gw = giveawayManager.create({
+                        guildId,
+                        channelId,
+                        prize,
+                        winnersCount: winners,
+                        endsAt,
+                        hostId: String(body?.actor?.id || 'dash'),
+                        hostTag: String(body?.actor?.tag || 'Dashboard'),
+                        requiredRoleId
+                    });
+
+                    // Embed + buttons identical to the Discord version.
+                    const embed = new EmbedBuilder()
+                        .setTitle('🎉 GIVEAWAY!')
+                        .setDescription(
+                            `🎁 **Prize:** ${prize}\n\n` +
+                                `👥 **Winners:** ${winners}\n` +
+                                `⏰ **Ends:** <t:${Math.floor(endsAt / 1000)}:R> (<t:${Math.floor(endsAt / 1000)}:F>)\n` +
+                                `🎟️ **Entries:** 0\n` +
+                                (requiredRoleId ? `🔐 **Requirement:** Must have role <@&${requiredRoleId}>\n` : '') +
+                                `\n👇 Click the **🎉 Join** button below to enter!`
+                        )
+                        .setColor(0xf1c40f)
+                        .setFooter({ text: `Host: ${body?.actor?.tag || 'Dashboard'} | ID: ${gw.id}` })
+                        .setTimestamp();
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId(`gw_join:${gw.id}`).setLabel('🎉 Join').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId(`gw_leave:${gw.id}`).setLabel('🚪 Leave').setStyle(ButtonStyle.Secondary)
+                    );
+                    const msg = await channel
+                        .send({ embeds: [embed], components: [row], content: '🎉 **NEW GIVEAWAY!**' })
+                        .catch(() => null);
+                    if (!msg) {
+                        // Roll back the entry (P0-5 pattern — same as /giveaway create).
+                        try {
+                            giveawayManager.remove(gw.id);
+                        } catch (_) { /* best-effort */ }
+                        return sendJson(res, 502, { error: 'Failed to send the giveaway message — check the bot permissions in that channel. Entry cancelled.' });
+                    }
+                    giveawayManager.setMessageId(gw.id, msg.id);
+                    log(`[dash] giveaway created in ${guildId} (${gw.id}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 201, { ok: true, giveaway: giveawayManager.get(gw.id) });
+                }
+
+                // ---- Poll: create from the web (parity with /poll create via modal) ----
+                if (method === 'POST' && rest[0] === 'poll' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const channelId = String(body?.channelId || '');
+                    const question = String(body?.question || '').trim();
+                    const multiple = !!body?.multiple;
+                    const rawOptions = Array.isArray(body?.options) ? body.options : [];
+
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+                    if (!isStr(question, 250)) return sendJson(res, 400, { error: 'Question is required, max 250 characters' });
+                    if (rawOptions.length < 2 || rawOptions.length > 10) {
+                        return sendJson(res, 400, { error: 'A poll needs 2-10 options' });
+                    }
+                    const options = [];
+                    for (const [i, o] of rawOptions.entries()) {
+                        const label = String(o?.label || '').trim();
+                        const emoji = o?.emoji ? String(o.emoji).slice(0, 64) : `${i + 1}️⃣`;
+                        if (!isStr(label, 80)) return sendJson(res, 400, { error: `Option #${i + 1}: label must be 1-80 characters` });
+                        options.push({ label, emoji });
+                    }
+
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel || channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'Channel must be a text channel' });
+                    }
+
+                    // Render-first (v3.9.26 pattern): the entry persists only
+                    // AFTER the embed builds; the id is generated up front so
+                    // buttons stay consistent.
+                    const pollId = `poll_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    const createdAt = Date.now();
+                    const lines = options
+                        .map((opt) => `${opt.emoji} **${opt.label}** — 0 votes (0%)\n\`${'░'.repeat(10)}\``)
+                        .join('\n\n');
+                    const embed = new EmbedBuilder()
+                        .setTitle(`📊 ${question}`)
+                        .setDescription(
+                            `${lines}\n\n` +
+                                `🗳️ Total votes: **0**\n` +
+                                `🔄 Mode: ${multiple ? 'Multi-vote (pick as many as you like)' : 'Single-vote (pick one)'}\n` +
+                                `⏰ Created: <t:${Math.floor(createdAt / 1000)}:R>\n\n` +
+                                `👇 Click a button below to vote (toggle)`
+                        )
+                        .setColor(0x5865f2)
+                        .setFooter({ text: `Poll by ${body?.actor?.tag || 'Dashboard'} | ID: ${pollId}` })
+                        .setTimestamp();
+                    const rows = [];
+                    for (let i = 0; i < options.length; i += 5) {
+                        const row = new ActionRowBuilder();
+                        for (let j = i; j < Math.min(i + 5, options.length); j++) {
+                            row.addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`poll_vote:${pollId}:${j}`)
+                                    .setLabel(options[j].label.slice(0, 80))
+                                    .setEmoji(options[j].emoji)
+                                    .setStyle(ButtonStyle.Primary)
+                            );
+                        }
+                        rows.push(row);
+                    }
+
+                    const poll = pollManager.create({
+                        id: pollId,
+                        guildId,
+                        channelId,
+                        question,
+                        options,
+                        multiple,
+                        creatorId: String(body?.actor?.id || 'dash'),
+                        creatorTag: String(body?.actor?.tag || 'Dashboard')
+                    });
+                    const msg = await channel
+                        .send({
+                            embeds: [embed],
+                            components: rows,
+                            content: `📊 **NEW POLL** by ${body?.actor?.tag || 'Dashboard'}`
+                        })
+                        .catch(() => null);
+                    if (!msg) {
+                        try {
+                            pollManager.remove(poll.id);
+                        } catch (_) { /* best-effort */ }
+                        return sendJson(res, 502, { error: 'Failed to send the poll message — check the bot permissions in that channel. Entry cancelled.' });
+                    }
+                    pollManager.setMessageId(poll.id, msg.id);
+                    log(`[dash] poll created in ${guildId} (${poll.id}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 201, { ok: true, poll: pollManager.get(poll.id) });
+                }
+
+                // ---- Embed: send an embed to a channel (parity with /embed-builder) ----
+                if (method === 'POST' && rest[0] === 'embed' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const channelId = String(body?.channelId || '');
+                    const title = String(body?.title || '').trim();
+                    const description = String(body?.description || '').trim();
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+                    if (!title && !description) return sendJson(res, 400, { error: 'At least a title or description is required' });
+                    if (title.length > 256) return sendJson(res, 400, { error: 'Title must be at most 256 characters' });
+                    if (description.length > 4096) return sendJson(res, 400, { error: 'Description must be at most 4096 characters' });
+                    const color = Number.isInteger(body?.color) && body.color >= 0 && body.color <= 0xffffff ? body.color : 0x5865f2;
+                    const footer = body?.footer ? String(body.footer).slice(0, 2048) : null;
+                    const image = body?.image ? String(body.image).slice(0, 500) : null;
+                    const thumbnail = body?.thumbnail ? String(body.thumbnail).slice(0, 500) : null;
+
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel || channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'Channel must be a text channel' });
+                    }
+
+                    const embed = new EmbedBuilder().setColor(color).setTimestamp();
+                    if (title) embed.setTitle(title);
+                    if (description) embed.setDescription(normalizeNewlines(description));
+                    if (footer) embed.setFooter({ text: footer });
+                    if (image) embed.setImage(image);
+                    if (thumbnail) embed.setThumbnail(thumbnail);
+
+                    const msg = await channel.send({ embeds: [embed] }).catch(() => null);
+                    if (!msg) return sendJson(res, 502, { error: 'Failed to send the embed — check the bot permissions in that channel' });
+                    log(`[dash] embed sent to ${channelId} (${guildId}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 201, { ok: true, messageId: msg.id, url: msg.url });
+                }
+
+                // ---- Backup: create now + restore (parity with /backup-now, /restore-backup) ----
+                if (rest[0] === 'backups') {
+                    if (method === 'POST' && rest.length === 1) {
+                        const body = await readBody(req);
+                        const result = backupManager.createBackup();
+                        if (!result.ok) {
+                            return sendJson(res, 500, {
+                                error: `Backup ${result.partial ? 'partially failed' : 'failed'}: ${result.errors.join('; ') || 'unknown'}`
+                            });
+                        }
+                        log(`[dash] backup created for ${guildId} (${result.backupName}) by ${body?.actor?.tag || 'unknown'}`);
+                        return sendJson(res, 201, { ok: true, backupName: result.backupName, filesCopied: result.filesCopied });
+                    }
+                    if (method === 'POST' && rest.length === 3 && rest[2] === 'restore') {
+                        const body = await readBody(req);
+                        const result = await backupManager.restoreBackup(rest[1]);
+                        if (!result.ok) {
+                            return sendJson(res, 422, { error: `Restore failed: ${result.errors.join('; ') || 'backup not found / invalid name format'}` });
+                        }
+                        log(`[dash] backup ${rest[1]} restored (guild ${guildId}) by ${body?.actor?.tag || 'unknown'}`);
+                        return sendJson(res, 200, { ok: true, filesRestored: result.filesRestored, note: 'Bot data restored from the backup. The dashboard reloads fresh data on refresh.' });
+                    }
+                }
+
+                // ---- Keys: manage VIP keys from the web (parity with /set-key & /clear-schedule) ----
+                if (rest[0] === 'keys') {
+                    if (method === 'POST' && rest.length === 1) {
+                        if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                        const body = await readBody(req);
+                        const userId = String(body?.userId || '');
+                        const value = String(body?.value || '');
+                        if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
+
+                        // The product must exist + have a role (same rules as
+                        // /set-key — the web cannot conjure roles from thin air).
+                        const config = getConfig(guildId);
+                        const product = (config.products || []).find((p) => p.value === value);
+                        if (!product) return sendJson(res, 404, { error: `Product value "${value}" not found` });
+                        if (!product.roleId) {
+                            return sendJson(res, 422, { error: `Product ${product.label} has no role yet — set one in the Tickets & Products module first` });
+                        }
+
+                        const member = await g.members.fetch(userId).catch(() => null);
+                        if (!member) return sendJson(res, 404, { error: 'That user is not on this server' });
+
+                        // Custom key (optional) or auto-generate XXXXX-XXXXX-XXXXX.
+                        const keyValue = (typeof body?.key === 'string' ? body.key.trim() : '') ||
+                            Array.from({ length: 3 }, () =>
+                                Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('')
+                            ).join('-');
+
+                        let keyEntry;
+                        try {
+                            keyEntry = keyManager.addKey({
+                                key: keyValue,
+                                userId: member.id,
+                                username: member.user?.tag || member.id,
+                                roleId: product.roleId,
+                                productName: product.label,
+                                days: product.days || 0,
+                                guildId
+                            });
+                        } catch (err) {
+                            return sendJson(res, 500, { error: `Failed to save the key: ${err.message}` });
+                        }
+
+                        // Grant the role (if the bot has permission) + schedule
+                        // expiry — best-effort with warnings (the /set-key pattern).
+                        const warnings = [];
+                        try {
+                            if (!member.roles.cache.has(product.roleId)) await member.roles.add(product.roleId);
+                        } catch (_) {
+                            warnings.push('Key saved WITHOUT the role — the bot role must be ABOVE the product role.');
+                        }
+                        try {
+                            roleScheduler.scheduleRoleRemoval({
+                                userId: member.id,
+                                roleId: product.roleId,
+                                guildId,
+                                days: product.days || 0,
+                                expireAt: keyEntry.expireAt,
+                                productName: product.label
+                            });
+                        } catch (err) {
+                            warnings.push(`Failed to schedule auto-expiry: ${err.message}`);
+                        }
+
+                        log(`[dash] key created for user ${userId} in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                        return sendJson(res, 201, { ok: true, key: keyEntry.key, expireAt: keyEntry.expireAt, warnings });
+                    }
+
+                    if (method === 'DELETE' && rest.length === 1) {
+                        if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                        const userId = url.searchParams.get('userId');
+                        if (!userId || !SNOWFLAKE_RE.test(userId)) {
+                            return sendJson(res, 400, { error: 'The userId (Discord ID) parameter is required' });
+                        }
+                        const removedSched = roleScheduler.removeAllByUser(userId, guildId);
+                        const removedKeys = keyManager.removeAllKeysByUser(userId, guildId);
+                        if (removedKeys === 0 && removedSched === 0) {
+                            return sendJson(res, 404, { error: 'No keys / schedules for that user on this server' });
+                        }
+                        // Remove the user's product roles (best-effort) — /clear-schedule pattern.
+                        const warnings = [];
+                        try {
+                            const member = await g.members.fetch(userId).catch(() => null);
+                            const config = getConfig(guildId);
+                            if (member) {
+                                const productRoleIds = new Set((config.products || []).map((p) => p.roleId).filter(Boolean));
+                                for (const roleId of member.roles.cache.map((r) => r.id)) {
+                                    if (productRoleIds.has(roleId)) {
+                                        await member.roles.remove(roleId).catch(() => {
+                                            warnings.push(`Failed to remove role <@&${roleId}> — remove it manually.`);
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (_) { /* best-effort */ }
+                        log(`[dash] ${removedKeys} key(s) + ${removedSched} schedule(s) removed for user ${userId} in ${guildId}`);
+                        return sendJson(res, 200, { ok: true, removedKeys, removedSchedules: removedSched, warnings });
+                    }
                 }
             }
 

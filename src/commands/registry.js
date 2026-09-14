@@ -1640,6 +1640,47 @@ function getCommands() {
         {
             name: 'leaderboard-level',
             description: 'Top 10 members with the highest level (public)'
+        },
+        // v3.19.0: Command Manager (Dyno-style) — enable/disable commands
+        // per server from Discord or the web dashboard. This command itself
+        // can never be disabled (guarded in the handler + DASH API validator)
+        // so admins can never lock themselves out of the Discord side.
+        {
+            name: 'commands',
+            description: 'Manage which bot commands are enabled on this server (Dyno-style)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 1,
+                    name: 'list',
+                    description: 'See which commands are currently disabled'
+                },
+                {
+                    type: 1,
+                    name: 'toggle',
+                    description: 'Enable / disable a single command',
+                    options: [
+                        {
+                            type: 3,
+                            name: 'command',
+                            description: 'Command name without slash (e.g. giveaway)',
+                            required: true,
+                            max_length: 40
+                        },
+                        {
+                            type: 5,
+                            name: 'enabled',
+                            description: 'true = enable, false = disable',
+                            required: true
+                        }
+                    ]
+                },
+                {
+                    type: 1,
+                    name: 'enable-all',
+                    description: 'Re-enable ALL disabled commands at once'
+                }
+            ]
         }
     ];
 }

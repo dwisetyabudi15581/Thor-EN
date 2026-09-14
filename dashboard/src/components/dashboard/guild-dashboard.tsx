@@ -20,7 +20,8 @@ import { useRouter } from "next/navigation";
 import {
   Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
-  Palette, Mic, Megaphone, Handshake, BarChart3,
+  Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
+  ShieldAlert, KeyRound, Gift, SquarePen, Vote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
@@ -31,25 +32,40 @@ import {
   RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule, ModuleOverview,
   type ModuleActionProps,
 } from "./modules/module-actions";
+// v3.19.0: new modules — Command Manager (Dyno-style) + Giveaway/Poll/Embed/
+// Backup/Moderation/Keys. All actions go straight through call() (Discord ↔ web parity).
+import {
+  CommandManagerModule, GiveawayModule, PollModule, EmbedModule,
+  BackupModule, ModerationModule, KeysModule,
+} from "./modules/module-tools";
 
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
 
 type ModuleId =
   | "overview" | "general" | "tickets" | "automod" | "leveling"
-  | "responders" | "selfroles" | "announce" | "tempvoice" | "midman" | "serverstats";
+  | "responders" | "selfroles" | "announce" | "tempvoice" | "midman" | "serverstats"
+  // v3.19.0
+  | "commands" | "backup" | "moderation" | "keys" | "giveaway" | "embed" | "poll";
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
   { id: "general", label: "General", icon: Settings2, group: "Server" },
+  { id: "commands", label: "Command Manager", icon: Terminal, group: "Server" },
+  { id: "backup", label: "Backup", icon: Archive, group: "Server" },
   { id: "automod", label: "AutoMod", icon: Hash, group: "Protection" },
   { id: "midman", label: "Middleman", icon: Handshake, group: "Protection" },
+  { id: "moderation", label: "Moderation", icon: ShieldAlert, group: "Protection" },
   { id: "tickets", label: "Tickets & Products", icon: Ticket, group: "Community" },
+  { id: "keys", label: "VIP Keys", icon: KeyRound, group: "Community" },
   { id: "leveling", label: "Leveling", icon: TrendingUp, group: "Community" },
   { id: "responders", label: "Auto-Responder", icon: MessageSquareReply, group: "Community" },
   { id: "selfroles", label: "Self Roles", icon: Palette, group: "Community" },
   { id: "announce", label: "Announcements", icon: Megaphone, group: "Community" },
+  { id: "giveaway", label: "Giveaway", icon: Gift, group: "Community" },
   { id: "tempvoice", label: "Temp Voice", icon: Mic, group: "Community" },
   { id: "serverstats", label: "Server Stats", icon: BarChart3, group: "Community" },
+  { id: "embed", label: "Embed", icon: SquarePen, group: "Tools" },
+  { id: "poll", label: "Poll", icon: Vote, group: "Tools" },
 ];
 
 const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
@@ -64,6 +80,13 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   tempvoice: { title: "Temporary Voice", desc: "Private voice channels per member." },
   midman: { title: "Middleman / Escrow", desc: "Fees and three-party deal categories." },
   serverstats: { title: "Server Stats", desc: "Live counters in channel names." },
+  commands: { title: "Command Manager", desc: "Enable/disable each slash command on this server — exactly like Dyno. Applies to Discord usage." },
+  backup: { title: "Backup", desc: "Create a backup now and restore previous slots." },
+  moderation: { title: "Moderation", desc: "Warn history and moderator actions (timeout/kick/ban)." },
+  keys: { title: "VIP Keys", desc: "Grant product keys to members — role + auto-expiry included." },
+  giveaway: { title: "Giveaway", desc: "Start a giveaway with Join/Leave buttons straight from the web." },
+  embed: { title: "Send Embed", desc: "Build & send an embed to any channel." },
+  poll: { title: "Poll", desc: "Create a poll with interactive vote buttons." },
 };
 
 function setPath(obj: Record<string, unknown>, dotPath: string, value: unknown) {
@@ -346,6 +369,14 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           {module === "announce" && actionProps ? <AnnounceModule {...actionProps} /> : null}
           {module === "tempvoice" && actionProps ? <TempVoiceModule {...actionProps} /> : null}
           {module === "serverstats" && actionProps ? <ServerStatsModule {...actionProps} /> : null}
+          {/* v3.19.0 */}
+          {module === "commands" && actionProps ? <CommandManagerModule {...actionProps} /> : null}
+          {module === "backup" && actionProps ? <BackupModule {...actionProps} /> : null}
+          {module === "moderation" && actionProps ? <ModerationModule {...actionProps} /> : null}
+          {module === "keys" && actionProps ? <KeysModule {...actionProps} /> : null}
+          {module === "giveaway" && actionProps ? <GiveawayModule {...actionProps} /> : null}
+          {module === "embed" && actionProps ? <EmbedModule {...actionProps} /> : null}
+          {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
         </main>
       </div>
 

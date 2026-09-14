@@ -60,7 +60,7 @@ function defaultConfig() {
     ],
     midman: { feeMode: "percent", feeValue: 5, category: "🤝 MIDDLEMAN" },
     products: [
-      { label: "VIP 30 Days", value: "vip30", price: "15,000 IDR", duration: "30 days", category: "transaction", requiresKey: true },
+      { label: "VIP 30 Days", value: "vip30", price: "15,000 IDR", duration: "30 days", category: "transaction", requiresKey: true, roleId: "111111111111111111", days: 30 },
       { label: "VIP 90 Days", value: "vip90", price: "35,000 IDR", duration: "90 days", category: "transaction", requiresKey: true },
       { label: "Bot Setup Service", value: "setup", price: "50,000 IDR", category: "transaction", requiresKey: false },
     ],
@@ -111,6 +111,58 @@ function makeMeta({ id, name, icon, memberCount }) {
     ],
   };
 }
+
+// v3.19.0: demo command catalog for the Command Manager module (a
+// representative subset — the real bot ships all 93 from the registry).
+const COMMAND_CATALOG = [
+  ["help", "Help hub: pick a category or search commands", "help"],
+  ["setup-verify", "Set up the member verification panel", "config"],
+  ["setup-ticket", "Set up a 1-category ticket panel (legacy)", "config"],
+  ["set-role", "Set system roles (verified/admin/midman/booster)", "config"],
+  ["set-channel", "Set system channels (welcome/invoice/logs/etc)", "config"],
+  ["set-message", "Set system message texts", "config"],
+  ["config-show", "View the whole configuration", "config"],
+  ["reset-config", "Reset all configuration (2-step)", "config"],
+  ["test-welcome", "Diagnose + preview welcome/goodbye", "config"],
+  ["add-product", "Add a product to the price list", "products"],
+  ["list-products", "View the product list", "products"],
+  ["set-product-role", "Set a product auto-role + duration", "products"],
+  ["set-key", "Grant a product key to a member", "keys"],
+  ["list-keys", "View a member's keys", "keys"],
+  ["clear-schedule", "Remove a user's schedule/keys", "keys"],
+  ["add-category", "Add a ticket category", "categories"],
+  ["setup-ticket-panel", "Install a multi-category ticket panel", "panels"],
+  ["list-panels", "View all panels", "panels-mgmt"],
+  ["setup-selfrole", "Create a self-role panel", "selfrole"],
+  ["selfrole-list", "View self-role panels", "selfrole"],
+  ["announce", "Send an embed announcement", "announce"],
+  ["announce-schedule", "Schedule an announcement", "announce"],
+  ["embed-builder", "Build embeds interactively", "embed"],
+  ["send-message", "Send an embed via a form", "send-message"],
+  ["backup-now", "Back up data now", "backup"],
+  ["restore-backup", "Restore from a backup", "backup"],
+  ["giveaway", "Manage giveaways (create/list/end/reroll)", "giveaway"],
+  ["poll", "Create a poll with vote buttons", "poll"],
+  ["warn", "Warn a member", "warn"],
+  ["warn-list", "A member's warn history", "warn"],
+  ["timeout", "Temporarily mute a member", "moderation"],
+  ["kick", "Remove a member", "moderation"],
+  ["ban", "Block a member", "moderation"],
+  ["purge", "Bulk delete messages", "moderation"],
+  ["stats", "Live server statistics", "stats"],
+  ["leaderboard", "Top 10 members", "stats"],
+  ["boosters", "Booster list + history", "stats"],
+  ["serverstats", "Live channel counters", "serverstats"],
+  ["setup-tempvoice", "Set up temporary voice", "tempvoice"],
+  ["add-responder", "Add an auto-responder", "responder"],
+  ["set-automod", "Configure auto-mod", "automod"],
+  ["afk", "Set AFK status", "afk"],
+  ["setup-leveling", "Enable XP & levels", "leveling"],
+  ["rank", "View your level & XP", "leveling"],
+  ["set-midman-fee", "Set the middleman fee", "midman"],
+  ["midman-deals", "View active escrow deals", "midman"],
+  ["commands", "Manage enabled/disabled commands (Dyno-style)", "commands"],
+];
 
 function seedGuild({ id, name, icon, memberCount }) {
   const meta = makeMeta({ id, name, icon, memberCount });
@@ -167,6 +219,142 @@ function seedGuild({ id, name, icon, memberCount }) {
       },
     ],
     serverstats: { enabled: true, config: { enabled: true } },
+    // v3.19.0: Command Manager + new modules (demo data).
+    commands: {
+      list: COMMAND_CATALOG.map(([name, description, domain]) => ({ name, description, domain })),
+      disabled: ["giveaway", "afk-list"],
+      protected: ["commands"],
+    },
+    giveaways: [
+      {
+        id: `gw_${id}_1`,
+        guildId: id,
+        channelId: meta.channels[0].id,
+        messageId: "112233445566778899",
+        prize: "30 Days VIP",
+        winnersCount: 2,
+        endsAt: Date.now() + 7200_000,
+        ended: false,
+        winnerIds: [],
+        participantIds: ["111111111111111111", "222222222222222222", "333333333333333333"],
+        hostId: "333333333333333333",
+        hostTag: "Owner#0001",
+        requiredRoleId: null,
+        createdAt: Date.now() - 3600_000,
+      },
+      {
+        id: `gw_${id}_2`,
+        guildId: id,
+        channelId: meta.channels[1].id,
+        messageId: "112233445566778800",
+        prize: "1 Month Nitro",
+        winnersCount: 1,
+        endsAt: Date.now() - 86400_000,
+        ended: true,
+        winnerIds: ["222222222222222222"],
+        participantIds: ["111111111111111111", "222222222222222222"],
+        hostId: "333333333333333333",
+        hostTag: "Owner#0001",
+        requiredRoleId: null,
+        createdAt: Date.now() - 172800_000,
+      },
+    ],
+    polls: [
+      {
+        id: `poll_${id}_1`,
+        guildId: id,
+        channelId: meta.channels[1].id,
+        messageId: "998877665544332200",
+        question: "What should we play next?",
+        options: [
+          { label: "Mobile Legends", emoji: "1\u20e3", votes: ["111111111111111111"] },
+          { label: "Valorant", emoji: "2\u20e3", votes: ["222222222222222222", "333333333333333333"] },
+        ],
+        multiple: false,
+        closed: false,
+        createdAt: Date.now() - 1800_000,
+        closedAt: null,
+        creatorId: "333333333333333333",
+        creatorTag: "Owner#0001",
+      },
+    ],
+    backups: [
+      { name: "2026-09-14_08-30-00", size: 24576, fileCount: 12, mtime: Date.now() - 86400_000 },
+      { name: "2026-09-13_08-30-00", size: 23552, fileCount: 12, mtime: Date.now() - 172800_000 },
+      { name: "pre-restore_2026-09-12_10-15-00", size: 23040, fileCount: 11, mtime: Date.now() - 259200_000 },
+    ],
+    warns: [
+      {
+        id: `warn_${id}_1`,
+        reason: "Spam links in general chat",
+        warnedBy: "333333333333333333",
+        warnedByTag: "Owner#0001",
+        guildId: id,
+        userId: "999222999222999222",
+        createdAt: Date.now() - 5400_000,
+        actionTaken: null,
+      },
+      {
+        id: `warn_${id}_2`,
+        reason: "Rude language",
+        warnedBy: "444444444444444444",
+        warnedByTag: "Moderator#0002",
+        guildId: id,
+        userId: "888777888777888777",
+        createdAt: Date.now() - 172800_000,
+        actionTaken: null,
+      },
+    ],
+    modlogs: [
+      {
+        id: `mod_${id}_1`,
+        type: "timeout",
+        reason: "Spam after a warning",
+        durationMs: 3600000,
+        moderatorId: "444444444444444444",
+        moderatorTag: "Moderator#0002",
+        guildId: id,
+        userId: "999222999222999222",
+        createdAt: Date.now() - 5300_000,
+      },
+      {
+        id: `mod_${id}_2`,
+        type: "kick",
+        reason: "Advertising another server",
+        durationMs: null,
+        moderatorId: "333333333333333333",
+        moderatorTag: "Owner#0001",
+        guildId: id,
+        userId: "777666777666777666",
+        createdAt: Date.now() - 259200_000,
+      },
+    ],
+    keys: [
+      {
+        id: `key_${id}_1`,
+        key: "ABCDE-FGHIJ-KLMNO",
+        userId: "111111111111111111",
+        username: "Budi#1234",
+        roleId: "111111111111111111",
+        productName: "VIP 30 Days",
+        days: 30,
+        expireAt: Date.now() + 2592000_000,
+        createdAt: Date.now() - 86400000,
+        guildId: id,
+      },
+      {
+        id: `key_${id}_2`,
+        key: "PQRST-UVWXY-Z0123",
+        userId: "222222222222222222",
+        username: "Sari#5678",
+        roleId: "111111111111111111",
+        productName: "VIP 90 Days",
+        days: 90,
+        expireAt: null,
+        createdAt: Date.now() - 172800000,
+        guildId: id,
+      },
+    ],
   };
   guilds.set(id, { meta, data });
   return guilds.get(id);
@@ -260,6 +448,144 @@ const server = http.createServer(async (req, res) => {
     delete body.actor;
     entry.data.automod = { ...entry.data.automod, ...body };
     return send(200, { ok: true, automod: entry.data.automod });
+  }
+
+  // v3.19.0: Command Manager — save the disabled list
+  if (req.method === "PUT" && rest[0] === "commands" && rest.length === 1) {
+    const body = await readBody();
+    const disabled = Array.isArray(body?.disabled) ? body.disabled : null;
+    if (!disabled) return send(422, { error: "Invalid command list (must be an array)" });
+    const known = new Set(entry.data.commands.list.map((c) => c.name));
+    const bad = disabled.filter((n) => !known.has(String(n)));
+    if (bad.length) return send(422, { error: `Unknown command \`${bad[0]}\`` });
+    if (disabled.includes("commands")) return send(422, { error: "The `/commands` command cannot be disabled — it is the command management door" });
+    entry.data.commands.disabled = [...new Set(disabled.map(String))];
+    return send(200, { ok: true, disabled: entry.data.commands.disabled, total: entry.data.commands.list.length });
+  }
+
+  // v3.19.0: Giveaway from the web
+  if (req.method === "POST" && rest[0] === "giveaway" && rest.length === 1) {
+    const body = await readBody();
+    const channelId = String(body?.channelId || "");
+    const prize = String(body?.prize || "").trim();
+    const winners = Number(body?.winners ?? 1);
+    const durationMin = Number(body?.durationMin);
+    if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "Invalid channelId" });
+    if (!prize || prize.length > 200) return send(400, { error: "Prize is required, max 200 characters" });
+    if (!Number.isInteger(durationMin) || durationMin < 1 || durationMin > 43200) return send(400, { error: "Duration must be 1 minute to 30 days (43200 minutes)" });
+    if (!Number.isInteger(winners) || winners < 1 || winners > 20) return send(400, { error: "Winners must be 1-20" });
+    const gw = {
+      id: `gw_${guildId}_${Date.now()}`,
+      guildId,
+      channelId,
+      messageId: `mock_${Date.now()}`,
+      prize,
+      winnersCount: winners,
+      endsAt: Date.now() + durationMin * 60000,
+      ended: false,
+      winnerIds: [],
+      participantIds: [],
+      hostId: String(body?.actor?.id || "dash"),
+      hostTag: String(body?.actor?.tag || "Dashboard"),
+      requiredRoleId: body?.requiredRoleId ? String(body.requiredRoleId) : null,
+      createdAt: Date.now(),
+    };
+    entry.data.giveaways.unshift(gw);
+    return send(201, { ok: true, giveaway: gw });
+  }
+
+  // v3.19.0: Poll from the web
+  if (req.method === "POST" && rest[0] === "poll" && rest.length === 1) {
+    const body = await readBody();
+    const channelId = String(body?.channelId || "");
+    const question = String(body?.question || "").trim();
+    const rawOptions = Array.isArray(body?.options) ? body.options : [];
+    if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "Invalid channelId" });
+    if (!question || question.length > 250) return send(400, { error: "Question is required, max 250 characters" });
+    if (rawOptions.length < 2 || rawOptions.length > 10) return send(400, { error: "A poll needs 2-10 options" });
+    const poll = {
+      id: `poll_${guildId}_${Date.now()}`,
+      guildId,
+      channelId,
+      messageId: `mock_${Date.now()}`,
+      question,
+      options: rawOptions.map((o, i) => ({ label: String(o.label || "").slice(0, 80), emoji: o.emoji ? String(o.emoji).slice(0, 64) : `${i + 1}\u20e3`, votes: [] })),
+      multiple: !!body?.multiple,
+      closed: false,
+      createdAt: Date.now(),
+      closedAt: null,
+      creatorId: String(body?.actor?.id || "dash"),
+      creatorTag: String(body?.actor?.tag || "Dashboard"),
+    };
+    entry.data.polls.unshift(poll);
+    return send(201, { ok: true, poll });
+  }
+
+  // v3.19.0: Embed from the web
+  if (req.method === "POST" && rest[0] === "embed" && rest.length === 1) {
+    const body = await readBody();
+    const channelId = String(body?.channelId || "");
+    const title = String(body?.title || "").trim();
+    const description = String(body?.description || "").trim();
+    if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "Invalid channelId" });
+    if (!title && !description) return send(400, { error: "At least a title or description is required" });
+    return send(201, { ok: true, messageId: `mock_${Date.now()}`, url: "https://discord.com/channels/mock/mock" });
+  }
+
+  // v3.19.0: Backup from the web
+  if (rest[0] === "backups") {
+    if (req.method === "POST" && rest.length === 1) {
+      await readBody();
+      const name = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 19).replace(/[T:]/g, (c) => (c === "T" ? "_" : "-"));
+      entry.data.backups.unshift({ name, size: 24000 + Math.floor(Math.random() * 4000), fileCount: 12, mtime: Date.now() });
+      return send(201, { ok: true, backupName: name, filesCopied: 12 });
+    }
+    if (req.method === "POST" && rest.length === 3 && rest[2] === "restore") {
+      await readBody();
+      const name = rest[1];
+      if (!entry.data.backups.some((b) => b.name === name)) return send(422, { error: `Restore failed: backup '${name}' not found` });
+      return send(200, { ok: true, filesRestored: 12, note: "Bot data restored from the backup (mock)." });
+    }
+  }
+
+  // v3.19.0: Keys from the web
+  if (rest[0] === "keys") {
+    if (req.method === "POST" && rest.length === 1) {
+      const body = await readBody();
+      const userId = String(body?.userId || "");
+      const value = String(body?.value || "");
+      if (!/^\d{5,25}$/.test(userId)) return send(400, { error: "Invalid userId (Discord ID)" });
+      const product = entry.data.config.products.find((p) => p.value === value);
+      if (!product) return send(404, { error: `Product value "${value}" not found` });
+      if (!product.roleId) return send(422, { error: `Product ${product.label} has no role yet — set one in the Tickets & Products module first` });
+      const keyValue =
+        (typeof body?.key === "string" ? body.key.trim() : "") ||
+        Array.from({ length: 3 }, () => Array.from({ length: 5 }, () => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]).join("")).join("-");
+      const days = product.days || 0;
+      const keyEntry = {
+        id: `key_${guildId}_${Date.now()}`,
+        key: keyValue,
+        userId,
+        username: `User#${userId.slice(-4)}`,
+        roleId: product.roleId,
+        productName: product.label,
+        days,
+        expireAt: days > 0 ? Date.now() + days * 86400000 : null,
+        createdAt: Date.now(),
+        guildId,
+      };
+      entry.data.keys.unshift(keyEntry);
+      return send(201, { ok: true, key: keyEntry.key, expireAt: keyEntry.expireAt, warnings: [] });
+    }
+    if (req.method === "DELETE" && rest.length === 1) {
+      const userId = url.searchParams.get("userId");
+      if (!userId || !/^\d{5,25}$/.test(userId)) return send(400, { error: "The userId (Discord ID) parameter is required" });
+      const before = entry.data.keys.length;
+      entry.data.keys = entry.data.keys.filter((k) => k.userId !== userId);
+      const removedKeys = before - entry.data.keys.length;
+      if (removedKeys === 0) return send(404, { error: "No keys / schedules for that user on this server" });
+      return send(200, { ok: true, removedKeys, removedSchedules: removedKeys, warnings: [] });
+    }
   }
 
   if (rest[0] === "responders") {

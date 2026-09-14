@@ -76,6 +76,9 @@ const midmanHandler = require('./midman');
 const moderationHandler = require('./moderation');
 // v3.9.51: live server stats counter channels (/serverstats setup|remove|refresh)
 const serverstatsHandler = require('./serverstats');
+// v3.19.0: Command Manager, Dyno-style (/commands list|toggle|enable-all)
+const commandsHandler = require('./commands');
+const { getConfig } = require('../data/configManager');
 
 const DOMAIN_HANDLERS = {
     help: helpHandler,
@@ -107,7 +110,9 @@ const DOMAIN_HANDLERS = {
     // v3.9.43
     moderation: moderationHandler,
     // v3.9.51: live server stats counter channels
-    serverstats: serverstatsHandler
+    serverstats: serverstatsHandler,
+    // v3.19.0: command manager
+    commands: commandsHandler
 };
 
 // Mapping commandName → domain key (in DOMAIN_HANDLERS).
@@ -261,7 +266,10 @@ const COMMAND_TO_DOMAIN = {
     'list-level-roles': 'leveling',
     'remove-level-role': 'leveling',
     rank: 'leveling',
-    'leaderboard-level': 'leveling'
+    'leaderboard-level': 'leveling',
+
+    // v3.19.0: Dyno-style command manager
+    commands: 'commands'
 };
 
 // Commands that regular members (non-admins) may use.
@@ -301,6 +309,30 @@ async function routeCommand(interaction) {
                 '🚫 **Access Denied.**\n\nSlash commands can only be used by **Admin/Staff**.\n\nIf you believe this is a mistake, contact a server admin.',
             flags: MessageFlags.Ephemeral
         });
+    }
+
+    // === v3.19.0: COMMAND MANAGER GATE (Dyno-style) ===
+    // Commands disabled by an admin (via /commands or the web dashboard)
+    // are rejected here with a clear ephemeral message. `/commands` itself
+    // is exempt so admins can never lock themselves out of the Discord side
+    // (the web dashboard can always re-enable things too).
+    if (interaction.guildId && interaction.commandName !== 'commands') {
+        let cfg = null;
+        try {
+            cfg = getConfig(interaction.guildId);
+        } catch (_) {
+            /* guild without config (never set up) → treat all as enabled */
+        }
+        const disabled = Array.isArray(cfg?.disabledCommands) ? cfg.disabledCommands : [];
+        if (disabled.includes(interaction.commandName)) {
+            if (interaction.deferred || interaction.replied) return;
+            return interaction.reply({
+                content:
+                    `⛔ The \`/${interaction.commandName}\` command has been disabled by this server's admins.\n` +
+                    `Ask an admin to re-enable it via \`/commands toggle\` or the web dashboard.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
     }
 
     // === DOMAIN DISPATCH ===

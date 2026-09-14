@@ -30,7 +30,11 @@ const http = require('http');
 // === Snapshot & restore the data files touched by the tests ===
 const dataDir = path.join(__dirname, '..', '..', 'data');
 const configDir = path.join(dataDir, 'config');
-const TOUCHED = ['automod.json', 'responders.json', 'selfRoles.json', 'scheduledAnnouncements.json'];
+const TOUCHED = [
+    'automod.json', 'responders.json', 'selfRoles.json', 'scheduledAnnouncements.json',
+    // v3.19.0: files touched by the new modules (giveaway/poll/keys/schedule)
+    'giveaways.json', 'polls.json', 'keys.json', 'scheduledRoles.json'
+];
 const backups = {}; // path -> old content (null = did not exist)
 let configDirBackup = null; // old file names in data/config/
 
@@ -90,6 +94,18 @@ function makeMockClient({ failChannelFetch = false } = {}) {
                 ['888000111222333444', { id: '888000111222333444', name: 'Member', color: 0, position: 1 }],
                 ['888000111222333555', { id: '888000111222333555', name: 'Admin', color: 0xff0000, position: 5 }]
             ])
+        },
+        // v3.19.0: the keys module needs member fetch (best-effort role add/remove).
+        members: {
+            fetch: async (id) => ({
+                id,
+                user: { id, tag: 'Tester#0001' },
+                roles: {
+                    cache: new Map(),
+                    add: async () => {},
+                    remove: async () => {}
+                }
+            })
         }
     };
     return {
@@ -100,7 +116,8 @@ function makeMockClient({ failChannelFetch = false } = {}) {
                 if (failChannelFetch) throw new Error('channel gone');
                 return {
                     id,
-                    send: async (opts) => ({ id: `msg_${Date.now()}`, opts }),
+                    type: 0, // v3.19.0: GuildText — the giveaway/poll/embed endpoints check the type
+                    send: async (opts) => ({ id: `msg_${Date.now()}`, opts, url: 'https://discord.com/channels/x/y' }),
                     messages: {
                         fetch: async () => ({ edit: async () => {}, delete: async () => {} })
                     }
@@ -475,4 +492,239 @@ test('dash: POST selfroles send failure → the entry is rolled back', async () 
 test('dash: unknown endpoint → 404', async () => {
     const res = await api('GET', '/no-such-path');
     assert.strictEqual(res.status, 404);
+});
+
+// ====================================================
+// === v3.19.0: Command Manager ===
+// ====================================================
+
+test('dash: dashboard payload includes commands (list + disabled + protected)', async () => {
+    const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.commands.list.length, 93, 'all commands from the registry');
+    assert.ok(Array.isArray(data.commands.disabled), 'disabled is always an array');
+    assert.ok(data.commands.protected.includes('commands'), '/commands is disable-proof');
+    // Every command has a valid domain (for Dyno-style UI grouping)
+    const domains = new Set(data.commands.list.map((c) => c.domain));
+    assert.ok(domains.has('config') && domains.has('moderation') && domains.has('leveling'));
+});
+
+test('dash: PUT /commands — save the disabled list', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/commands`, {
+        body: { disabled: ['giveaway', 'poll', 'giveaway'] } // duplicates must be deduped
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.deepStrictEqual(data.disabled, ['giveaway', 'poll']);
+    assert.strictEqual(data.total, 93);
+
+    // Read back through the payload
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.deepStrictEqual(dash.commands.disabled, ['giveaway', 'poll']);
+});
+
+test('dash: PUT /commands — unknown command → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/commands`, {
+        body: { disabled: ['giveaway', 'fake-command'] }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: PUT /commands — /commands (protected) cannot be disabled → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/commands`, {
+        body: { disabled: ['commands'] }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: PUT /commands — non-array → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/commands`, {
+        body: { disabled: 'giveaway' }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: PUT /commands — reset to empty (enable all)', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/commands`, { body: { disabled: [] } });
+    assert.strictEqual(res.status, 200);
+    assert.deepStrictEqual((await res.json()).disabled, []);
+});
+
+// ====================================================
+// === v3.19.0: Giveaway from the web ===
+// ====================================================
+
+test('dash: POST /giveaway — valid → 201 + entry stored', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/giveaway`, {
+        body: {
+            channelId: '777000111222333444',
+            prize: '30 Days VIP',
+            durationMin: 60,
+            winners: 2
+        }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.strictEqual(data.giveaway.prize, '30 Days VIP');
+    assert.strictEqual(data.giveaway.winnersCount, 2);
+    assert.ok(data.giveaway.messageId, 'messageId stored after sending');
+});
+
+test('dash: POST /giveaway — invalid duration → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/giveaway`, {
+        body: { channelId: '777000111222333444', prize: 'X', durationMin: 0, winners: 1 }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+test('dash: POST /giveaway — empty prize → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/giveaway`, {
+        body: { channelId: '777000111222333444', prize: '', durationMin: 10, winners: 1 }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+// ====================================================
+// === v3.19.0: Poll from the web ===
+// ====================================================
+
+test('dash: POST /poll — valid → 201', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/poll`, {
+        body: {
+            channelId: '777000111222333444',
+            question: 'What is for lunch today?',
+            multiple: false,
+            options: [{ label: 'Pizza' }, { label: 'Burger' }, { label: 'Sushi' }]
+        }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.strictEqual(data.poll.options.length, 3);
+    assert.ok(data.poll.messageId);
+});
+
+test('dash: POST /poll — fewer than 2 options → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/poll`, {
+        body: { channelId: '777000111222333444', question: 'Q?', options: [{ label: 'only one' }] }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+// ====================================================
+// === v3.19.0: Embed from the web ===
+// ====================================================
+
+test('dash: POST /embed — valid → 201', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/embed`, {
+        body: {
+            channelId: '777000111222333444',
+            title: 'Announcement',
+            description: 'Hello **everyone**!',
+            color: 0xf1c40f,
+            footer: 'From the web dashboard'
+        }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.ok(data.messageId);
+});
+
+test('dash: POST /embed — no title & no description → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/embed`, {
+        body: { channelId: '777000111222333444', title: '', description: '' }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+// ====================================================
+// === v3.19.0: Backup (invalid name restore is safe) ===
+// ====================================================
+
+test('dash: POST /backups/:name/restore — invalid name → 422 (no side effects)', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/backups/not-a-valid-format/restore`, { body: {} });
+    assert.strictEqual(res.status, 422);
+});
+
+// ====================================================
+// === v3.19.0: Keys from the web ===
+// ====================================================
+
+test('dash: POST /keys — product without a role → 422', async () => {
+    // Set up a product WITHOUT a roleId first
+    const put = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { products: [{ label: '30 Days VIP', value: 'vip30', price: '25000' }] } }
+    });
+    assert.strictEqual(put.status, 200, 'product setup via config');
+
+    const res = await api('POST', `/guilds/${GUILD_ID}/keys`, {
+        body: { userId: '111222333444555666', value: 'vip30' }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: POST /keys — product with a role → 201 + key visible in the payload', async () => {
+    // Product with roleId + days (v3.19.0: roleId is now preserved by the validator)
+    const put = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                products: [
+                    { label: '30 Days VIP', value: 'vip30', price: '25000', roleId: '888000111222333444', days: 30 }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(put.status, 200, 'product + role setup');
+
+    const res = await api('POST', `/guilds/${GUILD_ID}/keys`, {
+        body: { userId: '111222333444555666', value: 'vip30', key: 'TESTK-EY001-ABCDE' }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.strictEqual(data.key, 'TESTK-EY001-ABCDE');
+    assert.ok(data.expireAt > Date.now(), 'expireAt computed from the product days');
+
+    // Visible in the dashboard payload
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.keys.length, 1);
+    assert.strictEqual(dash.keys[0].key, 'TESTK-EY001-ABCDE');
+});
+
+test('dash: DELETE /keys?userId — remove key + schedule → 200', async () => {
+    const res = await api('DELETE', `/guilds/${GUILD_ID}/keys?userId=111222333444555666`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.removedKeys, 1);
+
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.keys.length, 0, 'key gone from the payload');
+});
+
+// ====================================================
+// === v3.19.0: products validator keeps roleId ===
+// ====================================================
+
+test('dash: PUT config products — roleId & days preserved (v3.19.0 data loss fix)', async () => {
+    const put = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                products: [
+                    { label: 'VIP', value: 'vip1', price: '10000', roleId: '888000111222333444', days: 7 }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(put.status, 200);
+    const data = await put.json();
+    assert.strictEqual(data.config.products[0].roleId, '888000111222333444', 'roleId not lost');
+    assert.strictEqual(data.config.products[0].days, 7, 'days not lost');
+});
+
+test('dash: PUT config products — invalid roleId → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: { products: [{ label: 'VIP', value: 'vip2', price: '10000', roleId: 'not-an-id' }] }
+        }
+    });
+    assert.strictEqual(res.status, 422);
 });

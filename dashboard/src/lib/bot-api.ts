@@ -114,6 +114,9 @@ export type Product = {
   duration?: string;
   category: string;
   requiresKey: boolean;
+  /** v3.19.0: auto-role mapping from /set-product-role — preserved when saved from the web. */
+  roleId?: string;
+  days?: number;
 };
 
 export type LevelRole = { level: number; roleId: string };
@@ -197,6 +200,86 @@ export type Announcement = {
   };
 };
 
+// ==== v3.19.0: new modules (Command Manager, Giveaway, Poll, Backup, Moderation, Keys) ====
+
+export type CommandInfo = { name: string; description: string; domain: string };
+
+export type CommandsSection = {
+  list: CommandInfo[];
+  disabled: string[];
+  protected: string[];
+};
+
+export type Giveaway = {
+  id: string;
+  guildId: string;
+  channelId: string;
+  messageId: string | null;
+  prize: string;
+  winnersCount: number;
+  endsAt: number;
+  ended: boolean;
+  winnerIds: string[];
+  participantIds: string[];
+  hostId: string;
+  hostTag: string;
+  requiredRoleId: string | null;
+  createdAt: number;
+};
+
+export type Poll = {
+  id: string;
+  guildId: string;
+  channelId: string;
+  messageId: string | null;
+  question: string;
+  options: Array<{ label: string; emoji: string; votes: string[] }>;
+  multiple: boolean;
+  closed: boolean;
+  createdAt: number;
+  closedAt: number | null;
+  creatorId: string;
+  creatorTag: string;
+};
+
+export type BackupEntry = { name: string; size: number; fileCount: number; mtime: number };
+
+export type WarnRecord = {
+  id: string;
+  reason: string;
+  warnedBy: string;
+  warnedByTag: string;
+  guildId: string;
+  userId: string;
+  createdAt: number;
+  actionTaken: string | null;
+};
+
+export type ModLogRecord = {
+  id: string;
+  type: string;
+  reason: string;
+  durationMs: number | null;
+  moderatorId: string;
+  moderatorTag: string;
+  guildId: string;
+  userId: string;
+  createdAt: number;
+};
+
+export type KeyRecord = {
+  id: string;
+  key: string;
+  userId: string;
+  username: string;
+  roleId: string;
+  productName: string;
+  days: number;
+  expireAt: number | null;
+  createdAt: number;
+  guildId: string;
+};
+
 export type DashboardPayload = {
   config: GuildConfig;
   automod: AutoModConfig;
@@ -205,6 +288,13 @@ export type DashboardPayload = {
   tempvoice: { creatorChannelId: string | null; categoryId: string | null; activeChannels: number } | null;
   announces: Announcement[];
   serverstats: { enabled: boolean; config: unknown };
+  commands: CommandsSection;
+  giveaways: Giveaway[];
+  polls: Poll[];
+  backups: BackupEntry[];
+  warns: WarnRecord[];
+  modlogs: ModLogRecord[];
+  keys: KeyRecord[];
 };
 
 export type GuildMeta = {

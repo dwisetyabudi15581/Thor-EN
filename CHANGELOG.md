@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.19.0] — 2026-09-15
+
+### Added — 🧩 DYNO-STYLE COMMAND MANAGER + 18 DASHBOARD MODULES (WEB = DISCORD, PICK EITHER)
+
+Every slash command can now be managed from the web OR Discord — both write to the same config. Plus 7 new dashboard modules.
+
+- 🟢 **Command Manager (Dyno-style)**: enable/disable **each slash command per server**. From the web: a new module with search + per-domain groups + bulk group actions + "Enable All". From Discord: the new **`/commands list|toggle|enable-all`** command. Disabled commands are rejected by the router with a clear ephemeral message.
+- 🟢 **Anti-lockout by design**: `/commands` is disable-proof (guarded in the handler, router, and DASH API validator — one shared `normalizeDisabledList` rule). The web dashboard can always re-enable things — admins can never lock themselves out of either interface.
+- 🟢 **7 new dashboard modules** (11 → 18): **Backup** (create now + restore + two-step confirmation), **Moderation** (warn + moderator action history, read-only), **VIP Keys** (grant product keys — role + auto-expiry scheduling, parity with `/set-key`), **Giveaway** (create from the web, embed + Join/Leave buttons identical to the Discord version), **Embed** (send embeds + live preview), **Poll** (2-10 options + multi-vote), and the Command Manager itself.
+- 🟢 **New DASH API**: `PUT /guilds/:id/commands`, `POST /guilds/:id/giveaway`, `POST /guilds/:id/poll`, `POST /guilds/:id/embed`, `POST /guilds/:id/backups` (+ `/:name/restore`), `POST/DELETE /guilds/:id/keys` — all strictly validated (product whitelist, snowflakes, character limits) with the actor recorded.
+- 🟢 **Richer dashboard payload**: `commands` (93-list + disabled + protected from the registry), `giveaways`, `polls`, `backups`, `warns` (50 latest), `modlogs` (50 latest), `keys` (per guild).
+
+### Fixed
+
+- 🟡 **Silent data loss in the `products` validator**: `roleId` + `days` (set via `/set-product-role`) were STRIPPED every time the product list was saved from the web — auto-role mappings vanished silently. Both are now preserved + validated (roleId = snowflake, days = 0-3650).
+- 🟡 **Dashboard build inside a repo with double parent .git** (Thor-EN/.git + my-project/.git): Turbopack failed to detect the workspace root → fixed with an explicit `turbopack.root` in `next.config.ts`.
+
+### Changed
+
+- 🟢 Registry 92 → **93 commands** (`/commands`); unit tests 639 → **670** (31 new: 19 DASH API endpoint tests + 12 command manager & router gate tests). Help lines compacted so the "All Commands" embed stays ≤ 5800 characters with all 20 categories intact.
+- 🟢 Dashboard landing page: 12 → **16 module cards** ("All Modules" grid).
+
 ## [3.18.0] — 2026-09-14
 
 ### Added — 🌐 WEB DASHBOARD MOVED INTO THE BOT REPO (ONE REPO, ONE SETUP)

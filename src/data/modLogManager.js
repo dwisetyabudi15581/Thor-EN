@@ -118,6 +118,22 @@ function getModLogCount(guildId, userId) {
 }
 
 /**
+ * v3.19.0: all mod logs in one guild (for the web dashboard — Moderation
+ * module). Flattens the per-user store, sorts newest first, caps `limit`.
+ */
+function getGuildModLogs(guildId, limit = 50) {
+    const store = load();
+    const prefix = `${guildId}:`;
+    const out = [];
+    for (const [key, logs] of Object.entries(store)) {
+        if (!key.startsWith(prefix) || !Array.isArray(logs)) continue;
+        for (const l of logs) out.push(l);
+    }
+    out.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return typeof limit === 'number' && limit > 0 ? out.slice(0, limit) : out;
+}
+
+/**
  * Action type label (used by /warn-list & DMs).
  */
 function modLogTypeLabel(type) {
@@ -154,6 +170,7 @@ function reload() {
 module.exports = {
     addModLog,
     getModLogs,
+    getGuildModLogs,
     getModLogCount,
     modLogTypeLabel,
     reload,

@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
   // repo). Pinning the tracing root to this folder keeps server.js directly
   // under .next/standalone/ so `npm run start` stays simple.
   outputFileTracingRoot: path.dirname(fileURLToPath(import.meta.url)),
+  // v3.19.0: Turbopack (Next 16's default build engine) has its own root
+  // detection and also gets confused when .git exists in MULTIPLE parent
+  // folders (real case: Thor-EN/.git + my-project/.git). Without this the
+  // build fails with "We couldn't find the Next.js package from src/app".
+  turbopack: {
+    root: path.dirname(fileURLToPath(import.meta.url)),
+  },
   // Disable the dev indicator button (the floating "N" circle) — on
   // sandboxes running `next dev`, this badge can cover content.
   devIndicators: false,

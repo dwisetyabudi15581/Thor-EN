@@ -119,7 +119,7 @@ const HELP_CATEGORIES = [
             '• `/warn user reason` — warning (3=mute 1h, 5=mute 1d, 7=kick)',
             '• `/warn-list user` — warn + sanction history · `/warn-remove` `/warn-clear`',
             '**Direct actions:**',
-            '• `/timeout user minutes reason` — mute (max 40320 = 28 days) · `/untimeout`',
+            '• `/timeout user minutes reason` — mute (max 28 days) · `/untimeout`',
             '• `/kick` remove · `/ban` block · `/unban` unblock',
             '• `/purge amount:100 user?` — bulk delete messages (1-100)',
             '💡 Auto-logged to `/warn-list` + server log. Higher roles are immune.'
@@ -196,7 +196,7 @@ const HELP_CATEGORIES = [
         name: 'Ticket Panels & Verification',
         short: 'Mount ticket panels & member verification',
         lines: [
-            '• `/setup-ticket-panel` — multi-category panel (options: `title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
+            '• `/setup-ticket-panel` — multi-category panel (`title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
             '• `/setup-verify` — new-member verification · `/set-verify-button` — button style',
             '• `/setup-ticket` — legacy single-category panel'
@@ -227,7 +227,7 @@ const HELP_CATEGORIES = [
             '• `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`',
             '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories`',
             '💡 With products → dropdown; without → creates a ticket directly.',
-            '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE (help/report) · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
+            '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -250,7 +250,7 @@ const HELP_CATEGORIES = [
             '• `/set-role midman @role` — MUST be set before deals can open',
             '• `/set-midman-fee mode:Percent value:5` — fee per deal (percent/flat, 0=free)',
             '• `/midman-deals` — all active deals',
-            '💡 3-party escrow: buyer ⇄ seller, the midman holds the funds. Open via the **🤝 Escrow** button on the panel — 3 steps until both sides **Agree Deal**.'
+            '💡 3-party escrow: buyer ⇄ seller, midman holds funds. Open via the **🤝 Escrow** button on the panel — 3 steps until both sides **Agree Deal**.'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -458,7 +458,7 @@ const HELP_CATEGORIES = [
         name: 'Messages & Embed Builder',
         short: 'Edit system texts + send custom embeds',
         lines: [
-            '**System texts:** `/set-message ticketBody text...` · `/edit-message` (modal) · `/reset-message` · `/list-messages`',
+            '**System texts:** `/set-message ticketBody text...` · `/edit-message` · `/reset-message` · `/list-messages`',
             '**Custom embeds:** `/send-message` (form) · `/embed-builder` · `/embed-list` `/embed-cancel`',
             '💡 Vars: `{server}` `{price_header}` `{price_list}` `{price_list:cat}` `{categories_list}`'
         ],
@@ -501,9 +501,10 @@ const HELP_CATEGORIES = [
         name: 'Backup & Maintenance',
         short: 'Back up data, restore, reset configuration',
         lines: [
-            '• `/backup-now` — back up now (auto every 24h, max 7 slots)',
+            '• `/backup-now` — back up now (auto every 24h, max 7)',
             '• `/backup-list` `/restore-backup` — view & restore',
-            '• `/reset-config` — ⚠️ DELETES ALL configuration (2-step confirm)'
+            '• `/reset-config` — ⚠️ DELETES ALL configuration (2-step confirm)',
+            '• `/commands` — 🆕 enable/disable commands (Dyno)'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -512,6 +513,9 @@ const HELP_CATEGORIES = [
             '• `/backup-list` — the backup slots (max 7, oldest falls off) with names + timestamps.',
             '• `/restore-backup name` — restore everything from a slot. A fresh safety backup is taken BEFORE restoring, so you can always go back.',
             '• `/reset-config` — ⚠️ wipe ALL settings back to factory (roles, channels, products, messages). Two-step confirmation — take a `/backup-now` first!',
+            '• `/commands list` — see which commands are disabled on this server.',
+            '• `/commands toggle command enabled` — disable (false) / enable (true) one command. Members using a disabled command see a clear "disabled by admin" message.',
+            '• `/commands enable-all` — re-enable everything at once. Also available in the **web dashboard → Command Manager module** (same data either way).',
             '❓ **Restore resets live caches** — the bot reloads the restored data immediately, no restart needed.',
             '❓ **Where are the files?** `data/backups/` — do not edit by hand; use the commands.'
         ]

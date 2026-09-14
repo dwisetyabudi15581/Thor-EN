@@ -30,6 +30,9 @@ import {
   UserCheck,
   Bot,
   Globe,
+  Gift,
+  KeyRound,
+  Vote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -386,6 +389,10 @@ const MODULES = [
   { icon: Activity, name: "Server Stats", desc: "Live member/boost/role counters in channel names." },
   { icon: UserCheck, name: "Verification", desc: "Anti-raid gate with a verify button + automatic roles." },
   { icon: Globe, name: "Backup", desc: "Server structure snapshots, restore in emergencies." },
+  { icon: Terminal, name: "Command Manager", desc: "Enable/disable each slash command per server — Dyno-style." },
+  { icon: Gift, name: "Giveaway", desc: "Start giveaways with Join/Leave buttons from the web." },
+  { icon: KeyRound, name: "VIP Keys", desc: "Grant product keys — role + auto-expiry included." },
+  { icon: Vote, name: "Poll", desc: "Interactive polls with vote buttons." },
 ];
 
 function ModulesSection() {
@@ -396,7 +403,7 @@ function ModulesSection() {
           All Modules
         </motion.p>
         <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
-          12 modules. All free. All configurable from the web.
+          16 modules. All free. All configurable from the web.
         </motion.h2>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {MODULES.map((m) => (

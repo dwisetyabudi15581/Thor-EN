@@ -126,9 +126,9 @@ test('registry: /set-transcript-channel is NO LONGER registered (merged into /se
     assert.ok(!names.includes('set-transcript-channel'), 'the old command must be gone from the registry');
 });
 
-test('registry: total commands exactly 92 (v3.17.0 — the bot is 100% free, aligned with the ID repo)', () => {
+test('registry: total commands exactly 93 (v3.19.0 — /commands added, Dyno-style command manager)', () => {
     const { getCommands } = require('../../src/commands/registry');
-    assert.strictEqual(getCommands().length, 92);
+    assert.strictEqual(getCommands().length, 93);
 });
 
 test('registry: /set-channel has the "transcript" tipe choice + description mentions transcript', () => {
