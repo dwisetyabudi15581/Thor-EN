@@ -33,15 +33,20 @@ const configDir = path.join(dataDir, 'config');
 const TOUCHED = [
     'automod.json', 'responders.json', 'selfRoles.json', 'scheduledAnnouncements.json',
     // v3.19.0: files touched by the new modules (giveaway/poll/keys/schedule)
-    'giveaways.json', 'polls.json', 'keys.json', 'scheduledRoles.json'
+    'giveaways.json', 'polls.json', 'keys.json', 'scheduledRoles.json',
+    // v3.21.0: the Quick Start endpoints write ticket panels
+    'panels.json'
 ];
+// panels.json is an OBJECT MAP (not an array) — an empty file must be '{}'
+// so loadPanels doesn't quarantine it as an invalid format.
+const INIT_CONTENT = { 'panels.json': '{}' };
 const backups = {}; // path -> old content (null = did not exist)
 let configDirBackup = null; // old file names in data/config/
 
 for (const f of TOUCHED) {
     const p = path.join(dataDir, f);
     backups[p] = fs.existsSync(p) ? fs.readFileSync(p) : null;
-    if (backups[p] === null) fs.writeFileSync(p, '[]');
+    if (backups[p] === null) fs.writeFileSync(p, INIT_CONTENT[f] ?? '[]');
 }
 if (fs.existsSync(configDir)) {
     configDirBackup = fs.readdirSync(configDir).map((f) => ({
@@ -209,7 +214,7 @@ test('dash: GET /guilds/:id/dashboard — all modules present', async () => {
     const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
     assert.strictEqual(res.status, 200);
     const data = await res.json();
-    for (const key of ['config', 'automod', 'responders', 'selfroles', 'tempvoice', 'announces', 'serverstats']) {
+    for (const key of ['config', 'automod', 'responders', 'selfroles', 'tempvoice', 'announces', 'serverstats', 'panels']) {
         assert.ok(key in data, `payload.${key} must exist`);
     }
     // Config merged with DEFAULTS (the getConfig pattern)
@@ -727,4 +732,79 @@ test('dash: PUT config products — invalid roleId → 422', async () => {
         }
     });
     assert.strictEqual(res.status, 422);
+});
+
+// ====================================================
+// === v3.21.0: Quick Start — install panels from the web ===
+// ====================================================
+
+test('dash: POST /panels without roles.admin → 422 (parity with /setup-ticket-panel)', async () => {
+    // Prerequisites identical to the slash command: the admin role is required before a ticket panel.
+    await api('PUT', `/guilds/${GUILD_ID}/config`, { body: { updates: { 'roles.admin': null } } });
+    const res = await api('POST', `/guilds/${GUILD_ID}/panels`, {
+        body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+    });
+    assert.strictEqual(res.status, 422);
+    assert.match((await res.json()).error, /Admin role/i);
+});
+
+test('dash: POST /panels valid → 201 + panel recorded + payload.panels slim shape', async () => {
+    await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { 'roles.admin': '888000111222333555' } }
+    });
+    const res = await api('POST', `/guilds/${GUILD_ID}/panels`, {
+        body: {
+            channelId: '777000111222333444',
+            title: 'PANEL FROM WEB',
+            useDropdown: true,
+            actor: { id: '42', tag: 'tester' }
+        }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.ok(data.ok);
+    assert.ok(data.panel.id, 'panel gets an id (tp_...)');
+    assert.strictEqual(data.panel.channelId, '777000111222333444');
+    assert.strictEqual(data.panel.useDropdown, true);
+    assert.ok(Array.isArray(data.panel.categoryIds) && data.panel.categoryIds.length > 0);
+    assert.strictEqual(typeof data.panel.messageId, 'string');
+
+    // The panel shows up in the dashboard payload — slim shape (no 4000-char body)
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    const slim = dash.panels.find((p) => p.id === data.panel.id);
+    assert.ok(slim, 'panel must appear in payload.panels');
+    assert.ok(!('body' in slim), 'payload.panels must be the slim shape (without body)');
+
+    // The physical file records it too — source of truth for /update-panel & /refresh-panel
+    const raw = JSON.parse(fs.readFileSync(path.join(dataDir, 'panels.json'), 'utf8'));
+    assert.ok(raw[data.panel.id], 'panel saved in panels.json');
+});
+
+test('dash: POST /panels categoryIds with no match → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/panels`, {
+        body: { channelId: '777000111222333444', categoryIds: ['does-not-exist'], actor: { id: '42', tag: 'tester' } }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+test('dash: POST /verify-panel without roles.verified → 422 (parity with /setup-verify)', async () => {
+    await api('PUT', `/guilds/${GUILD_ID}/config`, { body: { updates: { 'roles.verified': null } } });
+    const res = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
+        body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+    });
+    assert.strictEqual(res.status, 422);
+    assert.match((await res.json()).error, /Verified role/i);
+});
+
+test('dash: POST /verify-panel valid → 201 (embed + verification button sent)', async () => {
+    await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { 'roles.verified': '888000111222333444' } }
+    });
+    const res = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
+        body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+    });
+    assert.strictEqual(res.status, 201);
+    const data = await res.json();
+    assert.ok(data.ok);
+    assert.strictEqual(typeof data.messageId, 'string');
 });

@@ -36,6 +36,8 @@
  *   DELETE /guilds/:id/selfroles/:panelId/roles?roleId=... → remove a role from a panel
  *   DELETE /guilds/:id/selfroles/:panelId       → delete the panel + its message
  *   POST   /guilds/:id/serverstats/refresh      → force-refresh the counters
+ *   POST   /guilds/:id/panels                   → install ticket panel to a channel (v3.21.0)
+ *   POST   /guilds/:id/verify-panel             → install verification panel (v3.21.0)
  *   DELETE /guilds/:id/tempvoice                → detach the temp voice setup (config only)
  *
  * Actor audit: every write operation receives `actor: { id, tag }` (the
@@ -73,6 +75,11 @@ const { COMMAND_TO_DOMAIN } = require('../commands/index.js');
 const customCommandManager = require('../data/customCommandManager');
 const { syncGuildCustomCommands } = require('../services/customCommandSync');
 const { normalizeEmbedDef, buildEmbedFromDef, isEmbedEmpty } = require('./embedPayload');
+// v3.21.0: Quick Start module (web) — install ticket + verification panels.
+// The SAME builder + storage as the slash commands (full two-way parity:
+// a panel installed from the web = a panel installed from /setup-ticket-panel).
+const panelManager = require('../data/panelManager');
+const { buildTicketPanel } = require('../commands/panels');
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -533,7 +540,22 @@ function createDashHandler({ client, token, log = () => {} }) {
                 .getAllKeys()
                 .filter((k) => k.guildId === guildId)
                 .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-                .slice(0, 100)
+                .slice(0, 100),
+            // v3.21.0: installed ticket panels — used by the Quick Start module
+            // as the checklist status (the "install ticket panel" step).
+            // Slim shape so the payload stays light (a panel body can be 4000 chars).
+            panels: panelManager
+                .getPanelsByGuild(guildId)
+                .slice(0, 50)
+                .map((p) => ({
+                    id: p.id,
+                    channelId: p.channelId,
+                    messageId: p.messageId,
+                    title: p.title,
+                    categoryIds: Array.isArray(p.categoryIds) ? p.categoryIds : [],
+                    useDropdown: !!p.useDropdown,
+                    createdAt: p.createdAt || null
+                }))
         };
     }
 
@@ -1234,6 +1256,140 @@ function createDashHandler({ client, token, log = () => {} }) {
                         log(`[dash] ${removedKeys} key(s) + ${removedSched} schedule(s) removed for user ${userId} in ${guildId}`);
                         return sendJson(res, 200, { ok: true, removedKeys, removedSchedules: removedSched, warnings });
                     }
+                }
+
+                // ========================================================
+                // ==== v3.21.0: QUICK START (WEB)                      ====
+                // ==== Parity with /setup-ticket-panel & /setup-verify  ====
+                // ========================================================
+
+                // ---- Install a ticket panel to a channel (parity with /setup-ticket-panel) ----
+                // Business validation IDENTICAL to the slash command: roles.admin
+                // required, at least 1 category, target must be a text channel.
+                // Same builder (buildTicketPanel) → web panel = Discord panel, one storage.
+                if (method === 'POST' && rest[0] === 'panels' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const config = getConfig(guildId);
+
+                    if (!config.roles.admin) {
+                        return sendJson(res, 422, { error: 'The Bot Admin role is not set yet — fill in Quick Start step 1 (Admin Role) first.' });
+                    }
+                    const allCategories = config.ticketCategories || [];
+                    if (allCategories.length === 0) {
+                        return sendJson(res, 422, { error: 'No ticket categories yet — add one in Quick Start step 3 / the Tickets & Products module first.' });
+                    }
+
+                    const channelId = String(body?.channelId || '');
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'channelId is not valid' });
+
+                    // Optional category filter (array of ids); without it = all.
+                    const requested = Array.isArray(body?.categoryIds) ? body.categoryIds.map(String) : null;
+                    const categoriesToShow = requested ? allCategories.filter((c) => requested.includes(c.id)) : allCategories;
+                    if (categoriesToShow.length === 0) {
+                        return sendJson(res, 400, { error: 'No category matches the requested categoryIds' });
+                    }
+
+                    // Optional customization (all safe-default, exactly like the slash command).
+                    const title = body?.title ? String(body.title).slice(0, 256) : null;
+                    const panelBody = body?.body ? normalizeNewlines(String(body.body).slice(0, 4000)) : null;
+                    const useDropdown = body?.useDropdown === true;
+                    let color = null;
+                    if (body?.color !== undefined && body?.color !== null && body?.color !== '') {
+                        const raw = String(body.color).replace('#', '');
+                        if (!/^[0-9a-fA-F]{6}$/.test(raw)) {
+                            return sendJson(res, 400, { error: 'color must be 6 hex digits (e.g. #e67e22)' });
+                        }
+                        color = parseInt(raw, 16);
+                    }
+
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel || channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'The channel must be a text channel' });
+                    }
+
+                    const panelMeta = {
+                        guildId,
+                        channelId,
+                        title,
+                        body: panelBody,
+                        color,
+                        imageUrl: null,
+                        thumbnailUrl: null,
+                        footerText: null,
+                        categoryIds: categoriesToShow.map((c) => c.id),
+                        useDropdown,
+                        createdBy: String(body?.actor?.id || 'dash')
+                    };
+
+                    let build;
+                    try {
+                        build = buildTicketPanel(panelMeta, { guild: g, client, config });
+                    } catch (err) {
+                        return sendJson(res, 422, { error: `Failed to build the panel: ${err.message}` });
+                    }
+
+                    // Render-first + rollback (P0-5 pattern): the entry is only
+                    // persisted if the message actually got sent — no ghost panels.
+                    const sent = await channel
+                        .send({ embeds: [build.embed], components: build.components })
+                        .catch(() => null);
+                    if (!sent) {
+                        return sendJson(res, 502, { error: 'Failed to send the panel — make sure the bot has Send Messages + Embed Links permissions in that channel.' });
+                    }
+                    const saved = panelManager.upsertPanel({ ...panelMeta, messageId: sent.id });
+                    log(`[dash] ticket panel installed in ${channelId} (${guildId}, panel ${saved.id}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 201, { ok: true, panel: saved, url: sent.url });
+                }
+
+                // ---- Install a verification panel to a channel (parity with /setup-verify) ----
+                // Identical render: verifyTitle/verifyBody embed + button from
+                // config.verifyButton — same config source, exactly the same output.
+                if (method === 'POST' && rest[0] === 'verify-panel' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req);
+                    const config = getConfig(guildId);
+
+                    if (!config.roles.verified) {
+                        return sendJson(res, 422, { error: 'The Verified role is not set yet — fill in Quick Start step 2 (Verified Role) first.' });
+                    }
+
+                    const channelId = String(body?.channelId || '');
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'channelId is not valid' });
+                    const channel = await client.channels.fetch(channelId).catch(() => null);
+                    if (!channel || channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'The channel must be a text channel' });
+                    }
+
+                    const embed = new EmbedBuilder()
+                        .setTitle(config.messages.verifyTitle)
+                        .setDescription(String(config.messages.verifyBody || '').replace(/\{server\}/g, g.name))
+                        .setColor(0x2ecc71)
+                        .setFooter({
+                            text: client.user?.username || 'Community Bot',
+                            iconURL: client.user?.displayAvatarURL({ dynamic: true })
+                        })
+                        .setTimestamp();
+                    const btnConfig = config.verifyButton || {};
+                    const styleMap = {
+                        Primary: ButtonStyle.Primary,
+                        Secondary: ButtonStyle.Secondary,
+                        Success: ButtonStyle.Success,
+                        Danger: ButtonStyle.Danger
+                    };
+                    const verifyBtn = new ButtonBuilder()
+                        .setCustomId('btn_verify')
+                        .setLabel(String(btnConfig.label || 'Verify Me').slice(0, 80))
+                        .setEmoji(btnConfig.emoji || '✅')
+                        .setStyle(styleMap[btnConfig.style] || ButtonStyle.Success);
+                    const row = new ActionRowBuilder().addComponents(verifyBtn);
+
+                    const sent = await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
+                    if (!sent) {
+                        return sendJson(res, 502, { error: 'Failed to send the panel — make sure the bot has Send Messages + Embed Links permissions in that channel.' });
+                    }
+                    log(`[dash] verification panel installed in ${channelId} (${guildId}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 201, { ok: true, messageId: sent.id, url: sent.url });
                 }
             }
 

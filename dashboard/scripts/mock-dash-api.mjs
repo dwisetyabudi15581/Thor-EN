@@ -355,6 +355,10 @@ function seedGuild({ id, name, icon, memberCount }) {
         guildId: id,
       },
     ],
+    // v3.21.0: installed ticket panels (Quick Start checklist status).
+    // Deliberately empty in the demo — the "install ticket panel" step shows
+    // as pending, so the full quickstart flow can be tried from the web.
+    panels: [],
     // v3.20.0: demo custom commands — a realistic sample of the Custom
     // Command module's output.
     customCommands: [
@@ -816,6 +820,43 @@ const server = http.createServer(async (req, res) => {
     if (!entry.data.tempvoice) return send(404, { error: "Temp voice setup not found" });
     entry.data.tempvoice = null;
     return send(200, { ok: true, note: "(demo) config detached." });
+  }
+
+  // v3.21.0: Quick Start — install ticket + verification panels (in-memory demo).
+  // Prerequisite validation matches the real bot so the checklist flow feels real.
+  if (req.method === "POST" && rest[0] === "panels" && rest.length === 1) {
+    const body = await readBody();
+    if (!entry.data.config.roles?.admin) return send(422, { error: "The Bot Admin role is not set yet — fill in Quick Start step 1 (Admin Role) first." });
+    const allCats = entry.data.config.ticketCategories ?? [];
+    if (allCats.length === 0) return send(422, { error: "No ticket categories yet — add one in Quick Start step 3 / the Tickets & Products module first." });
+    const channelId = String(body?.channelId || "");
+    if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "channelId is not valid" });
+    const ch = entry.meta.channels.find((c) => c.id === channelId && (c.type === 0 || c.type === 5));
+    if (!ch) return send(400, { error: "The channel must be a text channel" });
+    // Optional category filter — parity with the real bot (no matching categoryIds → 400).
+    const requested = Array.isArray(body?.categoryIds) ? body.categoryIds.map(String) : null;
+    const cats = requested ? allCats.filter((c) => requested.includes(c.id)) : allCats;
+    if (cats.length === 0) return send(400, { error: "No category matches the requested categoryIds" });
+    const panel = {
+      id: `tp_demo_${Date.now().toString(36)}`,
+      channelId,
+      messageId: `msg_${Date.now()}`,
+      title: body?.title ? String(body.title).slice(0, 256) : null,
+      categoryIds: cats.map((c) => c.id),
+      useDropdown: body?.useDropdown === true,
+      createdAt: Date.now(),
+    };
+    entry.data.panels.push(panel);
+    return send(201, { ok: true, panel, url: `https://discord.com/channels/${guildId}/${channelId}/demo` });
+  }
+  if (req.method === "POST" && rest[0] === "verify-panel" && rest.length === 1) {
+    const body = await readBody();
+    if (!entry.data.config.roles?.verified) return send(422, { error: "The Verified role is not set yet — fill in Quick Start step 2 (Verified Role) first." });
+    const channelId = String(body?.channelId || "");
+    if (!/^\d{5,25}$/.test(channelId)) return send(400, { error: "channelId is not valid" });
+    const ch = entry.meta.channels.find((c) => c.id === channelId && (c.type === 0 || c.type === 5));
+    if (!ch) return send(400, { error: "The channel must be a text channel" });
+    return send(201, { ok: true, messageId: `msg_${Date.now()}`, url: `https://discord.com/channels/${guildId}/${channelId}/demo` });
   }
 
   return send(404, { error: "Endpoint not found" });

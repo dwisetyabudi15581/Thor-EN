@@ -66,6 +66,18 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
         <Field label="Invoice Channel" hint="Transaction invoices (tickets + middleman deals) are sent here.">
           <ChannelSelect value={c.channels.invoice ?? null} onChange={(v) => setConfig("channels.invoice", v)} channels={meta.channels} />
         </Field>
+        {/* v3.21.0: full parity with the "Log & Channel" category (/set-channel all
+            types) — previously server-log / server-booster / transcript could only
+            be set via slash commands. */}
+        <Field label="Server Log Channel" hint="Joins/leaves, deleted messages, bans, moderation actions (≙ /set-channel server-log).">
+          <ChannelSelect value={c.channels["server-log"] ?? null} onChange={(v) => setConfig("channels.server-log", v)} channels={meta.channels} />
+        </Field>
+        <Field label="Booster Channel" hint="Pink embed every time someone boosts the server (≙ /set-channel server-booster).">
+          <ChannelSelect value={c.channels["server-booster"] ?? null} onChange={(v) => setConfig("channels.server-booster", v)} channels={meta.channels} />
+        </Field>
+        <Field label="Ticket Transcript Channel" hint="Chat archive of closed tickets (≙ /set-channel transcript).">
+          <ChannelSelect value={c.channels.transcript ?? null} onChange={(v) => setConfig("channels.transcript", v)} channels={meta.channels} />
+        </Field>
       </Section>
 
       <Section title="Welcome & Verification Messages" desc={TEMPLATE_VARS}>

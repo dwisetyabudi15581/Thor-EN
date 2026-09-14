@@ -21,13 +21,16 @@ import {
   Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
-  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2,
+  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
 import {
   GeneralModule, TicketsModule, AutoModModule, LevelingModule, MidmanModule, type ModuleFormProps,
 } from "./modules/module-forms";
+// v3.21.0: Quick Start — server setup checklist from the web (mirrors the 🚀
+// category in /help): a form per step → the bot applies it directly.
+import { QuickStartModule } from "./modules/module-quickstart";
 import {
   RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule, ModuleOverview,
   type ModuleActionProps,
@@ -42,7 +45,7 @@ import {
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
 
 type ModuleId =
-  | "overview" | "general" | "tickets" | "automod" | "leveling"
+  | "overview" | "quickstart" | "general" | "tickets" | "automod" | "leveling"
   | "responders" | "selfroles" | "announce" | "tempvoice" | "midman" | "serverstats"
   // v3.19.0
   | "commands" | "backup" | "moderation" | "keys" | "giveaway" | "embed" | "poll"
@@ -51,6 +54,8 @@ type ModuleId =
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
+  // v3.21.0: mirrors the 🚀 Quick Start category (/help) — setup forms right from the web.
+  { id: "quickstart", label: "Quick Start", icon: Rocket, group: "Server" },
   { id: "general", label: "General", icon: Settings2, group: "Server" },
   { id: "commands", label: "Command Manager", icon: Terminal, group: "Server" },
   { id: "backup", label: "Backup", icon: Archive, group: "Server" },
@@ -73,6 +78,7 @@ const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard
 
 const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   overview: { title: "Overview", desc: "A status snapshot of every module on this server." },
+  quickstart: { title: "Quick Start", desc: "Set up your server from scratch via a 6-step checklist — roles (pick or paste the ID), products, ticket & verification panels, log channel. Every form is applied by the bot to the server instantly, exactly like the 🚀 category in /help." },
   general: { title: "General Settings", desc: "Key roles, system channels, automatic messages, and embed colors." },
   tickets: { title: "Tickets & Products", desc: "Ticket panel, categories, and the product/price list." },
   automod: { title: "AutoMod", desc: "Anti-spam, link & word blocking, mention limits." },
@@ -113,6 +119,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const [module, setModule] = useState<ModuleId>("overview");
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // v3.21.0: Quick Start auto-landing — once per visit only.
+  const landingChecked = useRef(false);
 
   // Draft + dirty tracking
   const [draft, setDraft] = useState<DashboardPayload | null>(null);
@@ -156,6 +164,17 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     setConfigUpdates({});
     setAutomodPatch({});
     setLoadError(null);
+
+    // v3.21.0: Quick Start auto-landing — servers that aren't set up yet (no
+    // admin role & no products) are taken straight to the setup checklist.
+    // Once per visit — later refreshes/saves never override the user's
+    // chosen module.
+    if (!landingChecked.current) {
+      landingChecked.current = true;
+      if (!data.config.roles?.admin && (data.config.products?.length ?? 0) === 0) {
+        setModule("quickstart");
+      }
+    }
   }, [guildId, router]);
 
   useEffect(() => {
@@ -363,6 +382,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           </div>
 
           {module === "overview" ? <ModuleOverview draft={draft} meta={meta} /> : null}
+          {/* v3.21.0: Quick Start — all actions are immediate (call → refresh). */}
+          {module === "quickstart" && actionProps ? <QuickStartModule {...actionProps} goTo={(m) => setModule(m as ModuleId)} /> : null}
           {module === "general" && formProps ? <GeneralModule {...formProps} /> : null}
           {module === "tickets" && formProps ? <TicketsModule {...formProps} /> : null}
           {module === "automod" && formProps ? <AutoModModule {...formProps} /> : null}

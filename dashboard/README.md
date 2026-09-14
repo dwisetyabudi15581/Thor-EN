@@ -32,13 +32,16 @@ Browser ──> Next.js Dashboard (Discord OAuth2 login)
 
 - **Discord login (OAuth2)** — sign in with your Discord account, no password
 - **Server picker** — the list of servers you manage + bot status (active/not yet)
-- **19 configuration modules** (v3.20.0): Command Manager (Dyno-style — enable/disable
-  each slash command per server), **Custom Command** (build your own slash command
-  on the web → automatically registered on Discord), **Embed Builder** (full builder
-  + a Discord-style live preview), Backup, Moderation (warn + modlog), VIP Keys,
-  Giveaway, Poll — plus Overview, General, Tickets & Products, AutoMod,
-  Leveling, Middleman, Auto-Responder, Self-Roles, Announcements (scheduled),
-  Temp Voice, Server Stats (live channel counters)
+- **20 configuration modules** (v3.21.0): **Quick Start** (a 6-step server
+  setup checklist — roles via pick/ID, products, panel installs, log channel;
+  applied by the bot to the server instantly), Command Manager (Dyno-style —
+  enable/disable each slash command per server), **Custom Command** (build your
+  own slash command on the web → automatically registered on Discord),
+  **Embed Builder** (full builder + a Discord-style live preview), Backup,
+  Moderation (warn + modlog), VIP Keys, Giveaway, Poll — plus Overview,
+  General, Tickets & Products, AutoMod, Leveling, Middleman, Auto-Responder,
+  Self-Roles, Announcements (scheduled), Temp Voice, Server Stats (live
+  channel counters)
 - **Direct CRUD** — add/remove responders, self-role panels, and scheduled
   announcements without restarting the bot
 - **Bot invite** — invite button with least-privilege permissions

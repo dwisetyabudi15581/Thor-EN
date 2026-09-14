@@ -311,6 +311,19 @@ export type CustomCommand = {
   useCount?: number;
 };
 
+// ==== v3.21.0: Quick Start — installed ticket panels (checklist status) ====
+
+/** Installed ticket panel (slim shape — no big body; used for the checklist). */
+export type TicketPanelInfo = {
+  id: string;
+  channelId: string;
+  messageId: string | null;
+  title: string | null;
+  categoryIds: string[];
+  useDropdown: boolean;
+  createdAt: number | null;
+};
+
 export type DashboardPayload = {
   config: GuildConfig;
   automod: AutoModConfig;
@@ -328,6 +341,8 @@ export type DashboardPayload = {
   keys: KeyRecord[];
   // v3.20.0
   customCommands: CustomCommand[];
+  // v3.21.0: installed ticket panels — status of the "install ticket panel" step.
+  panels: TicketPanelInfo[];
 };
 
 export type GuildMeta = {

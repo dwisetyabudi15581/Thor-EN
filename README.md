@@ -11,14 +11,15 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 ## ✨ Key Features
 
-### 🌐 Web Dashboard (Dyno-style) — v3.20.0: Custom Commands + Embed Builder + 19 Modules
+### 🌐 Web Dashboard (Dyno-style) — v3.21.0: Quick Start + Custom Commands + Embed Builder + 20 Modules
 
 - **The web dashboard now lives INSIDE THIS REPO** (the `dashboard/` folder — Next.js 16 + Prisma SQLite, slimmed to 12 runtime packages). Clone once → `./setup.sh` → `./start.sh` — the bot and the web run together, no separate repository.
 - **Two ways to configure the bot**: directly via **slash commands** in Discord, or via the **web dashboard** — both write to ONE shared data source (`data/config/<guildId>.json`), so they can never conflict.
 - **🧩 Command Manager, Dyno-style (v3.19.0)** — enable/disable **each slash command per server** from the web (search + groups + bulk actions) or from Discord (`/commands list|toggle|enable-all`). Disabled commands are rejected with a clear message; `/commands` itself is disable-proof so admins can never lock themselves out.
 - **🪄 Custom Commands, Dyno-style (v3.20.0)** — **build your own slash command on the web**: name, description, text + embed reply, ephemeral option. Once saved the command is **automatically registered on Discord** and every member can use it (max 20 per server). Temporarily disable via the Command Manager, delete anytime — automatic two-way sync.
 - **✏️ Full Embed Builder (v3.20.0)** — complete parity with `/embed-builder`: outer text, author, fields (inline/full + reorder), thumbnail, image, footer, timestamp — with a **Discord-style live preview** before sending to any channel.
-- **19 dashboard modules** (v3.20.0, up from 11): + **Command Manager**, **Custom Command**, **Backup** (create/restore from the web), **Moderation** (warn + moderator action history), **VIP Keys** (grant product keys + auto-expiry), **Giveaway** (start from the web), **Embed** (full builder + preview), **Poll** (interactive polling).
+- **🚀 Quick Start from the web (v3.21.0)** — mirrors the 🚀 category in `/help`: a 6-step server setup checklist right in the dashboard (admin & verified roles — **pick from the list or paste the ID into a text field**, categories & products + quick product add, install ticket & verification panels to a channel, log channel). Every form is applied by the bot to the server instantly; X/6 progress bar; unconfigured servers auto-land on this module.
+- **20 dashboard modules** (v3.21.0, up from 11): + **Quick Start**, **Command Manager**, **Custom Command**, **Backup** (create/restore from the web), **Moderation** (warn + moderator action history), **VIP Keys** (grant product keys + auto-expiry), **Giveaway** (start from the web), **Embed** (full builder + preview), **Poll** (interactive polling).
 - **Built-in DASH API** (`src/infra/dashServer.js`): a small HTTP API on `127.0.0.1:8788` with a secret token (`DASH_API_TOKEN`) — read/written by the web dashboard for all the modules above.
 - **Access is enforced by Discord**: users only see servers where they hold the **Manage Server** permission; every write is validated by the bot (section whitelist + prototype-pollution guard) and the acting user is recorded.
 - **100% FREE bot** (v3.17.0): every feature is open to everyone — no tiers, no subscription, no bot activation key.

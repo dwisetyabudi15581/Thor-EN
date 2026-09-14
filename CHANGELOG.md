@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.21.0] — 2026-09-15
+
+### Added — 🚀 QUICK START MODULE: SERVER SETUP STRAIGHT FROM THE WEB (MIRRORS THE /HELP CATEGORY)
+
+Exactly the concept the user asked for: "on the web there's a quick start slash command category, you configure it right on the web — e.g. add role gets a text field to enter the role ID to register". The new **Quick Start** dashboard module turns the 🚀 Quick Start category from `/help` into a 6-step setup checklist — every step has a live form on the web, and the bot applies it to the Discord server instantly, no slash commands needed.
+
+- 🟢 **6-step checklist with a progress bar (X/6)**: 1) Bot Admin Role — *pick from the list OR paste the role ID into the text field* (`≙ /set-role admin`), 2) Verified Role — same (`≙ /set-role verified`), 3) Ticket Categories & Products + a quick add-product form (`≙ /add-product`), 4) Install Ticket Panel — pick channel + buttons/dropdown layout (`≙ /setup-ticket-panel`), 5) Install Verification Panel (`≙ /setup-verify`), 6) Server Log Channel (`≙ /set-channel server-log`). Each step's status (✓ done / pending) and progress are computed automatically from the bot's data.
+- 🟢 **Manual ID text fields beside every dropdown** (the heart of the request): paste a role/channel ID (Developer Mode → Copy ID) to register roles that don't even show up in the list; snowflake validation on the web + always re-validated by the bot. Quick-pick dropdowns remain for convenience.
+- 🟢 **Every action takes effect IMMEDIATELY** (call → refresh, no SaveBar): click "Register"/"Install" → the bot writes the config / sends the panel to the Discord channel within seconds — the confirmation toast names the target channel ("Ticket panel installed in #xxx — check Discord").
+- 🟢 **Auto-landing**: servers that aren't set up yet (no admin role & no products) open straight into the Quick Start module — new admins don't have to hunt for it; ready servers still land on Overview.
+- 🟢 **"Next steps" section**: shortcuts to 8 other modules (Server Stats, Leveling, Temp Voice, Auto-Responder, Self Roles, AutoMod, Giveaway & Poll, Embed Builder) — the web connects ALL slash command categories, not just quick start.
+- 🟢 **New DASH API endpoints**: `POST /guilds/:id/panels` (install ticket panel — full parity with `/setup-ticket-panel`: roles.admin + non-empty categories prerequisites, the same `buildTicketPanel` builder, render-first + P0-5 rollback, the panel is recorded in `panels.json` so `/update-panel`/`/refresh-panel` work on it) and `POST /guilds/:id/verify-panel` (parity with `/setup-verify`: identical embed + button rendering from the same config). The dashboard payload now includes `panels` (slim shape without the 4000-char body).
+- 🟢 **General module completed**: Server Log, Booster, and Transcript channels can now be set from the web (previously slash-command only) — full parity with the "Log & Channel" category.
+- 🟢 **Tests & tooling**: 5 new dashServer unit tests (422 prerequisites, 201 success, 400 unmatched categoryIds, panel recorded + slim shape) — 698 tests passing in total; smoke test `scripts/smoke-v321.mjs` for the mock DASH API; the mock supports the new endpoints + seeds `panels: []`; `scripts/dev-sandbox.cjs` (full dashboard preview without real OAuth — Discord API interceptor + sandbox env, active ONLY via an explicit `--require`).
+
+### Changed
+- 🟢 Dashboard sidebar: new "Quick Start" module (Server group, second position after Overview) — 20 modules total.
+- 🟢 `dashboard/package.json` now carries the monorepo version (3.18.0 → 3.21.0) so web & bot versions always stay in sync.
+
 ## [3.20.0] — 2026-09-15
 
 ### Added — 🪄 CUSTOM COMMANDS FROM THE WEB + FULL EMBED BUILDER (BUILD ON THE WEB, DELIVERED TO THE SERVER)
