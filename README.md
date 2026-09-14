@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.17.0** · 92 slash commands · 639 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked**
+> **v3.18.0** · 92 slash commands · 639 unit tests · discord.js v14 · Node.js 20+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked** · **+ web dashboard INSIDE THIS REPO**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -11,12 +11,21 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 ## ✨ Key Features
 
-### 🌐 Web Dashboard (Dyno-style) — v3.17.0
+### 🌐 Web Dashboard (Dyno-style) — v3.18.0: BOT + WEB IN ONE REPO
 
-- **Two ways to configure the bot**: directly via **slash commands** in Discord, or via the **Next.js web dashboard** — both write to ONE shared data source (`data/config/<guildId>.json`), so they can never conflict.
+- **The web dashboard now lives INSIDE THIS REPO** (the `dashboard/` folder — Next.js 16 + Prisma SQLite, slimmed to 12 runtime packages). Clone once → `./setup.sh` → `./start.sh` — the bot and the web run together, no separate repository.
+- **Two ways to configure the bot**: directly via **slash commands** in Discord, or via the **web dashboard** — both write to ONE shared data source (`data/config/<guildId>.json`), so they can never conflict.
 - **Built-in DASH API** (`src/infra/dashServer.js`): a small HTTP API on `127.0.0.1:8788` with a secret token (`DASH_API_TOKEN`) — read/written by the web dashboard for 11 modules: Overview, General, Tickets & Products, AutoMod, Leveling, Midman, Responders, Self-Roles, Announcements, Temp Voice, Server Stats.
-- **Safe by default**: without `DASH_API_TOKEN` the API server does not run; every write is validated (section whitelist + prototype-pollution guard) and the acting user is recorded.
+- **Access is enforced by Discord**: users only see servers where they hold the **Manage Server** permission; every write is validated by the bot (section whitelist + prototype-pollution guard) and the acting user is recorded.
 - **100% FREE bot** (v3.17.0): every feature is open to everyone — no tiers, no subscription, no bot activation key.
+
+```bash
+./setup.sh   # install bot + dashboard + prepare both .env files
+./start.sh   # production: bot + dashboard in one run (Ctrl+C stops both)
+./dev.sh     # development: nodemon (bot) + next dev (web) hot-reload
+```
+
+Full details (Discord OAuth login, pm2, domain + HTTPS): **[DEPLOY.md](./DEPLOY.md)** · dashboard docs: **[dashboard/README.md](./dashboard/README.md)**
 
 ### 🎫 Tickets & Transactions
 
@@ -89,6 +98,9 @@ Thor/
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
 ├── tests/unit/                   # 639 unit tests (node:test)
+├── dashboard/                    # 🌐 Next.js web dashboard (v3.18.0 — one repo)
+├── setup.sh · start.sh · dev.sh  # Install & run the bot + web together
+├── ecosystem.config.cjs          # pm2: thor-bot + thor-dash 24/7
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js
@@ -101,7 +113,7 @@ Thor/
 
 ### Prerequisites
 
-- Node.js v18+ (v20+ recommended)
+- Node.js v20+ (the bot alone runs on 18+, but the bundled web dashboard requires 20+)
 - A Discord bot token ([how to get one](https://discord.com/developers/applications))
 - **3 Privileged Intents** enabled in the Discord Developer Portal (**Bot** tab → _Privileged Gateway Intents_):
     - ✅ **Server Members Intent** — for welcome/goodbye messages and auto-role
@@ -113,21 +125,19 @@ Thor/
 ### Installation
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/dwisetyabudi15581/Thor.git
-cd Thor
+# 1. Clone the repo (bot + web dashboard in ONE repo)
+git clone https://github.com/dwisetyabudi15581/Thor-EN.git
+cd Thor-EN
 
-# 2. Install dependencies
-npm install
+# 2. Install EVERYTHING (bot + dashboard + both .env files from examples)
+./setup.sh
 
-# 3. Set up the environment
-cp .env.example .env
-# Fill in .env (the ONE place to configure your server — switching servers = edit this line):
-#   DISCORD_TOKEN=your_bot_token
-#   GUILD_ID=your_discord_server_id   ← leave empty for public mode (Dyno-style)
-#
-# 4. Run the bot
-npm start
+# 3. Fill in the environment
+nano .env             # DISCORD_TOKEN + GUILD_ID (empty = public Dyno-style mode) + DASH_API_TOKEN
+nano dashboard/.env   # Discord OAuth + DASH_API_TOKEN (the SAME as the bot's .env)
+
+# 4. Run the bot + dashboard together
+./start.sh            # or ./dev.sh for development
 ```
 
 Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID` is left empty, the bot runs in **public Dyno-style mode**: commands are registered globally and appear automatically in every server that invites the bot (~1 hour propagation) — no manual guild id anywhere. For development with auto-restart: `npm run dev`.
@@ -156,15 +166,20 @@ The complete guide — including product examples, custom categories, and daily 
 
 ## 🧪 Development
 
-| Script           | Description                     |
-| ---------------- | ------------------------------- |
-| `npm start`      | Run the bot                     |
-| `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (639 tests)  |
-| `npm run lint`   | ESLint check                    |
-| `npm run format` | Prettier format all files       |
+| Script             | Description                                        |
+| ------------------ | -------------------------------------------------- |
+| `npm start`        | Run the bot                                        |
+| `npm run dev`      | Run with nodemon (auto-restart)                    |
+| `npm test`         | Run all unit tests (639 tests)                     |
+| `npm run lint`     | ESLint check                                       |
+| `npm run format`   | Prettier format all files                          |
+| `./setup.sh`       | Install bot + dashboard + prepare both .env files  |
+| `./start.sh`       | Production: bot + web dashboard together           |
+| `./dev.sh`         | Development: nodemon + next dev together           |
+| `npm run dash:dev` | Web dashboard only (next dev :3000)                |
+| `npm run dash:mock`| Dashboard + a mock DASH API (demo data, no bot)    |
 
-Tests use the `node:test` runner built into Node.js v18+ — no extra dependencies needed. All tests run in a sandbox (snapshot/restore), so they are safe to run on a live server. CI (GitHub Actions) runs lint + tests on every push for Node 18/20/22.
+Tests use the `node:test` runner built into Node.js — no extra dependencies needed. All tests run in a sandbox (snapshot/restore), so they are safe to run on a live server. CI (GitHub Actions) runs lint + tests on every push for Node 18/20/22.
 
 ---
 

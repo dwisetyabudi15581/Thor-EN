@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.18.0] — 2026-09-14
+
+### Added — 🌐 WEB DASHBOARD MOVED INTO THE BOT REPO (ONE REPO, ONE SETUP)
+
+Monorepo: the Dyno-style web dashboard now lives in this repository's `dashboard/` folder — no more separate repo. Clone once → `./setup.sh` → `./start.sh` → the bot and the dashboard run together.
+
+- 🟢 **`dashboard/` — Next.js 16 + TypeScript + Tailwind 4 + Prisma SQLite** (Discord OAuth2 login, server picker, 11 configuration modules: Overview, General, Tickets & Products, AutoMod, Leveling, Midman, Responders, Self-Roles, Announcements, Temp Voice, Server Stats; direct CRUD + a Dyno-style draft SaveBar). Fully translated UI, comments, and docs.
+- 🟢 **Dashboard dependencies slimmed drastically:** 60+ → 12 runtime packages (fresh install: 419 packages, ~46 seconds); 44 unused boilerplate UI components removed (only accordion/badge/button/toast/toaster remain); the sandbox-only `/api/me2` workaround removed → plain `/api/me`; sandbox credential fallbacks emptied (safe for a public repo).
+- 🟢 **Root convenience scripts:** `setup.sh` (install bot + web + prepare both `.env` files), `start.sh` (production: both in one run, Ctrl+C stops both), `dev.sh` (nodemon + next dev), `ecosystem.config.cjs` (pm2 `thor-bot` + `thor-dash` 24/7), plus npm scripts `dash:install/dev/build/start/mock`.
+- 🟢 **DEPLOY.md rewritten as the ONE-repo guide** (VPS + pm2 + Caddy + OAuth + end-to-end verification + troubleshooting); README updated (v3.18.0 badge, folder structure, script table, monorepo dashboard section, fixed the clone URL to this repo).
+- 🟢 **Bot & tests unchanged:** 92 commands, 639/639 unit tests still green; `DASH_API_TOKEN` in the bot's `.env` must match `dashboard/.env`.
+
 ## [3.17.0] — 2026-09-14
 
 ### Added — 🌐 DASH API FOR THE WEB DASHBOARD + VERSION ALIGNMENT WITH THE INDONESIAN REPO (BOT 100% FREE)

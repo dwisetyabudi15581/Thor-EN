@@ -1,4 +1,4 @@
-# 📖 Admin Guide — Thor Bot v3.17.0
+# 📖 Admin Guide — Thor Bot v3.18.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
@@ -1032,10 +1032,11 @@ The cooldown is **per-user** — user A triggering it doesn't affect user B.
 
 ## 11. Version History
 
-The full history of all versions (v3.9.0 – v3.17.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
+The full history of all versions (v3.9.0 – v3.18.0) is available in **[CHANGELOG.md](../CHANGELOG.md)**.
 
 A summary of the latest versions:
 
+- **v3.18.0** (2026-09-14) — 🌐 **WEB DASHBOARD MOVED INTO THE BOT REPO (MONOREPO)**. The Dyno-style dashboard now lives in this repo's `dashboard/` folder (Next.js 16 + Prisma SQLite, 11 modules, slimmed to 12 runtime packages, fully in English) — clone once, `./setup.sh`, `./start.sh`, and the bot + web run together. New root scripts (`setup.sh` / `start.sh` / `dev.sh` / `ecosystem.config.cjs` for pm2), DEPLOY.md rewritten as the one-repo guide. Bot & tests unchanged (92 commands, 639 tests).
 - **v3.17.0** (2026-09-14) — 🌐 **DASH API FOR THE WEB DASHBOARD + VERSION ALIGNMENT WITH THE INDONESIAN REPO — BOT 100% FREE**. Ported from the Indonesian repo (its v3.16.0): `src/infra/dashServer.js` — a localhost HTTP API (`127.0.0.1:8788`, secret `DASH_API_TOKEN`, safe by default — without the token it does not run) read/written by the Next.js web dashboard: **two ways to configure the bot** (slash commands OR the web) writing ONE shared data source (`data/config/<guildId>.json`). Validated dot-path config updates, automod merge patches, responders/announce/selfroles CRUD, actor-audited writes. `index.js` starts/stops it with the bot lifecycle; `/health` reports the version from `package.json`. +23 tests (total **639**). New `DEPLOY.md` (the VPS + pm2 guide). The Indonesian repo's premium system (added there in v3.15.0, completely removed in its v3.17.0 — the owner made the bot free) never existed in this EN repo; the version aligns to 3.17.0 so both repos stay in lockstep. Registry stays **92 commands**.
 - **v3.14.0** (2026-09-13) — 🗑️ **SELF-SERVICE STOCK KEYS REMOVED (user request)**. The user's premium keys come from an **external VIP website** (used for web login) — bot-minted keys are invalid there, so `/gen-key` `/redeem` `/list-stock` `/revoke-key` + the `/config-show` stock line are fully removed (commands 96 → 92, tests 644 → 616; 28 feature tests deleted). **The classic `/set-key` ticket flow stays valid and unchanged** — the bridge from external web keys to Discord roles. Premium monetization continues in a separate web dashboard.
 - **v3.13.0** (2026-09-12) — 💰 **PREMIUM SAAS: STOCK KEYS + SELF-SERVICE REDEMPTION**. Sell keys without staff online 24/7: `/gen-key` (admin) mints crypto-secure stock keys `XXXXX-XXXXX-XXXXX`; buyers redeem them themselves via `/redeem` (PUBLIC) → role + expiry schedule automatically, **duration starts when redeemed**. `/list-stock` + `/revoke-key` manage the stock; a stock line appears in `/config-show`. Security: a 5-failures/10-min rate limiter, generic error messages (anti-enumeration), atomic consumption, guild-scoped keys, keys never leak in audit logs. Registry 92 → 96 commands; +28 tests (total **644**). No breaking changes — the classic `/set-key` flow stays.

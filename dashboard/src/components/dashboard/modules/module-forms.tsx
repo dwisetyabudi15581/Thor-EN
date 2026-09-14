@@ -1,0 +1,622 @@
+"use client";
+
+// Dashboard form modules: panels that edit the BOT CONFIG (changes are collected
+// as a draft and then saved all at once via the SaveBar — Dyno-style pattern).
+//
+// Contract with guild-dashboard.tsx:
+//   draft     — editable copy of the payload (config/automod mutated via setters)
+//   setConfig — mark dirty + change draft.config via dotPath
+//   setAutomod— mark dirty + merge a patch into draft.automod
+//   meta      — guild channels/roles (for pickers)
+//   toast     — small notifications
+
+import { useState } from "react";
+import { Plus, Trash2, GripVertical, Info } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill,
+} from "../fields";
+import type { AutoModConfig, DashboardPayload, GuildMeta, Product, TicketCategory } from "@/lib/bot-api";
+
+export type ModuleFormProps = {
+  draft: DashboardPayload;
+  meta: GuildMeta;
+  setConfig: (dotPath: string, value: unknown) => void;
+  setAutomod: (patch: Partial<AutoModConfig>) => void;
+  toast: (msg: string, tone?: "ok" | "err") => void;
+};
+
+/* ============================================================
+ * MODULE: General (roles, channels, messages, verify button, colors)
+ * ============================================================ */
+
+const TEMPLATE_VARS = (
+  <span>
+    Available variables: <code className="text-amber-300/80">{"{user}"}</code>{" "}
+    <code className="text-amber-300/80">{"{username}"}</code>{" "}
+    <code className="text-amber-300/80">{"{server}"}</code>{" "}
+    <code className="text-amber-300/80">{"{count}"}</code>{" "}
+    <code className="text-amber-300/80">{"{action}"}</code>
+  </span>
+);
+
+export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
+  const c = draft.config;
+  return (
+    <div className="space-y-5">
+      <Section title="Key Roles" desc="Roles used by the verification system and bot admin access. Pick from the server's role list.">
+        <Field label="Verified Role" hint="Granted automatically after a member clicks the verify button.">
+          <RoleSelect value={c.roles.verified ?? null} onChange={(v) => setConfig("roles.verified", v)} roles={meta.roles} />
+        </Field>
+        <Field label="Unverified Role" hint="A new member's starting role before verification (optional).">
+          <RoleSelect value={c.roles.unverified ?? null} onChange={(v) => setConfig("roles.unverified", v)} roles={meta.roles} />
+        </Field>
+        <Field label="Bot Admin Role" hint="Holders of this role can use every admin command on this server.">
+          <RoleSelect value={c.roles.admin ?? null} onChange={(v) => setConfig("roles.admin", v)} roles={meta.roles} />
+        </Field>
+      </Section>
+
+      <Section title="System Channels" desc="Where the bot's automatic messages are sent.">
+        <Field label="Welcome Channel" hint="Welcome messages are sent here.">
+          <ChannelSelect value={c.channels.welcome ?? null} onChange={(v) => setConfig("channels.welcome", v)} channels={meta.channels} />
+        </Field>
+        <Field label="Goodbye Channel" hint="Farewell messages are sent here.">
+          <ChannelSelect value={c.channels.goodbye ?? null} onChange={(v) => setConfig("channels.goodbye", v)} channels={meta.channels} />
+        </Field>
+        <Field label="Invoice Channel" hint="Transaction invoices (tickets + middleman deals) are sent here.">
+          <ChannelSelect value={c.channels.invoice ?? null} onChange={(v) => setConfig("channels.invoice", v)} channels={meta.channels} />
+        </Field>
+      </Section>
+
+      <Section title="Welcome & Verification Messages" desc={TEMPLATE_VARS}>
+        <Field label="Welcome Title">
+          <TextInput value={c.messages.welcomeTitle} onChange={(v) => setConfig("messages.welcomeTitle", v)} placeholder="👋 WELCOME!" />
+        </Field>
+        <Field label="Goodbye Title">
+          <TextInput value={c.messages.goodbyeTitle} onChange={(v) => setConfig("messages.goodbyeTitle", v)} placeholder="👋 FAREWELL" />
+        </Field>
+        <div className="md:col-span-2">
+          <Field label="Welcome Body" hint={TEMPLATE_VARS}>
+            <TextArea value={c.messages.welcomeBody} onChange={(v) => setConfig("messages.welcomeBody", v)} rows={5} />
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field label="Goodbye Body" hint={TEMPLATE_VARS}>
+            <TextArea value={c.messages.goodbyeBody} onChange={(v) => setConfig("messages.goodbyeBody", v)} rows={4} />
+          </Field>
+        </div>
+        <Field label="Verification Embed Title">
+          <TextInput value={c.messages.verifyTitle} onChange={(v) => setConfig("messages.verifyTitle", v)} />
+        </Field>
+        <Field label="Verify Button Label">
+          <TextInput value={c.verifyButton.label} onChange={(v) => setConfig("verifyButton.label", v)} />
+        </Field>
+        <div className="md:col-span-2">
+          <Field label="Verification Embed Body">
+            <TextArea value={c.messages.verifyBody} onChange={(v) => setConfig("messages.verifyBody", v)} rows={3} />
+          </Field>
+        </div>
+        <Field label="Verify Button Emoji" hint="Example: ✅ or :custom_emoji:">
+          <TextInput value={c.verifyButton.emoji} onChange={(v) => setConfig("verifyButton.emoji", v)} />
+        </Field>
+        <Field label="Verify Button Color">
+          <Select
+            value={c.verifyButton.style}
+            onChange={(v) => setConfig("verifyButton.style", v)}
+            options={[
+              { value: "Primary", label: "Blue (Primary)" },
+              { value: "Secondary", label: "Gray (Secondary)" },
+              { value: "Success", label: "Green (Success)" },
+              { value: "Danger", label: "Red (Danger)" },
+            ]}
+          />
+        </Field>
+      </Section>
+
+      <Section title="Bot Embed Colors" desc="Embed edge colors used by all of the bot's notifications on this server.">
+        {(["success", "danger", "primary", "warning", "info"] as const).map((k) => (
+          <Field key={k} label={k.charAt(0).toUpperCase() + k.slice(1)}>
+            <ColorInput value={c.colors[k] ?? 0} onChange={(v) => setConfig(`colors.${k}`, v)} />
+          </Field>
+        ))}
+      </Section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: Tickets & Products
+ * ============================================================ */
+
+const STYLE_OPTS = [
+  { value: "Primary", label: "Blue" },
+  { value: "Secondary", label: "Gray" },
+  { value: "Success", label: "Green" },
+  { value: "Danger", label: "Red" },
+];
+
+export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps) {
+  const c = draft.config;
+  const cats = c.ticketCategories;
+  const products = c.products;
+
+  function updateCat(idx: number, patch: Partial<TicketCategory>) {
+    const next = cats.map((cat, i) => (i === idx ? { ...cat, ...patch } : cat));
+    setConfig("ticketCategories", next);
+  }
+  function addCat() {
+    if (cats.length >= 25) {
+      toast("Maximum of 25 categories (Discord limit).", "err");
+      return;
+    }
+    const id = `cat${Date.now().toString(36).slice(-4)}`;
+    setConfig("ticketCategories", [...cats, { id, label: "New Category", emoji: "🎫", style: "Primary", requiresKey: false }]);
+  }
+  function removeCat(idx: number) {
+    if (cats.length <= 1) {
+      toast("At least 1 category is required.", "err");
+      return;
+    }
+    setConfig("ticketCategories", cats.filter((_, i) => i !== idx));
+  }
+  function updateProduct(idx: number, patch: Partial<Product>) {
+    const next = products.map((p, i) => (i === idx ? { ...p, ...patch } : p));
+    setConfig("products", next);
+  }
+  function addProduct() {
+    if (products.length >= 25) {
+      toast("Maximum of 25 products (Discord dropdown limit).", "err");
+      return;
+    }
+    const cat = cats[0]?.id ?? "transaction";
+    setConfig("products", [
+      ...products,
+      { label: "New Product", value: `prd${Date.now().toString(36).slice(-4)}`, price: "10,000 IDR", category: cat, requiresKey: true },
+    ]);
+  }
+
+  return (
+    <div className="space-y-5">
+      <Section title="Ticket Panel" desc="The ticket panel embed the bot sends to the ticket channel.">
+        <Field label="Panel Title">
+          <TextInput value={c.messages.ticketTitle} onChange={(v) => setConfig("messages.ticketTitle", v)} />
+        </Field>
+        <Field label="Price List Header">
+          <TextInput value={c.messages.ticketPriceHeader} onChange={(v) => setConfig("messages.ticketPriceHeader", v)} />
+        </Field>
+        <div className="md:col-span-2">
+          <Field
+            label="Ticket Panel Body"
+            hint={
+              <span>
+                Variables: <code className="text-amber-300/80">{"{price_list}"}</code>{" "}
+                <code className="text-amber-300/80">{"{price_list:<category>}"}</code>{" "}
+                <code className="text-amber-300/80">{"{price_header}"}</code>{" "}
+                <code className="text-amber-300/80">{"{categories_list}"}</code>
+              </span>
+            }
+          >
+            <TextArea value={c.messages.ticketBody} onChange={(v) => setConfig("messages.ticketBody", v)} rows={5} />
+          </Field>
+        </div>
+      </Section>
+
+      {/* Ticket categories */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">Ticket Categories</h3>
+            <p className="mt-1 text-xs text-zinc-500">Each category becomes a button on the panel — members click to open a ticket.</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={addCat} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+            <Plus className="h-4 w-4" aria-hidden="true" /> Category
+          </Button>
+        </div>
+        <div className="mt-5 space-y-3">
+          {cats.map((cat, idx) => (
+            <div key={`${cat.id}-${idx}`} className="grid gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[70px_1fr_1fr_140px_auto]">
+              <div className="flex items-center gap-2">
+                <GripVertical className="h-4 w-4 text-zinc-700" aria-hidden="true" />
+                <TextInput value={cat.emoji} onChange={(v) => updateCat(idx, { emoji: v })} placeholder="🎫" />
+              </div>
+              <TextInput value={cat.label} onChange={(v) => updateCat(idx, { label: v })} placeholder="Category label" />
+              <div className="flex items-center gap-2">
+                <TextInput value={cat.id} onChange={(v) => updateCat(idx, { id: v.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} placeholder="id-slug" />
+                {cat.isDefault ? <Pill tone="amber">built-in</Pill> : null}
+              </div>
+              <Select value={cat.style} onChange={(v) => updateCat(idx, { style: v })} options={STYLE_OPTS} />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateCat(idx, { requiresKey: !cat.requiresKey })}
+                  title="A VIP key is required to open a ticket in this category"
+                  className={`h-9 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+                    cat.requiresKey
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  needs key
+                </button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => removeCat(idx)}
+                  className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                  title="Delete category"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Products */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">Products / Price List</h3>
+            <p className="mt-1 text-xs text-zinc-500">Shown in the transaction ticket dropdown + the automatic price list.</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={addProduct} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+            <Plus className="h-4 w-4" aria-hidden="true" /> Product
+          </Button>
+        </div>
+        <div className="mt-5 space-y-3">
+          {products.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+              No products yet — add one to start selling through tickets.
+            </p>
+          ) : null}
+          {products.map((p, idx) => (
+            <div key={`${p.value}-${idx}`} className="grid gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[1fr_110px_1fr_140px_auto]">
+              <TextInput value={p.label} onChange={(v) => updateProduct(idx, { label: v })} placeholder="Product name" />
+              <TextInput value={p.price} onChange={(v) => updateProduct(idx, { price: v })} placeholder="10,000 IDR" />
+              <div className="flex items-center gap-2">
+                <Select
+                  value={p.category}
+                  onChange={(v) => updateProduct(idx, { category: v })}
+                  options={cats.map((cat) => ({ value: cat.id, label: cat.label }))}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateProduct(idx, { requiresKey: !p.requiresKey })}
+                  className={`h-9 w-full rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+                    p.requiresKey
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {p.requiresKey ? "send key" : "manual delivery"}
+                </button>
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => setConfig("products", products.filter((_, i) => i !== idx))}
+                className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                title="Delete product"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: AutoMod
+ * ============================================================ */
+
+const ACTION_OPTS = [
+  { value: "delete_only", label: "Delete message only" },
+  { value: "warn", label: "Warn" },
+  { value: "mute_10m", label: "Mute 10 minutes" },
+  { value: "mute_1h", label: "Mute 1 hour" },
+  { value: "kick", label: "Kick" },
+];
+
+export function AutoModModule({ draft, setAutomod }: ModuleFormProps) {
+  const a = draft.automod;
+  const [wordInput, setWordInput] = useState("");
+  const [wordAction, setWordAction] = useState("delete_only");
+  const [exemptInput, setExemptInput] = useState("");
+
+  function addWord() {
+    const w = wordInput.trim().toLowerCase();
+    if (!w) return;
+    if (a.wordRules.some((r) => r.word === w)) return;
+    setAutomod({ wordRules: [...a.wordRules, { word: w, action: wordAction === "none" ? null : wordAction }] });
+    setWordInput("");
+  }
+
+  return (
+    <div className="space-y-5">
+      <Section title="Status & Anti-Spam" desc="The automatic message watchdog — enable it to protect the server without manual moderation.">
+        <div className="md:col-span-2">
+          <Toggle
+            checked={a.enabled}
+            onChange={(v) => setAutomod({ enabled: v })}
+            label="AutoMod enabled"
+            desc="Turn off to disable ALL automatic monitoring instantly."
+          />
+        </div>
+        <Field label="Spam Threshold" hint="Number of messages within the window below that counts as spam.">
+          <TextInput type="number" value={a.spamThreshold} onChange={(v) => setAutomod({ spamThreshold: Number(v) || 1 })} />
+        </Field>
+        <Field label="Spam Window (seconds)">
+          <TextInput type="number" value={Math.round(a.spamWindowMs / 1000)} onChange={(v) => setAutomod({ spamWindowMs: (Number(v) || 1) * 1000 })} />
+        </Field>
+        <Field label="Spam Action">
+          <Select value={a.spamAction} onChange={(v) => setAutomod({ spamAction: v })} options={ACTION_OPTS} />
+        </Field>
+        <Field label="Mention Limit" hint="More than this per message triggers action.">
+          <TextInput type="number" value={a.maxMentions} onChange={(v) => setAutomod({ maxMentions: Number(v) || 1 })} />
+        </Field>
+        <Field label="Excess Mention Action">
+          <Select value={a.mentionAction} onChange={(v) => setAutomod({ mentionAction: v })} options={ACTION_OPTS.slice(0, 3)} />
+        </Field>
+      </Section>
+
+      <Section title="Link Blocking" desc="Delete messages containing links — except in allowed channels/roles.">
+        <div className="md:col-span-2">
+          <Toggle
+            checked={a.blockLinks}
+            onChange={(v) => setAutomod({ blockLinks: v })}
+            label="Block all links"
+            desc="Except for the whitelisted channels & roles below."
+          />
+        </div>
+        <Field label="Link-Allowed Channels" hint="Channels listed here may contain links.">
+          <TextArea
+            value={a.linkAllowedChannels.join("\n")}
+            onChange={(v) => setAutomod({ linkAllowedChannels: v.split("\n").map((s) => s.trim()).filter(Boolean) })}
+            rows={3}
+            placeholder="One channel ID per line"
+          />
+        </Field>
+        <Field label="Link-Allowed Roles">
+          <TextArea
+            value={a.linkAllowedRoles.join("\n")}
+            onChange={(v) => setAutomod({ linkAllowedRoles: v.split("\n").map((s) => s.trim()).filter(Boolean) })}
+            rows={3}
+            placeholder="One role ID per line"
+          />
+        </Field>
+      </Section>
+
+      <Section title="Word Blocking" desc="Whole-word matching by default — “scam” does not match “scammer”.">
+        <Field label="Matching Mode">
+          <Select
+            value={a.wordMatchMode}
+            onChange={(v) => setAutomod({ wordMatchMode: v })}
+            options={[
+              { value: "whole_word", label: "Whole word (fewer false positives)" },
+              { value: "substring", label: "Contains substring (stricter)" },
+            ]}
+          />
+        </Field>
+        <Field label="Default Word Action" hint="Used for words without a specific action.">
+          <Select value={a.wordAction} onChange={(v) => setAutomod({ wordAction: v })} options={ACTION_OPTS} />
+        </Field>
+        <div className="md:col-span-2 space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {a.wordRules.length === 0 ? <p className="text-xs text-zinc-500">No blocked words yet.</p> : null}
+            {a.wordRules.map((r, i) => (
+              <span key={`${r.word}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                <span className="font-mono">{r.word}</span>
+                <span className="text-[10px] text-zinc-500">{r.action ?? "default"}</span>
+                <button
+                  type="button"
+                  onClick={() => setAutomod({ wordRules: a.wordRules.filter((_, idx) => idx !== i) })}
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                  title="Remove word"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <TextInput value={wordInput} onChange={setWordInput} placeholder="word to block…" />
+            <Select value={wordAction} onChange={setWordAction} options={ACTION_OPTS} />
+            <Button size="sm" onClick={addWord} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold shrink-0 h-10">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Block
+            </Button>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <p className="text-[11px] text-zinc-500">
+                Exempt words — cancel out a match (e.g. block “scam”, exempt “scamming_help”).
+              </p>
+              <TextInput value={exemptInput} onChange={setExemptInput} placeholder="add an exempt word…" />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-10 shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+              onClick={() => {
+                const w = exemptInput.trim().toLowerCase();
+                if (!w || a.exemptWords.includes(w)) return;
+                setAutomod({ exemptWords: [...a.exemptWords, w] });
+                setExemptInput("");
+              }}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" /> Exempt
+            </Button>
+          </div>
+          {a.exemptWords.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {a.exemptWords.map((w, i) => (
+                <span key={`${w}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/5 py-1 pl-3 pr-1.5 text-xs text-emerald-300">
+                  <span className="font-mono">{w}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAutomod({ exemptWords: a.exemptWords.filter((_, idx) => idx !== i) })}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-emerald-500/70 hover:bg-red-950/40 hover:text-red-400"
+                    title="Remove exemption"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: Leveling
+ * ============================================================ */
+
+export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProps) {
+  const c = draft.config;
+  const lv = c.leveling;
+  const [newLevel, setNewLevel] = useState("");
+  const [newRole, setNewRole] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-5">
+      <Section title="Level System" desc="XP is awarded per chat message; levels rise automatically + role rewards.">
+        <div className="md:col-span-2">
+          <Toggle
+            checked={lv.enabled}
+            onChange={(v) => setConfig("leveling.enabled", v)}
+            label="Leveling enabled"
+            desc="Turn off to stop counting XP (existing data stays saved)."
+          />
+        </div>
+        <Field label="XP per Message">
+          <TextInput type="number" value={lv.xpPerMessage} onChange={(v) => setConfig("leveling.xpPerMessage", Number(v) || 1)} />
+        </Field>
+        <Field label="XP Cooldown (seconds)" hint="Gap between counted messages — anti XP spam.">
+          <TextInput type="number" value={Math.round(lv.cooldownMs / 1000)} onChange={(v) => setConfig("leveling.cooldownMs", (Number(v) || 1) * 1000)} />
+        </Field>
+        <div className="md:col-span-2">
+          <Toggle
+            checked={lv.announceLevelUp}
+            onChange={(v) => setConfig("leveling.announceLevelUp", v)}
+            label="Announce level-ups"
+            desc="The bot sends a congratulation message each time a member levels up."
+          />
+        </div>
+        <Field label="Level-Up Channel" hint="Leave empty = in the channel where the member chatted.">
+          <ChannelSelect value={lv.levelUpChannel} onChange={(v) => setConfig("leveling.levelUpChannel", v)} channels={meta.channels} placeholder="— member chat channel —" />
+        </Field>
+      </Section>
+
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-zinc-100">Role Rewards per Level</h3>
+        <p className="mt-1 text-xs text-zinc-500">Roles granted automatically when a member reaches a certain level.</p>
+        <div className="mt-5 space-y-2">
+          {c.levelRoles.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-zinc-800 p-5 text-center text-xs text-zinc-500">
+              No role rewards yet — add one to appreciate active members.
+            </p>
+          ) : null}
+          {c.levelRoles
+            .slice()
+            .sort((x, y) => x.level - y.level)
+            .map((lr, i) => (
+              <div key={`${lr.level}-${lr.roleId}-${i}`} className="flex items-center gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-3">
+                <Pill tone="amber">Lv {lr.level}</Pill>
+                <span className="flex-1 truncate text-sm text-zinc-300">
+                  {meta.roles.find((r) => r.id === lr.roleId)?.name ?? `role ${lr.roleId.slice(0, 10)}…`}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setConfig("levelRoles", c.levelRoles.filter((x) => x !== lr))}
+                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            ))}
+        </div>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <TextInput type="number" value={newLevel} onChange={setNewLevel} placeholder="Level (e.g. 10)" />
+          <RoleSelect value={newRole} onChange={setNewRole} roles={meta.roles} placeholder="Pick a reward role…" />
+          <Button
+            size="sm"
+            className="h-10 shrink-0 bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            onClick={() => {
+              const level = Number(newLevel);
+              if (!Number.isInteger(level) || level < 1 || level > 1000) {
+                toast("Level must be a number between 1 and 1000.", "err");
+                return;
+              }
+              if (!newRole) {
+                toast("Pick a reward role first.", "err");
+                return;
+              }
+              if (c.levelRoles.some((x) => x.level === level)) {
+                toast(`Level ${level} already has a reward.`, "err");
+                return;
+              }
+              setConfig("levelRoles", [...c.levelRoles, { level, roleId: newRole }]);
+              setNewLevel("");
+              setNewRole(null);
+            }}
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" /> Add Reward
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: Middleman (Escrow)
+ * ============================================================ */
+
+export function MidmanModule({ draft, setConfig }: ModuleFormProps) {
+  const m = draft.config.midman;
+  return (
+    <div className="space-y-5">
+      <Section
+        title="Escrow / Middleman"
+        desc="Three-party deals: buyer — middleman — seller. The fee is calculated automatically when a deal is created."
+      >
+        <Field label="Fee Mode">
+          <Select
+            value={m.feeMode}
+            onChange={(v) => setConfig("midman.feeMode", v)}
+            options={[
+              { value: "percent", label: "Percentage of the deal price" },
+              { value: "flat", label: "Flat amount" },
+            ]}
+          />
+        </Field>
+        <Field
+          label={m.feeMode === "percent" ? "Fee Amount (%)" : "Fee Amount (flat)"}
+          hint={m.feeMode === "percent" ? "Example: 5 → a 5% fee of the price. The buyer pays price + fee." : "Example: 5000 → a flat 5,000 fee per deal."}
+        >
+          <TextInput type="number" value={m.feeValue} onChange={(v) => setConfig("midman.feeValue", Number(v) || 0)} />
+        </Field>
+        <Field label="Deal Channel Category Name" hint="The category where middleman deal channels are created.">
+          <TextInput value={m.category} onChange={(v) => setConfig("midman.category", v)} />
+        </Field>
+        <div className="md:col-span-2 flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-400/80" aria-hidden="true" />
+          <p className="text-xs leading-relaxed text-zinc-500">
+            Middleman flow: anyone can open a deal via the <b className="text-zinc-300">Middleman</b> category in the
+            ticket panel → pick the buyer &amp; seller → the middleman locks the deal → the goods are delivered → the
+            middleman releases the funds. Every click is recorded in the deal history.
+          </p>
+        </div>
+      </Section>
+    </div>
+  );
+}

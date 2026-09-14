@@ -53,3 +53,9 @@ Thumbs.db
 # === Test coverage ===
 coverage/
 .nyc_output/
+
+# === Web dashboard (dashboard/) — build & runtime artifacts ===
+dashboard/.next/
+dashboard/tsconfig.tsbuildinfo
+dashboard/db/*
+!dashboard/db/.gitkeep

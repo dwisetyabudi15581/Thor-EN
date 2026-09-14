@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# build
+.next/
+out/
+build/
+dist/
+
+# env & rahasia (JANGAN pernah commit)
+.env
+.env.local
+.env.*.local
+*.pem
+
+# database lokal
+db/*.db
+db/*.db-journal
+
+# logs & OS
+*.log
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts

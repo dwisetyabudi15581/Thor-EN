@@ -1,6 +1,6 @@
 {
   "name": "community-bot",
-  "version": "3.17.0",
+  "version": "3.18.0",
   "description": "All-in-One Discord Community Bot — ticket panel (multi-category), auto-responder, anti-spam, AFK, leveling, key-driven VIP role, self-role, temp voice, giveaway, scheduled announcements, embed builder, backup, warn, stats, poll, midman/escrow (3-party escrow deal, anyone can create a deal via a 3-step form, dual consent, member management inside the deal channel, additive fee) — fully configurable from Discord",
   "main": "index.js",
   "scripts": {
@@ -11,7 +11,12 @@
     "lint": "eslint index.js src/",
     "lint:fix": "eslint index.js src/ --fix",
     "format": "prettier --write \"**/*.{js,json,md,yml}\" --ignore-path .gitignore",
-    "format:check": "prettier --check \"**/*.{js,json,md,yml}\" --ignore-path .gitignore"
+    "format:check": "prettier --check \"**/*.{js,json,md,yml}\" --ignore-path .gitignore",
+    "dash:install": "cd dashboard && npm install && npx prisma generate",
+    "dash:dev": "cd dashboard && npm run dev",
+    "dash:build": "cd dashboard && npm run build",
+    "dash:start": "cd dashboard && npm run start",
+    "dash:mock": "cd dashboard && npm run mock"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
