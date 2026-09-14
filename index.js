@@ -92,6 +92,15 @@ const client = new Client({
 const { attachToClient } = require('./src/services/schedulerTasks');
 attachToClient(client);
 
+// === DASH API SERVER (v3.17.0) — for the Dyno-style web dashboard ===
+// A small HTTP API (default 127.0.0.1) — read/written by the Next.js dashboard.
+// It does not run without DASH_API_TOKEN (safe by default). The bot does NOT
+// need to be ready for the server to start — the guild endpoints only become
+// useful once the cache is warm, but /health can already answer (useful for
+// uptime monitors).
+const { startDashServer, stopDashServer } = require('./src/infra/dashServer');
+startDashServer(client);
+
 // === GLOBAL ERROR HANDLER ===
 // v3.9.8: uncaughtException → graceful shutdown (keeping the bot running in a broken state risks data corruption).
 process.on('unhandledRejection', reason => {
@@ -177,6 +186,9 @@ async function gracefulShutdown(signal, exitCode = 0) {
     console.log(`\n⚠️ Received ${signal}, flushing stats & shutting down...`);
     try {
         await Promise.race([Promise.resolve(shutdownStats()), new Promise(resolve => setTimeout(resolve, 3000))]);
+    } catch (_) {}
+    try {
+        stopDashServer(); // v3.17.0: close the DASH API before destroying the client
     } catch (_) {}
     try {
         client.destroy();

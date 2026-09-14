@@ -1,0 +1,478 @@
+/**
+ * Unit tests for dashServer (v3.17.0) — the HTTP API for the web dashboard.
+ *
+ * Verifies:
+ *   - Auth: no token 401; wrong token 401; correct token passes
+ *   - GET /health without auth — ok
+ *   - GET /guilds — guild list from the client cache (mocked)
+ *   - GET /guilds/:id/meta — channels + roles sorted
+ *   - GET /guilds/:id/dashboard — the all-module payload
+ *   - PUT /guilds/:id/config — valid, invalid (422), prototype pollution
+ *     rejected, unknown section rejected, whole arrays (ticketCategories)
+ *     validated
+ *   - PUT /guilds/:id/automod — validated merge patch; unknown field 422
+ *   - POST/DELETE responders — CRUD + duplicate 409
+ *   - POST/DELETE announce — valid schedule; past send time 400
+ *   - POST selfroles — panel created + message sent (mocked channel);
+ *     rollback when the channel fetch fails
+ *
+ * The test server runs on an ephemeral port (listen(0)) with a mocked
+ * client — Discord is never touched. Production data files are
+ * snapshotted & restored.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+
+// === Snapshot & restore the data files touched by the tests ===
+const dataDir = path.join(__dirname, '..', '..', 'data');
+const configDir = path.join(dataDir, 'config');
+const TOUCHED = ['automod.json', 'responders.json', 'selfRoles.json', 'scheduledAnnouncements.json'];
+const backups = {}; // path -> old content (null = did not exist)
+let configDirBackup = null; // old file names in data/config/
+
+for (const f of TOUCHED) {
+    const p = path.join(dataDir, f);
+    backups[p] = fs.existsSync(p) ? fs.readFileSync(p) : null;
+    if (backups[p] === null) fs.writeFileSync(p, '[]');
+}
+if (fs.existsSync(configDir)) {
+    configDirBackup = fs.readdirSync(configDir).map((f) => ({
+        name: f,
+        content: fs.readFileSync(path.join(configDir, f))
+    }));
+    for (const f of configDirBackup) {
+        if (f.name.startsWith('999')) fs.unlinkSync(path.join(configDir, f.name)); // clean up leftovers from old runs
+    }
+}
+process.on('exit', () => {
+    try {
+        for (const [p, content] of Object.entries(backups)) {
+            if (content === null) {
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            } else {
+                fs.writeFileSync(p, content);
+            }
+        }
+        if (configDirBackup !== null) {
+            const now = fs.existsSync(configDir) ? fs.readdirSync(configDir) : [];
+            for (const f of now) {
+                if (!configDirBackup.some((b) => b.name === f)) fs.unlinkSync(path.join(configDir, f));
+            }
+        }
+    } catch (_) {}
+});
+
+const { createDashHandler } = require('../../src/infra/dashServer');
+
+const TOKEN = 'unit-test-token-abc123';
+const GUILD_ID = '999111222333444555';
+
+// === Mock discord.js client ===
+function makeMockClient({ failChannelFetch = false } = {}) {
+    const guild = {
+        id: GUILD_ID,
+        name: 'Test Server',
+        icon: 'abc123',
+        memberCount: 42,
+        ownerId: '111000111000111000',
+        channels: {
+            cache: new Map([
+                ['777000111222333444', { id: '777000111222333444', name: 'general', type: 0, rawPosition: 1 }],
+                ['777000111222333555', { id: '777000111222333555', name: 'vc-zone', type: 2, rawPosition: 0 }]
+            ])
+        },
+        roles: {
+            cache: new Map([
+                ['888000111222333444', { id: '888000111222333444', name: 'Member', color: 0, position: 1 }],
+                ['888000111222333555', { id: '888000111222333555', name: 'Admin', color: 0xff0000, position: 5 }]
+            ])
+        }
+    };
+    return {
+        isReady: () => true,
+        guilds: { cache: new Map([[GUILD_ID, guild]]) },
+        channels: {
+            fetch: async (id) => {
+                if (failChannelFetch) throw new Error('channel gone');
+                return {
+                    id,
+                    send: async (opts) => ({ id: `msg_${Date.now()}`, opts }),
+                    messages: {
+                        fetch: async () => ({ edit: async () => {}, delete: async () => {} })
+                    }
+                };
+            }
+        }
+    };
+}
+
+let server;
+let baseUrl;
+
+test.before(async () => {
+    server = http.createServer(createDashHandler({ client: makeMockClient(), token: TOKEN }));
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+});
+
+test.after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+});
+
+function api(method, pathname, { token = TOKEN, body } = {}) {
+    return fetch(baseUrl + pathname, {
+        method,
+        headers: {
+            ...(token ? { 'x-dash-token': token } : {}),
+            ...(body ? { 'content-type': 'application/json' } : {})
+        },
+        body: body ? JSON.stringify(body) : undefined
+    });
+}
+
+// ====================================================
+// === Auth & health ===
+// ====================================================
+
+test('dash: /health without a token is still 200', async () => {
+    const res = await api('GET', '/health', { token: null });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.guildCount, 1);
+});
+
+test('dash: any other endpoint without a token → 401', async () => {
+    const res = await api('GET', '/guilds', { token: null });
+    assert.strictEqual(res.status, 401);
+});
+
+test('dash: wrong token → 401', async () => {
+    const res = await api('GET', '/guilds', { token: 'wrong' });
+    assert.strictEqual(res.status, 401);
+});
+
+// ====================================================
+// === Guilds & meta ===
+// ====================================================
+
+test('dash: GET /guilds — guild list from the cache', async () => {
+    const res = await api('GET', '/guilds');
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.guilds.length, 1);
+    assert.strictEqual(data.guilds[0].id, GUILD_ID);
+    assert.strictEqual(data.guilds[0].name, 'Test Server');
+});
+
+test('dash: GET /guilds/:id/meta — channels + roles', async () => {
+    const res = await api('GET', `/guilds/${GUILD_ID}/meta`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.channels.length, 2);
+    assert.strictEqual(data.roles.length, 2);
+    // Roles sorted by position DESC (Admin first)
+    assert.strictEqual(data.roles[0].name, 'Admin');
+});
+
+test('dash: GET /guilds/:id/meta for a foreign guild → 404', async () => {
+    const res = await api('GET', '/guilds/123456789123456789/meta');
+    assert.strictEqual(res.status, 404);
+});
+
+// ====================================================
+// === Dashboard payload ===
+// ====================================================
+
+test('dash: GET /guilds/:id/dashboard — all modules present', async () => {
+    const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    for (const key of ['config', 'automod', 'responders', 'selfroles', 'tempvoice', 'announces', 'serverstats']) {
+        assert.ok(key in data, `payload.${key} must exist`);
+    }
+    // Config merged with DEFAULTS (the getConfig pattern)
+    assert.ok(Array.isArray(data.config.ticketCategories));
+    assert.strictEqual(typeof data.config.messages.welcomeTitle, 'string');
+});
+
+// ====================================================
+// === PUT config ===
+// ====================================================
+
+test('dash: PUT config valid — saved & read back', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            actor: { id: '42', tag: 'tester' },
+            updates: {
+                'roles.verified': '888000111222333444',
+                'channels.welcome': '777000111222333444',
+                'messages.welcomeTitle': 'HELLO FROM DASH',
+                'leveling.enabled': true,
+                'leveling.xpPerMessage': 25
+            }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.ok(data.ok);
+    assert.strictEqual(data.applied.length, 5);
+
+    // Read back via the dashboard — the values stick
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.config.roles.verified, '888000111222333444');
+    assert.strictEqual(dash.config.channels.welcome, '777000111222333444');
+    assert.strictEqual(dash.config.messages.welcomeTitle, 'HELLO FROM DASH');
+    assert.strictEqual(dash.config.leveling.enabled, true);
+    assert.strictEqual(dash.config.leveling.xpPerMessage, 25);
+
+    // The physical file changed too (the slash commands' source of truth)
+    const raw = JSON.parse(fs.readFileSync(path.join(configDir, `${GUILD_ID}.json`), 'utf8'));
+    assert.strictEqual(raw.messages.welcomeTitle, 'HELLO FROM DASH');
+});
+
+test('dash: PUT config invalid values → 422 with per-field details', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                'channels.welcome': 'not-an-id', // not a snowflake
+                'leveling.xpPerMessage': 99999 // above the range
+            }
+        }
+    });
+    assert.strictEqual(res.status, 422);
+    const data = await res.json();
+    assert.strictEqual(data.details.length, 2);
+});
+
+test('dash: PUT config prototype pollution rejected', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { '__proto__.polluted': 'yes' } }
+    });
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(({}).polluted, undefined, 'Object.prototype must not be polluted');
+});
+
+test('dash: PUT config unknown section rejected', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { 'hacker.field': 'x' } }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: PUT config ticketCategories whole array validated', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'buy', label: 'Buy', emoji: '🛒', style: 'Success', requiresKey: false },
+                    { id: 'help', label: 'Help', emoji: '📞', style: 'Secondary', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.config.ticketCategories.length, 2);
+    assert.strictEqual(data.config.ticketCategories[0].id, 'buy');
+
+    // Duplicate category → 422
+    const bad = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'same', label: 'A', style: 'Primary' },
+                    { id: 'same', label: 'B', style: 'Primary' }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(bad.status, 422);
+});
+
+test('dash: PUT config null channel — clears the value', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { updates: { 'channels.welcome': null } }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.config.channels.welcome, null);
+});
+
+// ====================================================
+// === PUT automod ===
+// ====================================================
+
+test('dash: PUT automod patch validated & merged', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/automod`, {
+        body: { enabled: true, spamThreshold: 7, spamAction: 'mute_10m', blockLinks: true }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.automod.enabled, true);
+    assert.strictEqual(data.automod.spamThreshold, 7);
+    assert.strictEqual(data.automod.spamAction, 'mute_10m');
+
+    // A second patch does not wipe the first patch's fields (merge, not replace)
+    const res2 = await api('PUT', `/guilds/${GUILD_ID}/automod`, {
+        body: { blockLinks: false }
+    });
+    const data2 = await res2.json();
+    assert.strictEqual(data2.automod.spamThreshold, 7, 'the merge keeps old fields');
+    assert.strictEqual(data2.automod.blockLinks, false);
+});
+
+test('dash: PUT automod unknown field / wrong value → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/automod`, {
+        body: { bogusField: 1, spamThreshold: 'abc' }
+    });
+    assert.strictEqual(res.status, 422);
+    const data = await res.json();
+    assert.strictEqual(data.details.length, 2);
+});
+
+test('dash: PUT automod wordRules whole array normalized', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/automod`, {
+        body: { wordRules: [{ word: 'Spam', action: 'delete_only' }, { word: 'scam' }] }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.automod.wordRules.length, 2);
+    assert.strictEqual(data.automod.wordRules[0].word, 'spam', 'the word is lowercased');
+});
+
+// ====================================================
+// === Responders CRUD ===
+// ====================================================
+
+test('dash: POST responder + DELETE by trigger', async () => {
+    const post = await api('POST', `/guilds/${GUILD_ID}/responders`, {
+        body: { trigger: 'price', reply: 'Check #price!', matchMode: 'contains', replyType: 'text', cooldownMs: 3000 }
+    });
+    assert.strictEqual(post.status, 201);
+    let data = await post.json();
+    assert.strictEqual(data.responders.length, 1);
+    assert.strictEqual(data.responders[0].trigger, 'price');
+
+    // Duplicate → 409
+    const dup = await api('POST', `/guilds/${GUILD_ID}/responders`, {
+        body: { trigger: 'PRICE', reply: 'duplicate' }
+    });
+    assert.strictEqual(dup.status, 409);
+
+    const del = await api('DELETE', `/guilds/${GUILD_ID}/responders?trigger=price`);
+    assert.strictEqual(del.status, 200);
+    data = await del.json();
+    assert.strictEqual(data.responders.length, 0);
+});
+
+test('dash: DELETE a responder that does not exist → 404', async () => {
+    const res = await api('DELETE', `/guilds/${GUILD_ID}/responders?trigger=nosuchthing`);
+    assert.strictEqual(res.status, 404);
+});
+
+// ====================================================
+// === Announce CRUD ===
+// ====================================================
+
+test('dash: POST announce valid + DELETE', async () => {
+    const sendAt = Date.now() + 60 * 60 * 1000; // 1 hour from now
+    const post = await api('POST', `/guilds/${GUILD_ID}/announce`, {
+        body: {
+            channelId: '777000111222333444',
+            sendAt,
+            title: 'Test Announcement',
+            description: 'Hello from the dashboard',
+            recurring: 'daily',
+            actor: { id: '42', tag: 'tester' }
+        }
+    });
+    assert.strictEqual(post.status, 201);
+    const { announcement } = await post.json();
+    assert.strictEqual(announcement.data.title, 'Test Announcement');
+    assert.strictEqual(announcement.recurring, 'daily');
+
+    const del = await api('DELETE', `/guilds/${GUILD_ID}/announce/${announcement.id}`);
+    assert.strictEqual(del.status, 200);
+});
+
+test('dash: POST announce with a past send time → 400', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/announce`, {
+        body: { channelId: '777000111222333444', sendAt: Date.now() - 86400000, title: 'T', description: 'D' }
+    });
+    assert.strictEqual(res.status, 400);
+});
+
+// ====================================================
+// === Self-role panel (mocked channel) ===
+// ====================================================
+
+test('dash: POST selfroles — panel created + message sent', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/selfroles`, {
+        body: {
+            channelId: '777000111222333444',
+            title: '🎭 Get Roles',
+            description: 'Click the buttons below',
+            type: 'button',
+            exclusive: false,
+            roles: [{ roleId: '888000111222333444', label: 'Notif', emoji: '🔔', style: 'Secondary' }]
+        }
+    });
+    assert.strictEqual(res.status, 201);
+    const { panel } = await res.json();
+    assert.ok(panel.id);
+    assert.strictEqual(panel.messageId, panel.messageId); // filled in by the mock send
+    assert.strictEqual(panel.roles.length, 1);
+
+    // Add a role → best-effort re-render (mock) + the role sticks
+    const add = await api('POST', `/guilds/${GUILD_ID}/selfroles/${panel.id}/roles`, {
+        body: { roleId: '888000111222333555', label: 'Color', style: 'Success' }
+    });
+    assert.strictEqual(add.status, 200);
+    const added = await add.json();
+    assert.strictEqual(added.panel.roles.length, 2);
+
+    // Delete the panel → ok
+    const del = await api('DELETE', `/guilds/${GUILD_ID}/selfroles/${panel.id}`);
+    assert.strictEqual(del.status, 200);
+});
+
+test('dash: POST selfroles send failure → the entry is rolled back', async () => {
+    // A dedicated server whose client always fails the channel fetch.
+    const failServer = http.createServer(
+        createDashHandler({ client: makeMockClient({ failChannelFetch: true }), token: TOKEN })
+    );
+    await new Promise((resolve) => failServer.listen(0, '127.0.0.1', resolve));
+    const failBase = `http://127.0.0.1:${failServer.address().port}`;
+    try {
+        const res = await fetch(`${failBase}/guilds/${GUILD_ID}/selfroles`, {
+            method: 'POST',
+            headers: { 'x-dash-token': TOKEN, 'content-type': 'application/json' },
+            body: JSON.stringify({
+                channelId: '777000111222333444',
+                roles: [{ roleId: '888000111222333444', label: 'X' }]
+            })
+        });
+        assert.strictEqual(res.status, 502);
+        // Rollback: no leftover panel for this guild
+        const dash = await (
+            await fetch(`${failBase}/guilds/${GUILD_ID}/dashboard`, { headers: { 'x-dash-token': TOKEN } })
+        ).json();
+        assert.strictEqual(dash.selfroles.filter((p) => p.guildId === GUILD_ID && p.title === '🎭 Self Role' && p.roles.length === 0).length, 0);
+    } finally {
+        await new Promise((resolve) => failServer.close(resolve));
+    }
+});
+
+// ====================================================
+// === Unknown endpoint ===
+// ====================================================
+
+test('dash: unknown endpoint → 404', async () => {
+    const res = await api('GET', '/no-such-path');
+    assert.strictEqual(res.status, 404);
+});

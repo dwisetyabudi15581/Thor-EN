@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.14.0** · 92 slash commands · 616 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style)
+> **v3.17.0** · 92 slash commands · 639 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -10,6 +10,13 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 ---
 
 ## ✨ Key Features
+
+### 🌐 Web Dashboard (Dyno-style) — v3.17.0
+
+- **Two ways to configure the bot**: directly via **slash commands** in Discord, or via the **Next.js web dashboard** — both write to ONE shared data source (`data/config/<guildId>.json`), so they can never conflict.
+- **Built-in DASH API** (`src/infra/dashServer.js`): a small HTTP API on `127.0.0.1:8788` with a secret token (`DASH_API_TOKEN`) — read/written by the web dashboard for 11 modules: Overview, General, Tickets & Products, AutoMod, Leveling, Midman, Responders, Self-Roles, Announcements, Temp Voice, Server Stats.
+- **Safe by default**: without `DASH_API_TOKEN` the API server does not run; every write is validated (section whitelist + prototype-pollution guard) and the acting user is recorded.
+- **100% FREE bot** (v3.17.0): every feature is open to everyone — no tiers, no subscription, no bot activation key.
 
 ### 🎫 Tickets & Transactions
 
@@ -81,7 +88,7 @@ Thor/
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 486 unit tests (node:test)
+├── tests/unit/                   # 639 unit tests (node:test)
 ├── CHANGELOG.md                  # Version history
 ├── .env.example
 ├── eslint.config.js
@@ -153,7 +160,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ---------------- | ------------------------------- |
 | `npm start`      | Run the bot                     |
 | `npm run dev`    | Run with nodemon (auto-restart) |
-| `npm test`       | Run all unit tests (616 tests)  |
+| `npm test`       | Run all unit tests (639 tests)  |
 | `npm run lint`   | ESLint check                    |
 | `npm run format` | Prettier format all files       |
 

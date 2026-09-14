@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.17.0] — 2026-09-14
+
+### Added — 🌐 DASH API FOR THE WEB DASHBOARD + VERSION ALIGNMENT WITH THE INDONESIAN REPO (BOT 100% FREE)
+
+This English repo is now **feature-identical to the Indonesian repo at v3.17.0**. The Indonesian repo added a per-server premium subscription system in its v3.15.0 and then **completely removed** it in its v3.17.0 (the owner decided to make the bot 100% free) — that system never existed in this English repo, so there is nothing to remove here; the version number simply jumps to 3.17.0 so both repos stay in lockstep.
+
+- 🟢 **`src/infra/dashServer.js` (NEW — ported from the Indonesian v3.16.0):** the bot now runs a small HTTP API (default `127.0.0.1:8788`) that the Next.js web dashboard reads/writes — **two ways to configure the bot: slash commands in Discord OR the web dashboard**, both writing to the SAME data source (`data/config/<guildId>.json` + the managers). Timing-safe token auth (`DASH_API_TOKEN` — without the token the server does not run, safe by default). GET `health` / `guilds` / `guilds/:id/meta` / `guilds/:id/dashboard` (the all-module payload in one pull), PUT `config` (dot-path updates with a section whitelist + type validation + prototype-pollution guard), PUT `automod` (a validated merge patch), CRUD `responders` / `announce` / `selfroles`, POST `serverstats/refresh`, DELETE `tempvoice`. Every write injects the web actor's identity (`{ id, tag }`) for auditing.
+- 🟢 **Business validation stays in the bot** — the dashboard can never write a data shape that would be invalid via slash commands either (single source of truth).
+- 🟢 **`index.js`:** `startDashServer(client)` at boot + `stopDashServer()` during graceful shutdown.
+- 🟢 **`.env.example`:** the new `DASH_API_HOST` / `DASH_API_PORT` / `DASH_API_TOKEN` block.
+- 🟢 **`/health` reports the version straight from `package.json`** — it can never go stale.
+- 🟢 **+23 unit tests** (`dashServer.test.js` — auth 401, payloads, config valid/invalid/pollution, automod, responders 409, announce past-time 400, selfrole + rollback, 404). Total tests 616 → **639**.
+- 🟢 **`DEPLOY.md` (NEW):** a step-by-step VPS deployment guide (Node 18+, pm2, invite URL, the public-mode checklist, backup & update).
+
+### Compatibility
+
+- **No breaking changes.** Without `DASH_API_TOKEN` set, the behavior is identical to v3.14.0 (the API server simply never starts).
+- The server shop features (`/set-key`, products, tickets) are untouched — those are each server admin's own shop features, not a bot subscription.
+
 ## [3.14.0] — 2026-09-13
 
 ### Removed — 🗑️ SELF-SERVICE STOCK KEYS REMOVED (USER REQUEST)
