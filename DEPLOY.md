@@ -181,6 +181,36 @@ rsync -av thor@YOUR_VPS_IP:~/Thor-EN/data/ ./backup-thor/
 # back up the dashboard (login users): the dashboard/db/custom.db file
 ```
 
+## Running on an Android phone (Termux) — free, no VPS
+
+Thor runs fully on an Android phone via [Termux](https://termux.dev) since v3.21.1 — bot + web dashboard together; open the dashboard at `http://localhost:3000` (the phone's browser).
+
+```bash
+# 1. Install Termux from F-Droid (the Play Store build is stale — don't use it),
+#    then inside Termux:
+pkg update && pkg install nodejs git
+node -v                   # must be >= 20
+
+# 2. Clone + setup (same as a VPS)
+git clone https://github.com/dwisetyabudi15581/Thor-EN.git
+cd Thor-EN && ./setup.sh
+
+# 3. Fill in both .env files (same as Step 3 above)
+nano .env && nano dashboard/.env
+
+# 4. Run — the build automatically uses Webpack on Android
+./start.sh
+```
+
+Android-specific notes:
+
+- **Slower builds** — Turbopack is unavailable on Android; the build automatically uses Webpack + SWC WASM. The first build can take 3–10 minutes depending on the phone; subsequent builds are faster.
+- **Dashboard user storage automatically switches to JSON** (`db/custom-users.json`) — the Prisma database engine needs native binaries that don't exist on Android. Other dashboard features are unchanged (server config still flows through the bot's DASH API).
+- **Keep it alive with the screen off:** run `termux-wake-lock`, then disable battery optimization for Termux (Settings → Apps → Termux → Battery → Unrestricted).
+- **pm2 works** (`npm i -g pm2`) and is useful for auto-restart, but `pm2 startup` does not work (Android has no systemd). To auto-start after a phone reboot, use the [Termux:Boot](https://wiki.termux.com/wiki/Termux:Boot) app with a `~/.termux/boot/start-thor.sh` script containing `cd ~/Thor-EN && ./start.sh`.
+- **The dashboard is reachable only from the phone itself** (localhost). To open it from outside, use a free tunnel, e.g.: `pkg install cloudflared && cloudflared tunnel --url http://localhost:3000`.
+- For a stable 24/7 production setup (domain + HTTPS + uptime), a VPS is still recommended (Steps 1–8 above).
+
 ## Quick troubleshooting
 
 | Symptom | Common cause | Fix |

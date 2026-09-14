@@ -30,6 +30,8 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 ./dev.sh     # development: nodemon (bot) + next dev (web) hot-reload
 ```
 
+> 📱 **Android phone (Termux)?** The bot + dashboard run fully on a phone — the build automatically switches to Webpack and user storage to JSON. Full steps: see the **"Running on an Android phone (Termux)"** section in [DEPLOY.md](DEPLOY.md).
+
 Full details (Discord OAuth login, pm2, domain + HTTPS): **[DEPLOY.md](./DEPLOY.md)** · dashboard docs: **[dashboard/README.md](./dashboard/README.md)**
 
 ### 🎫 Tickets & Transactions

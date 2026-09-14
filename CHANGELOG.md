@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.21.1] — 2026-09-15
+
+### Added — 📱 TERMUX/ANDROID SUPPORT: BOT + DASHBOARD RUN ON YOUR PHONE
+
+The web dashboard can now be built and run directly on an Android phone via Termux — no VPS needed. Detection is automatic via `process.platform === "android"`, no extra configuration.
+
+- 🟢 **`dashboard/scripts/build.mjs`** replaces the shell build script: on Android the build automatically uses **Webpack** (`next build --webpack`) because Turbopack needs native binaries unavailable for android/arm64; Linux/VPS keeps Turbopack. Copying `static`/`public` into standalone now uses `fs.cpSync` (no more `cp -r`).
+- 🟢 **`dashboard/src/lib/db.ts`:** on Android, dashboard user storage automatically switches to a **JSON file** (`db/custom-users.json` — same interface: findUnique/create/update/upsert/count, atomic writes) because the Prisma engine needs glibc binaries that cannot be loaded on Android (bionic libc). Other platforms keep Prisma SQLite — **zero behavior change**.
+- 🟢 **`dashboard/scripts/start-server.mjs`:** `prisma db push` is skipped automatically on Android (not needed — JSON storage has no schema).
+- 🟢 **`dashboard/scripts/dev.mjs`:** `next dev` with a `--webpack` fallback for Termux.
+- 🟢 **DEPLOY.md:** new section **"Running on an Android phone (Termux)"** — install steps, `termux-wake-lock`, battery optimization, Termux:Boot, and tunnel access.
+
 ## [3.21.0] — 2026-09-15
 
 ### Added — 🚀 QUICK START MODULE: SERVER SETUP STRAIGHT FROM THE WEB (MIRRORS THE /HELP CATEGORY)

@@ -22,11 +22,18 @@ if (raw.startsWith("file:") && !raw.startsWith("file:/")) {
 }
 
 // 1) Prepare the database (create tables if missing)
-const push = spawnSync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
-  stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: dbUrl },
-});
-if (push.status !== 0) process.exit(push.status ?? 1);
+if (process.platform === "android") {
+  // Termux/Android: the Prisma schema engine is a glibc binary that cannot
+  // run on Android. The dashboard automatically uses JSON storage for its
+  // users (see src/lib/db.ts) — prisma db push is not needed.
+  console.log("[Termux] Skipping prisma db push — user storage uses JSON (db/custom-users.json).");
+} else {
+  const push = spawnSync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
+    stdio: "inherit",
+    env: { ...process.env, DATABASE_URL: dbUrl },
+  });
+  if (push.status !== 0) process.exit(push.status ?? 1);
+}
 
 // 2) Run the Next standalone server (inherits PORT from env when set)
 const server = spawn(process.execPath, [".next/standalone/server.js"], {

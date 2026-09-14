@@ -1,11 +1,11 @@
 {
   "name": "thor-dashboard",
-  "version": "3.21.0",
+  "version": "3.21.1",
   "private": true,
   "description": "Dashboard web Thor Bot — kendali server Discord ala Dyno (Next.js 16 + Prisma SQLite)",
   "scripts": {
-    "dev": "next dev -p 3000",
-    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
     "start": "node scripts/start-server.mjs",
     "mock": "node scripts/mock-dash-api.mjs",
     "lint": "eslint .",
