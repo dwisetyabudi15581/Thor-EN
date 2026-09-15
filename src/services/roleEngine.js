@@ -81,7 +81,7 @@ async function apply(member, roleIds, mode, options = {}) {
     }
     if (!Array.isArray(roleIds) || roleIds.length === 0) return result;
 
-    // Dedupe while preserving order (a join list may repeat the unverified id).
+    // Dedupe while preserving order (a join list may repeat an id).
     const seen = new Set();
     const ids = roleIds.filter(id => {
         if (id == null || seen.has(id)) return false;
@@ -171,18 +171,19 @@ function revokeRoles(member, roleIds, options = {}) {
 }
 
 /**
- * The full join list for a guild config: the admin's auto-role list PLUS the
- * Unverified marker role (when set) — deduped, order preserved. v3.22.0: this
- * list is ALSO the exemption set for the universal "first role removes
- * Unverified" rule (guildMemberUpdate) — roles the system itself grants at
- * join must not count as the member's "first role".
+/**
+ * The join-role list for a guild config — the contents of `autorole.roleIds`
+ * (the /set-autorole list), deduped, order preserved. v3.23.0: the Unverified
+ * marker concept is REMOVED — this list is now purely the join auto-roles,
+ * and the "join roles disappear when the member gets another role" rule is
+ * driven by the `autorole.removeOnNewRole` toggle (guildMemberUpdate). Roles
+ * the system itself grants at join must never count as "another role" for
+ * that rule — granting @Member at join must not immediately strip it.
  */
 function joinRoleIds(config) {
     const ids = [];
     const autorole = Array.isArray(config?.autorole?.roleIds) ? config.autorole.roleIds.filter(Boolean) : [];
     for (const id of autorole) if (!ids.includes(id)) ids.push(id);
-    const unverified = config?.roles?.unverified;
-    if (unverified && !ids.includes(unverified)) ids.push(unverified);
     return ids;
 }
 

@@ -1,17 +1,15 @@
 /**
- * Unit tests for v3.22.0 — THE UNIFIED ROLE SYSTEM.
+ * Unit tests for v3.23.0 — UNIFIED AUTO-ROLE + THE REMOVE-ON-NEW-ROLE TOGGLE.
  *
  * What changed (all covered here):
- *   1. src/services/roleEngine.js — the single gateway for role grants:
- *      validation (@everyone / managed / hierarchy), idempotency, batch
- *      fallback, structured results, joinRoleIds().
- *   2. guildMemberUpdate — the UNIVERSAL UNVERIFIED RULE: a member holding
- *      the Unverified marker who receives ANY other role (from any source)
- *      loses the marker. Join roles (the /set-autorole list) are exempt so
- *      granting @Member + @Unverified at join doesn't "verify" everyone.
- *   3. memberHandler.onMemberAdd — grants the join list (autorole +
- *      Unverified) through the engine.
- *   4. /set-autorole — add / remove / list.
+ *   1. src/services/roleEngine.js — joinRoleIds() is now PURELY the autorole
+ *      list (the Unverified marker concept was removed).
+ *   2. guildMemberUpdate — THE TOGGLE RULE: while autorole.removeOnNewRole
+ *      is on, EVERY join role the member holds is stripped the moment they
+ *      receive ANOTHER role (from any source). The join roles themselves
+ *      are exempt so a join grant never strips itself.
+ *   3. memberHandler.onMemberAdd — grants the join list through the engine.
+ *   4. /set-autorole — add / remove / list / toggle.
  *   5. The btn_verify stub — legacy panels get a deprecation reply.
  *
  * Sandboxed guild config (snapshot & restore — welcomeDiagnostics pattern).
@@ -51,7 +49,7 @@ function writeConfig(partial = {}) {
         JSON.stringify(
             {
                 roles: partial.roles || {},
-                autorole: partial.autorole || { roleIds: [] },
+                autorole: partial.autorole || { roleIds: [], removeOnNewRole: false },
                 channels: partial.channels || {},
                 messages: {
                     welcomeTitle: 'W',
@@ -161,7 +159,7 @@ test('roleEngine: role above the bot → rejected (the #1 silent failure)', asyn
     const m = makeMember({ guild });
     const res = await grantRoles(m, ['r_high']);
     assert.strictEqual(res.ok, false);
-    assert.match(res.failed[0].error, /ABOVE the bot/i);
+    assert.match(res.failed[0].error, /ABOVE the bot's highest role/i);
     assert.strictEqual(m._calls.add.length, 0);
 });
 
@@ -203,16 +201,17 @@ test('roleEngine: cacheless member (unit-test style fake) still works', async ()
     assert.deepStrictEqual(added, ['r_z']);
 });
 
-test('roleEngine: joinRoleIds — autorole list + unverified marker, deduped', () => {
+test('roleEngine: joinRoleIds — purely the autorole list, deduped, WITHOUT unverified', () => {
     const { joinRoleIds } = require('../../src/services/roleEngine');
-    assert.deepStrictEqual(joinRoleIds({ autorole: { roleIds: ['a', 'b'] }, roles: { unverified: 'u' } }), ['a', 'b', 'u']);
-    assert.deepStrictEqual(joinRoleIds({ autorole: { roleIds: ['u', 'a'] }, roles: { unverified: 'u' } }), ['u', 'a']);
-    assert.deepStrictEqual(joinRoleIds({ autorole: { roleIds: [] }, roles: {} }), []);
+    assert.deepStrictEqual(joinRoleIds({ autorole: { roleIds: ['a', 'b', 'a'] } }), ['a', 'b']);
+    // v3.23.0: roles.unverified is no longer merged in — the concept is gone.
+    assert.deepStrictEqual(joinRoleIds({ autorole: { roleIds: [] }, roles: { unverified: 'u' } }), []);
+    assert.deepStrictEqual(joinRoleIds({ roles: { unverified: 'u' } }), []);
     assert.deepStrictEqual(joinRoleIds({}), []);
 });
 
 // ====================================================
-// === 2. The universal Unverified rule                ===
+// === 2. The removeOnNewRole toggle rule              ===
 // ====================================================
 
 /**
@@ -232,61 +231,68 @@ async function runMemberUpdate({ guild, oldHas, newHas }) {
     return newMember;
 }
 
-test('universal rule: member with Unverified gains a self-role → marker removed', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' } });
-    const guild = makeGuild({ roles: [makeRole('r_unverified'), makeRole('r_gamer')] });
-    const m = await runMemberUpdate({ guild, oldHas: ['r_unverified'], newHas: ['r_unverified', 'r_gamer'] });
-    assert.deepStrictEqual(m._calls.remove, ['r_unverified'], 'the marker must be revoked');
+test('toggle rule: ON — member holding a join role gains another role → join role revoked', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'], removeOnNewRole: true } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_gamer')] });
+    const m = await runMemberUpdate({ guild, oldHas: ['r_member'], newHas: ['r_member', 'r_gamer'] });
+    assert.deepStrictEqual(m._calls.remove, ['r_member'], 'the join role must be revoked');
 });
 
-test('universal rule: join-list roles do NOT trigger removal (join grant exemption)', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' }, autorole: { roleIds: ['r_member'] } });
-    const guild = makeGuild({ roles: [makeRole('r_unverified'), makeRole('r_member')] });
-    // A join grant: unverified + autorole roles arrive together.
-    const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_unverified', 'r_member'] });
-    assert.deepStrictEqual(m._calls.remove, [], 'join roles must NOT remove the marker');
+test('toggle rule: OFF (default) — join roles are permanent Dyno-style, nothing revoked', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'] } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_gamer')] });
+    const m = await runMemberUpdate({ guild, oldHas: ['r_member'], newHas: ['r_member', 'r_gamer'] });
+    assert.deepStrictEqual(m._calls.remove, [], 'toggle off → join roles stay');
 });
 
-test('universal rule: the marker itself being added does NOT self-remove', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' } });
-    const guild = makeGuild({ roles: [makeRole('r_unverified')] });
-    const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_unverified'] });
+test('toggle rule: a join-role grant does NOT strip itself (join exemption)', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member', 'r_newbie'], removeOnNewRole: true } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_newbie')] });
+    // A join grant: all join roles arrive together.
+    const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_member', 'r_newbie'] });
+    assert.deepStrictEqual(m._calls.remove, [], 'join roles must NOT remove themselves');
+});
+
+test('toggle rule: multiple join roles — ALL revoked on another role', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member', 'r_newbie'], removeOnNewRole: true } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_newbie'), makeRole('r_gamer')] });
+    const m = await runMemberUpdate({ guild, oldHas: ['r_member', 'r_newbie'], newHas: ['r_member', 'r_newbie', 'r_gamer'] });
+    assert.deepStrictEqual(m._calls.remove.sort(), ['r_member', 'r_newbie']);
+});
+
+test('toggle rule: member WITHOUT a join role gains a role → untouched', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'], removeOnNewRole: true } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_gamer')] });
+    const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_gamer'] });
     assert.deepStrictEqual(m._calls.remove, []);
 });
 
-test('universal rule: no marker configured → nothing happens', async () => {
-    writeConfig({});
+test('toggle rule: empty autorole list (toggle on) → nothing to revoke', async () => {
+    writeConfig({ autorole: { roleIds: [], removeOnNewRole: true } });
     const guild = makeGuild({ roles: [makeRole('r_gamer')] });
     const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_gamer'] });
     assert.deepStrictEqual(m._calls.remove, []);
 });
 
-test('universal rule: member WITHOUT the marker gains a role → untouched', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' } });
-    const guild = makeGuild({ roles: [makeRole('r_unverified'), makeRole('r_gamer')] });
-    const m = await runMemberUpdate({ guild, oldHas: [], newHas: ['r_gamer'] });
-    assert.deepStrictEqual(m._calls.remove, []);
-});
-
-test('universal rule: a BOOST role (managed, granted by Discord) counts as the first role', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' } });
-    const guild = makeGuild({ roles: [makeRole('r_unverified'), makeRole('r_booster', { managed: true })] });
-    const m = await runMemberUpdate({ guild, oldHas: ['r_unverified'], newHas: ['r_unverified', 'r_booster'] });
-    assert.deepStrictEqual(m._calls.remove, ['r_unverified']);
+test('toggle rule: a BOOST role (managed, granted by Discord) counts as another role', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'], removeOnNewRole: true } });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_booster', { managed: true })] });
+    const m = await runMemberUpdate({ guild, oldHas: ['r_member'], newHas: ['r_member', 'r_booster'] });
+    assert.deepStrictEqual(m._calls.remove, ['r_member']);
 });
 
 // ====================================================
 // === 3. memberHandler.onMemberAdd — join grant       ===
 // ====================================================
 
-test('onMemberAdd: grants autorole list + Unverified in one engine call', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' }, autorole: { roleIds: ['r_member'] } });
+test('onMemberAdd: grants the autorole list in one engine call', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member', 'r_newbie'] } });
     const { onMemberAdd } = require('../../src/bot/memberHandler');
-    const guild = makeGuild({ roles: [makeRole('r_unverified'), makeRole('r_member')] });
+    const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_newbie')] });
     // memberHandler needs welcome channel lookup — none set → warning path.
     const m = makeMember({ guild, has: [] });
     await onMemberAdd(m);
-    assert.deepStrictEqual(m._calls.add.sort(), ['r_member', 'r_unverified']);
+    assert.deepStrictEqual(m._calls.add.sort(), ['r_member', 'r_newbie']);
 });
 
 test('onMemberAdd: no join roles configured → no add call', async () => {
@@ -302,7 +308,7 @@ test('onMemberAdd: no join roles configured → no add call', async () => {
 // === 4. /set-autorole add / remove / list            ===
 // ====================================================
 
-function makeAutoroleInteraction({ action, role, guildRoles, botPos = 10 }) {
+function makeAutoroleInteraction({ action, role, guildRoles, botPos = 10, enabled = null }) {
     const replies = [];
     const guild = makeGuild({ roles: guildRoles, botPosition: botPos });
     return {
@@ -313,7 +319,8 @@ function makeAutoroleInteraction({ action, role, guildRoles, botPos = 10 }) {
         guild,
         options: {
             getString: () => action,
-            getRole: () => role || null
+            getRole: () => role || null,
+            getBoolean: () => enabled
         },
         deferReply: async () => {
             replies.push({ type: 'defer' });
@@ -386,18 +393,40 @@ test('/set-autorole remove: role removed from the list', async () => {
     assert.deepStrictEqual(saved.autorole.roleIds, ['r_gamer']);
 });
 
-test('/set-autorole list: shows the list + the Unverified marker note', async () => {
-    writeConfig({ roles: { unverified: 'r_unverified' }, autorole: { roleIds: ['r_member'] } });
+test('/set-autorole list: shows the list + the removeOnNewRole toggle state', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'], removeOnNewRole: true } });
     const configHandler = require('../../src/commands/config');
     const itx = makeAutoroleInteraction({
         action: 'list',
-        guildRoles: [makeRole('r_unverified'), makeRole('r_member')]
+        guildRoles: [makeRole('r_member')]
     });
     await configHandler(itx);
     const edit = itx._replies.find(r => r.type === 'edit');
     assert.match(edit.opts.content, /AUTO-ROLE ON JOIN.*\(1\/10\)/s);
     assert.match(edit.opts.content, /<@&r_member>/);
-    assert.match(edit.opts.content, /Unverified marker/i);
+    assert.match(edit.opts.content, /Remove on another role: ON/i);
+});
+
+test('/set-autorole toggle: without the enabled option → flips the current value (false → true)', async () => {
+    writeConfig({ autorole: { roleIds: ['r_member'] } }); // removeOnNewRole default false
+    const configHandler = require('../../src/commands/config');
+    const itx = makeAutoroleInteraction({ action: 'toggle', guildRoles: [makeRole('r_member')] });
+    await configHandler(itx);
+    const edit = itx._replies.find(r => r.type === 'edit');
+    assert.match(edit.opts.content, /ON ✅/);
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.strictEqual(saved.autorole.removeOnNewRole, true);
+});
+
+test('/set-autorole toggle: explicit enabled:false → toggle turned off', async () => {
+    writeConfig({ autorole: { roleIds: [], removeOnNewRole: true } });
+    const configHandler = require('../../src/commands/config');
+    const itx = makeAutoroleInteraction({ action: 'toggle', enabled: false, guildRoles: [] });
+    await configHandler(itx);
+    const edit = itx._replies.find(r => r.type === 'edit');
+    assert.match(edit.opts.content, /OFF ⛔/);
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    assert.strictEqual(saved.autorole.removeOnNewRole, false);
 });
 
 // ====================================================
@@ -433,22 +462,33 @@ test('PIN: the verify command registrations are gone from the registry', () => {
     assert.ok(/name:\s*'set-autorole'/.test(src), '/set-autorole must be registered');
 });
 
-test('PIN: set-role no longer offers the verified choice', () => {
+test('PIN: set-role & remove-role no longer offer verified/unverified choices', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'registry.js'), 'utf8');
     const setRoleBlock = src.slice(src.indexOf("name: 'set-role'"), src.indexOf("name: 'set-channel'"));
     assert.ok(!/value:\s*'verified'/.test(setRoleBlock), 'the verified choice must be gone');
-    assert.ok(/value:\s*'unverified'/.test(setRoleBlock), 'the unverified choice must stay');
+    assert.ok(!/value:\s*'unverified'/.test(setRoleBlock), 'the unverified choice must be gone (v3.23.0)');
+    const removeRoleBlock = src.slice(src.indexOf("name: 'remove-role'"), src.indexOf("name: 'set-midman-fee'"));
+    assert.ok(!/value:\s*'verified'/.test(removeRoleBlock), 'remove-role: verified must be gone');
+    assert.ok(!/value:\s*'unverified'/.test(removeRoleBlock), 'remove-role: unverified must be gone (v3.23.0)');
 });
 
-test('PIN: configManager defaults carry autorole, not verifyButton', () => {
+test('PIN: set-autorole registers the toggle action + enabled option', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'registry.js'), 'utf8');
+    const block = src.slice(src.indexOf("name: 'set-autorole'"), src.indexOf("name: 'set-role'"));
+    assert.ok(/value:\s*'toggle'/.test(block), 'the toggle action choice must exist');
+    assert.ok(/name:\s*'enabled'/.test(block), 'the enabled boolean option must exist');
+});
+
+test('PIN: configManager defaults carry autorole.roleIds + removeOnNewRole', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'data', 'configManager.js'), 'utf8');
-    assert.ok(/autorole:\s*\{\s*\n?\s*roleIds:\s*\[\]/.test(src), 'DEFAULTS.autorole.roleIds = []');
+    assert.ok(/autorole:\s*\{\s*\n?\s*roleIds:\s*\[\],\s*\n?\s*removeOnNewRole:\s*false/.test(src), 'DEFAULTS.autorole = { roleIds: [], removeOnNewRole: false }');
     assert.ok(!/verifyButton:\s*\{/.test(src), 'DEFAULTS.verifyButton must be gone');
 });
 
-test('PIN: guildMemberUpdate carries the universal rule + join exemption', () => {
+test('PIN: guildMemberUpdate carries the toggle rule + join exemption', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'bot', 'events', 'guildMemberUpdate.js'), 'utf8');
-    assert.ok(/UNIVERSAL UNVERIFIED RULE/.test(src));
-    assert.ok(src.includes('joinRoleIds(config).includes(r.id)'), 'join roles must be exempt');
-    assert.ok(src.includes('revokeRoles(newMember, [unverifiedId]'), 'removal must go through the engine');
+    assert.ok(/TOGGLE "JOIN ROLES REMOVED ON A NEW ROLE"/.test(src));
+    assert.ok(src.includes('autorole?.removeOnNewRole === true'), 'the rule must be gated by the toggle');
+    assert.ok(src.includes('!joinIds.includes(r.id)'), 'join roles must be exempt');
+    assert.ok(src.includes('revokeRoles(newMember, held'), 'removal must go through the engine');
 });

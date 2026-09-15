@@ -52,18 +52,20 @@ module.exports = async function (interaction) {
     const guildId = resolveGuildId(interaction);
     const config = getConfig(guildId);
 
-    // === SET AUTOROLE (v3.22.0 — auto-role on join, Dyno-style) ===
-    // One command, three actions: add / remove / list. The list (plus the
-    // Unverified marker role) is granted automatically to every new member
-    // by memberHandler → Role Engine.
+    // === SET AUTOROLE (v3.23.0 — auto-role on join, Dyno-style + toggle) ===
+    // One command, four actions: add / remove / list / toggle. The list is
+    // granted automatically to every new member by memberHandler → the
+    // Role Engine. The removeOnNewRole toggle (replacement for the removed
+    // Unverified marker concept): while ON, join roles are stripped the
+    // moment the member receives another role.
     if (interaction.commandName === 'set-autorole') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const action = interaction.options.getString('action'); // add | remove | list
+        const action = interaction.options.getString('action'); // add | remove | list | toggle
         const role = interaction.options.getRole('role');
         const MAX_AUTOROLE = 10;
 
-        if (action !== 'list' && !role) {
+        if ((action === 'add' || action === 'remove') && !role) {
             return safeEditReply(interaction, {
                 content: '❌ A role is required for `add` / `remove`. Use `/set-autorole action:list` to just view the list.'
             });
@@ -77,13 +79,39 @@ module.exports = async function (interaction) {
                 current.length > 0
                     ? current.map(id => `• <@&${id}>`).join('\n')
                     : '_empty — no auto-role on join yet_';
-            const unverifiedNote = config.roles.unverified
-                ? `\n\n🎭 Unverified marker (also granted on join, removed automatically once the member gets any other role): <@&${config.roles.unverified}>`
-                : '';
+            const toggleState =
+                config.autorole?.removeOnNewRole === true
+                    ? 'ON ✅ — join roles disappear automatically once the member gets another role'
+                    : 'OFF ⛔ — join roles are permanent (Dyno-style)';
             return safeEditReply(interaction, {
                 content:
-                    `🎁 **AUTO-ROLE ON JOIN** (${current.length}/${MAX_AUTOROLE})\n${list}${unverifiedNote}\n\n` +
-                    `💡 \`/set-autorole action:add role:@role\` to add · \`/set-autorole action:remove role:@role\` to remove.`
+                    `🎁 **AUTO-ROLE ON JOIN** (${current.length}/${MAX_AUTOROLE})\n${list}\n\n` +
+                    `♻️ Remove on another role: ${toggleState}\n\n` +
+                    '💡 `action:add role:@role` to add · `action:remove` to remove · `action:toggle` flips the toggle.'
+            });
+        }
+
+        // ---- TOGGLE (v3.23.0 — replacement for the Unverified marker concept) ----
+        // "Remove join roles when the member gets another role". Without the
+        // enabled option → flips the current value (on↔off) — one keystroke,
+        // no thinking required.
+        if (action === 'toggle') {
+            const explicit = interaction.options.getBoolean('enabled');
+            const next = typeof explicit === 'boolean' ? explicit : config.autorole?.removeOnNewRole !== true;
+            setField(guildId, 'autorole.removeOnNewRole', next);
+            await logAudit(interaction.client, {
+                action: 'SET_AUTOROLE',
+                actorId: interaction.user.id,
+                actorTag: interaction.user.tag,
+                details: `Auto-role on join: "remove on another role" toggle → ${next ? 'ON' : 'OFF'}`,
+                guildId: interaction.guild.id
+            });
+            return safeEditReply(interaction, {
+                content:
+                    `✅ **Remove join roles when the member gets another role: ${next ? 'ON ✅' : 'OFF ⛔'}**\n\n` +
+                    (next
+                        ? 'Every role in the auto-role list is stripped automatically once the member receives any other role — self-role panels, level rewards, admin grants, even other bots. Perfect for a "new member" marker role.'
+                        : 'Auto-roles are permanent — they stick with the member until removed manually.')
             });
         }
 
@@ -155,7 +183,7 @@ module.exports = async function (interaction) {
                 `✅ ${role} removed from the auto-role list.\n\n` +
                 (current.length > 0
                     ? `Current list:\n${current.map(id => `• <@&${id}>`).join('\n')}`
-                    : 'The list is now empty — new members only receive the Unverified marker (if set).')
+                    : 'The list is now empty — no roles are granted automatically on join.')
         });
     }
 
@@ -653,7 +681,6 @@ module.exports = async function (interaction) {
                     name: '🎭 Roles',
                     value: capFieldValue(
                         [
-                            `• Unverified: ${fmt(config.roles.unverified, '@&')}`,
                             `• Admin: ${fmt(config.roles.admin, '@&')}`,
                             `• Midman (Escrow): ${fmt(config.roles.midman, '@&')}`,
                             // v3.9.59: booster auto role (granted on boost,

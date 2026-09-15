@@ -30,7 +30,8 @@ const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
 // v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
-// v3.22.0: universal Unverified rule — the Role Engine + guild config.
+// v3.23.0: "join roles removed when the member gets another role" rule —
+// Role Engine + guild config (toggle autorole.removeOnNewRole).
 const { revokeRoles, joinRoleIds } = require('../../services/roleEngine');
 const { getConfig } = require('../../data/configManager');
 // v3.9.49: boost notifications (server-booster channel + server log + history).
@@ -80,38 +81,44 @@ async function onEvent(oldMember, newMember) {
                 r => !newMember.roles.cache.has(r.id)
             );
 
-            // === v3.22.0: UNIVERSAL UNVERIFIED RULE ===
-            // A member who holds the Unverified marker role is considered
-            // verified the moment they receive ANY other role — from ANY
-            // source: a self-role panel, an admin granting it manually,
-            // leveling, a VIP purchase, a boost, or another bot. The Unverified
-            // role is removed silently (admin's choice: silent + logged).
+            // === v3.23.0: TOGGLE "JOIN ROLES REMOVED ON A NEW ROLE" ===
+            // Replaces the Unverified marker concept (v3.22.0 — removed at
+            // the admin's request: "don't set an unverified role, just use
+            // auto-role on join + a toggle"). While `autorole.removeOnNewRole`
+            // is ON, EVERY join role the member holds is stripped the moment
+            // they receive ANOTHER role — from ANY source: a self-role panel,
+            // an admin granting it manually, leveling, a VIP purchase, a
+            // boost, or another bot. Removal is silent (admin's choice:
+            // silent + logged).
             //
-            // Exemptions (roles that do NOT count as the "first role"):
-            //   - the Unverified role itself (granted at join)
-            //   - the join roles the system granted at member join (the
-            //     /set-autorole list) — otherwise granting @Member + @Unverified
-            //     at join would instantly "verify" everyone and the marker
-            //     would be useless.
+            // Exemptions (roles that do NOT count as "another role"):
+            //   - the join roles themselves (granted/re-configured at join) —
+            //     otherwise granting @Member at join would immediately strip
+            //     the role itself and the toggle would be useless.
+            // Toggle OFF (default) → nothing is stripped: auto-roles are
+            // permanent, Dyno-style.
             const config = getConfig(newMember.guild.id);
-            const unverifiedId = config.roles.unverified;
+            const joinIds = joinRoleIds(config);
             if (
-                unverifiedId &&
+                config.autorole?.removeOnNewRole === true &&
+                joinIds.length > 0 &&
                 added.length > 0 &&
-                newMember.roles.cache.has(unverifiedId) &&
-                added.some(r => r.id !== unverifiedId && !joinRoleIds(config).includes(r.id))
+                added.some(r => !joinIds.includes(r.id))
             ) {
-                const res = await revokeRoles(newMember, [unverifiedId], {
-                    reason: 'Unverified marker removed automatically — first role received'
-                });
-                if (res.revoked.length > 0) {
-                    console.log(
-                        `✅ [auto-verify] ${user.tag} received a role — Unverified marker removed.`
-                    );
+                const held = joinIds.filter(id => newMember.roles.cache.has(id));
+                if (held.length > 0) {
+                    const res = await revokeRoles(newMember, held, {
+                        reason: 'Join roles removed automatically — member received another role'
+                    });
+                    if (res.revoked.length > 0) {
+                        console.log(
+                            `✅ [auto-role] ${user.tag} received another role — ${res.revoked.length} join role(s) removed.`
+                        );
+                    }
+                    // The removal itself fires guildMemberUpdate again → the standard
+                    // ROLE_UPDATE server log below records it on that pass (➖ join
+                    // roles). No DM, no announcement — admin's choice: silent + logged.
                 }
-                // The removal itself fires guildMemberUpdate again → the standard
-                // ROLE_UPDATE server log below records it on that pass (➖ Unverified).
-                // No DM, no announcement — admin's choice: silent + logged.
             }
 
             if (added.length > 0 || removed.length > 0) {

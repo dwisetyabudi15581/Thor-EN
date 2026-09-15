@@ -47,6 +47,9 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
   // v3.22.0: local picker state for the auto-role list editor.
   const [autorolePick, setAutorolePick] = useState<string | null>(null);
   const autoroleIds = c.autorole?.roleIds ?? [];
+  // v3.23.0: the "join roles removed on another role" toggle —
+  // replacement for the removed Unverified marker concept.
+  const removeOnNewRole = c.autorole?.removeOnNewRole ?? false;
 
   const addAutorole = () => {
     if (!autorolePick || autoroleIds.includes(autorolePick)) return;
@@ -59,20 +62,17 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
 
   return (
     <div className="space-y-5">
-      <Section title="Key Roles" desc="The Unverified marker and the bot admin role. Pick from the server's role list.">
-        <Field label="Unverified Marker Role" hint="Granted automatically on join; removed automatically the moment the member receives ANY other role (self-role, level role, admin grant…).">
-          <RoleSelect value={c.roles.unverified ?? null} onChange={(v) => setConfig("roles.unverified", v)} roles={meta.roles} />
-        </Field>
+      <Section title="Key Roles" desc="The bot admin role. Pick from the server's role list.">
         <Field label="Bot Admin Role" hint="Holders of this role can use every admin command on this server.">
           <RoleSelect value={c.roles.admin ?? null} onChange={(v) => setConfig("roles.admin", v)} roles={meta.roles} />
         </Field>
       </Section>
 
-      <Section title="Auto-Role on Join" desc="Roles granted automatically to every new member (≙ /set-autorole, max 10). The Unverified marker above is granted too when set — it is NOT part of this list.">
+      <Section title="Auto-Role on Join" desc="Roles granted automatically to every new member (≙ /set-autorole, max 10). Turn the toggle below on if you want them gone once the member gets another role.">
         <div className="md:col-span-2">
           <div className="flex flex-wrap gap-2">
             {autoroleIds.length === 0 ? (
-              <span className="text-xs text-zinc-500">No join roles yet — add one below (e.g. @Member).</span>
+              <span className="text-xs text-zinc-500">No join roles yet — add one below (e.g. @Member, or @Unverified as a new-member marker).</span>
             ) : (
               autoroleIds.map((id) => (
                 <span key={id} className="flex items-center gap-1 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300">
@@ -84,7 +84,7 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
             )}
           </div>
         </div>
-        <Field label="Add a role to the join list" hint={`${autoroleIds.length}/10 roles` + (c.roles.unverified ? " — the Unverified marker is granted automatically on top of this list." : "")}>
+        <Field label="Add a role to the join list" hint={`${autoroleIds.length}/10 roles`}>
           <div className="flex gap-2">
             <RoleSelect value={autorolePick} onChange={setAutorolePick} roles={meta.roles} placeholder="— pick a role —" />
             <Button
@@ -98,6 +98,14 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
             </Button>
           </div>
         </Field>
+        <div className="md:col-span-2">
+          <Toggle
+            checked={removeOnNewRole}
+            onChange={(v) => setConfig("autorole.removeOnNewRole", v)}
+            label="Remove join roles when the member gets another role"
+            desc="While ON: EVERY role in the list above is stripped automatically once the member receives any other role (self-role panels, level rewards, admin grants, other bots…). Perfect for a new-member marker role. While OFF: join roles are permanent, Dyno-style."
+          />
+        </div>
       </Section>
 
       <Section title="System Channels" desc="Where the bot's automatic messages are sent.">

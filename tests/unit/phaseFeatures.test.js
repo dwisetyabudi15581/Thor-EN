@@ -1,6 +1,7 @@
 /**
  * Unit tests for the Phase 1+2+3 features:
- * - config.autorole (v3.22.0: join auto-role list — replaces verifyButton)
+ * - config.autorole (v3.23.0: join auto-role list + removeOnNewRole toggle
+ *   — replaces verifyButton AND the unverified role concept)
  * - config.ticketCategories (default + custom)
  * - config.messages.ticketPriceHeader
  * - ticketManager.createTicket with category & isHelp flag
@@ -15,20 +16,21 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-test('configManager: v3.22.0 — verifyButton REMOVED + autorole defaults applied', () => {
+test('configManager: v3.23.0 — verifyButton & the unverified role REMOVED + autorole defaults', () => {
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig('g_phase_features');
-    // v3.22.0: the dedicated verification feature was removed.
+    // v3.22.0: the dedicated verification feature was removed. v3.23.0: the unverified concept too.
     assert.strictEqual(config.verifyButton, undefined, 'verifyButton must NOT exist anymore');
     assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle must NOT exist anymore');
     assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody must NOT exist anymore');
-    // The join auto-role list replaces it.
+    // The join auto-role list + toggle replace it.
     assert.ok(config.autorole, 'autorole should exist');
     assert.ok(Array.isArray(config.autorole.roleIds), 'autorole.roleIds should be an array');
     assert.strictEqual(config.autorole.roleIds.length, 0, 'autorole.roleIds defaults to empty');
+    assert.strictEqual(config.autorole.removeOnNewRole, false, 'autorole.removeOnNewRole defaults to false (permanent, Dyno-style)');
 });
 
-test('configManager: v3.22.0 — legacy verify config keys cleaned on load', () => {
+test('configManager: v3.23.0 — legacy verify & unverified keys cleaned on load', () => {
     const { configPathFor } = require('../../src/data/configManager');
     const fs = require('fs');
     const guildId = 'g_legacy_verify';
@@ -46,7 +48,7 @@ test('configManager: v3.22.0 — legacy verify config keys cleaned on load', () 
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig(guildId);
     assert.strictEqual(config.roles.verified, undefined, 'roles.verified cleaned');
-    assert.strictEqual(config.roles.unverified, '222', 'roles.unverified KEPT (the marker role)');
+    assert.strictEqual(config.roles.unverified, undefined, 'roles.unverified cleaned (v3.23.0 — now autorole + toggle)');
     assert.strictEqual(config.roles.admin, '333', 'roles.admin untouched');
     assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle cleaned');
     assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody cleaned');

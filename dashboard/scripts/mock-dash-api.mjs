@@ -33,7 +33,9 @@ const guilds = new Map(); // guildId -> { meta, data }
 
 function defaultConfig() {
   return {
-    roles: { verified: "111111111111111111", unverified: "222222222222222222", admin: "333333333333333333" },
+    roles: { admin: "333333333333333333" },
+    // v3.23.0: verify/unverified role concepts removed — autorole + toggle.
+    autorole: { roleIds: ["555555555555555555"], removeOnNewRole: true },
     channels: { welcome: "444444444444444444", goodbye: null, invoice: "555555555555555555" },
     messages: {
       welcomeTitle: "👋 WELCOME!",
@@ -106,7 +108,7 @@ function makeMeta({ id, name, icon, memberCount }) {
       { id: "333333333333333333", name: "Admin", color: 15548997, position: 5 },
       { id: "444444444444444444", name: "Moderator", color: 3447003, position: 4 },
       { id: "111111111111111111", name: "VIP", color: 15844367, position: 3 },
-      { id: "222222222222222222", name: "Unverified", color: 10070709, position: 2 },
+      { id: "222222222222222222", name: "Newbie", color: 10070709, position: 2 },
       { id: "555555555555555555", name: "Member", color: 0, position: 1 },
     ],
   };

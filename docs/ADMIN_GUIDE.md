@@ -33,7 +33,7 @@ The complete guide for Discord server admins running this bot — suitable both 
     - ✅ **Server Members Intent** — for welcome/goodbye, auto-role, member sync
     - ✅ **Message Content Intent** — **REQUIRED** for the auto-responder, word/link anti-spam, and AFK mention replies. Without it, `message.content` is always empty → those features will not work.
     - ✅ Presence Intent — optional (not used yet)
-- **The bot's role sits ABOVE** every role it will manage (Verified, Unverified, VIP, etc.)
+- **The bot's role sits ABOVE** every role it will manage (Verified, Member, VIP, etc.)
 
 ### Install
 
@@ -64,18 +64,17 @@ The order below is a **recommendation** for a new server. Skip any step you have
 ### Step 1: Set Roles
 
 ```
-/set-role verified @Verified
-/set-role unverified @Unverified
 /set-role admin @Staff
 /set-role booster @Booster
+/set-autorole action:add role:@Member
+/set-autorole action:toggle
 ```
 
 **Explanation:**
 
-- `verified` — the role a member receives after pressing the verification button
-- `unverified` — the default role for new members (removed after verification)
 - `admin` — the staff role that gets access to ticket channels + the admin panel
 - Admin role changes take effect immediately (the cache is invalidated automatically)
+- **Auto-role on join** (v3.23.0) — `/set-autorole action:add` registers roles granted automatically to every new member (max 10, Dyno-style). `action:toggle` turns on **"join roles removed once the member gets another role"** — the replacement for the old Unverified role: put your new-member marker role (e.g. @Unverified/@Newbie) in this list + enable the toggle, and that role is stripped automatically the moment the member receives any other role (self-role panels, level rewards, admin grants, other bots). Toggle off = join roles are permanent. Also manageable from the dashboard (General module / Quick Start Step 2).
 - `booster` — (v3.9.59, optional) **booster auto role**: a member who boosts the server automatically gets this role and loses it when the boost ends — the same semantics as Discord's built-in Server Booster role, but using your own role (order/color fully configurable). When set, the role is applied right away to everyone CURRENTLY boosting (retroactive — the reply states the count). Boosts that start/end while the bot is offline are synced at startup. **Requirements:** the role must sit BELOW the bot role + the bot needs the **Manage Roles** permission; `/test-booster` checks the whole chain. `/remove-role booster` only turns the automation off — roles already granted are not revoked.
 
 ### Step 2: Set Channels
@@ -104,13 +103,14 @@ The order below is a **recommendation** for a new server. Skip any step you have
 
 > 🧪 **Verify it works immediately (v3.9.48):** run `/test-welcome tipe:welcome` (or `tipe:goodbye`) — the bot checks the whole chain (channel configured → still exists → bot permissions) and sends a **live preview** of the exact embed a new member would receive. No need to wait for a real member to join.
 
-### Step 3: Install the Verification Panel
+### Step 3: Install a Self-Role Panel (Verification)
 
 ```
-/setup-verify
+/setup-selfrole title:Verification description:Click below to verify yourself
+/selfrole-add panel_id:<id> role:@Verified label:Verify Me emoji:✅ style:Success
 ```
 
-The bot sends an embed + a "Verify Me" button to the channel where the command was run. A new member presses the button → they receive the Verified role + the Unverified role is removed.
+The bot sends a button panel to the channel where the command was run. A new member presses the button → they receive the Verified role. Combine it with Step 1: put your new-member marker role into `/set-autorole` + turn `action:toggle` on — the marker disappears automatically once the member clicks this button (or receives any other role from anywhere).
 
 **Recommendation:** install it in the `#information` or `#rules` channel, then pin the message.
 

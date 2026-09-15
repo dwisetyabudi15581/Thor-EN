@@ -39,31 +39,38 @@ function getCommands() {
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === SET AUTOROLE (v3.22.0 — Dyno-style auto-role on join) ===
-        // The dedicated verification feature was REMOVED (v3.22.0): "verified"
-        // is now just another role on a self-role panel, and the Unverified
-        // marker disappears automatically once a member receives any other
-        // role. This command manages the roles granted on join.
+        // === SET AUTOROLE (v3.23.0 — Dyno-style auto-role on join + toggle) ===
+        // The Unverified marker concept was REMOVED (v3.23.0): a "marker"
+        // role now just goes into the auto-role list + the removeOnNewRole
+        // toggle — join roles disappear automatically once the member
+        // receives another role.
         {
             name: 'set-autorole',
-            description: 'Manage the roles granted automatically when a member joins (plus the Unverified marker)',
+            description: 'Manage auto-role on join + the "roles removed on a new role" toggle',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
                     type: 3,
                     name: 'action',
-                    description: 'Add / remove a role from the join list, or view the list',
+                    description: 'Add / remove a join role, view the list, or flip the remove-on-new-role toggle',
                     required: true,
                     choices: [
                         { name: 'Add role', value: 'add' },
                         { name: 'Remove role', value: 'remove' },
-                        { name: 'List', value: 'list' }
+                        { name: 'List', value: 'list' },
+                        { name: 'Toggle: remove on a new role', value: 'toggle' }
                     ]
                 },
                 {
                     type: 8,
                     name: 'role',
-                    description: 'The role to add/remove (not needed for List)',
+                    description: 'The role to add/remove (not needed for List / Toggle)',
+                    required: false
+                },
+                {
+                    type: 5,
+                    name: 'enabled',
+                    description: 'Toggle only: on / off — leave empty to flip the current value',
                     required: false
                 }
             ]
@@ -72,7 +79,7 @@ function getCommands() {
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (unverified / admin / midman / booster)',
+            description: 'Set roles (admin / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -81,10 +88,10 @@ function getCommands() {
                     description: 'Choose the role type',
                     required: true,
                     choices: [
-                        // v3.22.0: 'verified' REMOVED — verification is now a
-                        // self-role panel; "Verified" is just a regular role the
-                        // admin adds to a panel via /selfrole-add.
-                        { name: 'Unverified (removed on first role)', value: 'unverified' },
+                        // v3.23.0: 'verified' & 'unverified' REMOVED — the
+                        // verify/unverified role concepts are gone (verified =
+                        // a self-role panel; new-member marker = /set-autorole
+                        // + the removeOnNewRole toggle).
                         { name: 'Admin', value: 'admin' },
                         // v3.9.32: midman/escrow role — handles 3-party escrow deals.
                         { name: 'Midman (Escrow)', value: 'midman' },
@@ -150,7 +157,7 @@ function getCommands() {
         // === SET MESSAGE ===
         {
             name: 'set-message',
-            description: 'Edit the welcome / goodbye / verify / ticket embed text',
+            description: 'Edit the welcome / goodbye / ticket embed text',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -163,8 +170,6 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
-                        { name: 'Verify Title', value: 'verifyTitle' },
-                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         // v3.9.11 Phase 1: ticket price header configurable
@@ -416,8 +421,6 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
-                        { name: 'Verify Title', value: 'verifyTitle' },
-                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         { name: 'Ticket Price Header', value: 'ticketPriceHeader' }
@@ -547,7 +550,7 @@ function getCommands() {
         // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Remove a role from the config (verified / unverified / admin / midman / booster)',
+            description: 'Remove a role from the config (admin / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -556,8 +559,8 @@ function getCommands() {
                     description: 'Choose the role type to remove',
                     required: true,
                     choices: [
-                        { name: 'Verified', value: 'verified' },
-                        { name: 'Unverified', value: 'unverified' },
+                        // v3.23.0: 'verified' & 'unverified' DIHAPUS — konsepnya
+                        // sudah dibersihkan otomatis dari config lama.
                         { name: 'Admin', value: 'admin' },
                         // v3.9.32: remove the midman role from the config.
                         { name: 'Midman (Escrow)', value: 'midman' },
@@ -648,8 +651,6 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
-                        { name: 'Verify Title', value: 'verifyTitle' },
-                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         { name: '⚡ Reset ALL', value: 'ALL' }

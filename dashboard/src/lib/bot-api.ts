@@ -127,8 +127,9 @@ export type GuildConfig = {
   messages: Record<string, string>;
   colors: Record<string, number>;
   // v3.22.0: verifyButton REMOVED — verification is now a self-role panel.
-  // autorole = the join auto-role list (/set-autorole parity).
-  autorole: { roleIds: string[] };
+  // v3.23.0: the Unverified role concept removed — autorole = the join role
+  // list + the removeOnNewRole toggle (join roles removed on another role).
+  autorole: { roleIds: string[]; removeOnNewRole: boolean };
   ticketCategories: TicketCategory[];
   leveling: {
     enabled: boolean;

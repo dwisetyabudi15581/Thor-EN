@@ -2,9 +2,10 @@
  * Verify domain handler — DEPRECATED STUB for the `btn_verify` button.
  *
  * v3.22.0: the dedicated verification feature was REMOVED. "Verified" is now
- * just another role on a self-role panel (/setup-selfrole + /selfrole-add),
- * and the Unverified marker role is removed automatically the moment a
- * member receives ANY other role (guildMemberUpdate → universal rule).
+ * just another role on a self-role panel (/setup-selfrole + /selfrole-add).
+ * v3.23.0: the Unverified marker concept was removed too — its replacement
+ * is auto-role on join + the "remove on another role" toggle
+ * (/set-autorole action:toggle).
  *
  * Why this stub exists: servers that installed a verify panel before
  * upgrading still have live `btn_verify` buttons in their channels. Without
@@ -23,7 +24,7 @@ module.exports = async function (interaction) {
             '🛠️ *Admins:* delete this old panel and create a self-role one:\n' +
             '```\n/setup-selfrole title:Verification description:Click below to verify yourself\n' +
             '/selfrole-add panel_id:<id> role:@Verified label:Verify Me emoji:✅ style:Success\n```\n' +
-            '💡 Tip: the **Unverified** marker role now disappears automatically once a member receives any other role.',
+            '💡 Tip: for a "new member" role, use `/set-autorole action:add` then `action:toggle` — join roles disappear automatically once the member gets another role.',
         flags: MessageFlags.Ephemeral
     });
 };

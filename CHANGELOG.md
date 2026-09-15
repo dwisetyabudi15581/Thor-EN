@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.23.0] — 2026-09-15
+
+### Changed — 🎭 UNIFIED AUTO-ROLE: THE UNVERIFIED ROLE CONCEPT IS REMOVED — JUST A JOIN LIST + ONE TOGGLE
+
+Owner's request: *"don't set an unverified role — just use auto-role on join, plus a toggle for the role to disappear when there's a new role."* Two separate settings (the `/set-autorole` list + the `/set-role unverified` marker) are now ONE: a "new-member marker" role simply goes into the auto-role list, and the toggle decides whether join roles are temporary or permanent.
+
+- 🟠 **`/set-autorole action:toggle` (NEW, + `enabled` option):** turns **"remove join roles when the member gets another role"** on/off. While ON: EVERY join role the member holds is stripped automatically the moment they receive ANOTHER role — self-role panels, level-up rewards, VIP purchases, boosts, manual admin grants, even other bots (silent + the standard ROLE_UPDATE server log). While OFF (default): join roles are permanent, Dyno-style. Without the `enabled` option → the value is flipped (on↔off in one keystroke). `action:list` now shows the toggle state.
+- 🟠 **THE UNVERIFIED ROLE CONCEPT IS REMOVED EVERYWHERE:** the `unverified`/`verified` choices in `/set-role` & `/remove-role` are gone; `roles.unverified` is cleaned automatically from old configs on load (the v1 `unverifiedRoleId` is no longer mapped either); the v3.22.0 universal-marker rule is replaced by the toggle rule above; `joinRoleIds()` = purely `autorole.roleIds`; `/config-show` no longer shows an Unverified line. **Migration for live servers:** put your old marker role (e.g. @Unverified) into `/set-autorole action:add`, then run `action:toggle` — the old behavior is preserved exactly.
+- 🟡 **DASH API:** `PUT /guilds/:id/config` accepts the new path **`autorole.removeOnNewRole`** (boolean; 422 when not a boolean); whole-array `autorole` sets now MERGE (not replace) — both paths can arrive in one PUT without losing the toggle; `roles.unverified`/`roles.verified` are rejected with a **422 pointing to the replacement** (stale dashboards no longer save values that get silently cleaned).
+- 🟢 **Dashboard:** General module — the Auto-Role on Join editor gains the **"Remove join roles when the member gets another role"** toggle and loses the Unverified role field; Quick Start Step 2 = "Auto-Role on Join" (role form + toggle applied instantly); the module overview & landing feature cards updated; the dev mock API follows.
+- 🟢 **v3.22.0 leftover cleanup:** the `Verify Title`/`Verify Body` choices in `/set-message`, `/list-messages`, `/reset-message` (and the message-edit modal) are gone — those keys are auto-cleaned anyway, so offering them only misled admins.
+- 🟢 Tests: **735** (from 727) — `unifiedRoles.test.js` rewritten for the toggle semantics (7 rule scenarios including the join exemption, boost, multi-role, toggle off), 2 `/set-autorole action:toggle` tests, 4 new DASH API tests (boolean valid/invalid, 422 roles.unverified, combined array+toggle PUT), anti-regression PINs updated.
+
 ## [3.22.0] — 2026-09-15
 
 ### Changed — 🎭 ONE UNIFIED ROLE SYSTEM: Unverified marker + auto-role on join + self-role panels

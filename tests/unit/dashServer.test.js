@@ -231,7 +231,7 @@ test('dash: PUT config valid — saved & read back', async () => {
         body: {
             actor: { id: '42', tag: 'tester' },
             updates: {
-                'roles.unverified': '888000111222333444',
+                'roles.midman': '888000111222333444',
                 'channels.welcome': '777000111222333444',
                 'messages.welcomeTitle': 'HELLO FROM DASH',
                 'leveling.enabled': true,
@@ -246,7 +246,7 @@ test('dash: PUT config valid — saved & read back', async () => {
 
     // Read back via the dashboard — the values stick
     const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
-    assert.strictEqual(dash.config.roles.unverified, '888000111222333444');
+    assert.strictEqual(dash.config.roles.midman, '888000111222333444');
     assert.strictEqual(dash.config.channels.welcome, '777000111222333444');
     assert.strictEqual(dash.config.messages.welcomeTitle, 'HELLO FROM DASH');
     assert.strictEqual(dash.config.leveling.enabled, true);
@@ -822,4 +822,50 @@ test('dash: v3.22.0 — PUT config autorole invalid (null entry) → 422', async
         body: { actor: { id: '42', tag: 'tester' }, updates: { autorole: ['111000222333444555', null] } }
     });
     assert.strictEqual(res.status, 422);
+});
+
+test('dash: v3.23.0 — PUT config autorole.removeOnNewRole (boolean) → 200 & read back', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'autorole.removeOnNewRole': true } }
+    });
+    assert.strictEqual(res.status, 200);
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.config.autorole.removeOnNewRole, true);
+    // reset
+    await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'autorole.removeOnNewRole': false } }
+    });
+});
+
+test('dash: v3.23.0 — PUT config autorole.removeOnNewRole invalid (string) → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'autorole.removeOnNewRole': 'yes' } }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: v3.23.0 — PUT roles.unverified (removed key) → 422 with a pointer to the replacement', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'roles.unverified': '888000111222333444' } }
+    });
+    assert.strictEqual(res.status, 422);
+    const body = await res.json();
+    assert.match(JSON.stringify(body), /autorole/);
+});
+
+test('dash: v3.23.0 — PUT autorole array + removeOnNewRole in ONE PUT → both applied (toggle survives)', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            actor: { id: '42', tag: 'tester' },
+            updates: { 'autorole.removeOnNewRole': true, autorole: ['111000222333444555'] }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.deepStrictEqual(dash.config.autorole.roleIds, ['111000222333444555']);
+    assert.strictEqual(dash.config.autorole.removeOnNewRole, true);
+    // reset
+    await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { autorole: [], 'autorole.removeOnNewRole': false } }
+    });
 });

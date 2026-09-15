@@ -52,7 +52,7 @@ process.on('exit', () => {
 // === Helpers                                       ===
 // ====================================================
 
-/** Write config.json with the given channels/roles. */
+/** Write config.json with the given channels/roles/autorole. */
 function writeConfig(partial = {}) {
     fs.writeFileSync(
         configPath,
@@ -60,6 +60,7 @@ function writeConfig(partial = {}) {
             {
                 channels: partial.channels || {},
                 roles: partial.roles || {},
+                autorole: partial.autorole || { roleIds: [] },
                 messages: {
                     welcomeTitle: '👋 WELCOME!',
                     welcomeBody: 'Hello {user}! Welcome to **{server}** — member #{count}',
@@ -121,7 +122,7 @@ function makeWorld({ channels = {}, auditEntries = [] } = {}) {
         name: 'Chronos',
         memberCount: 42,
         iconURL: () => null,
-        roles: { cache: new Map([['role_unverified', { id: 'role_unverified', name: 'Unverified' }]]) },
+        roles: { cache: new Map([['role_member', { id: 'role_member', name: 'Member' }]]) },
         channels: { cache },
         members: { me: null },
         fetchAuditLogs: async () => ({ entries: auditEntries })
@@ -182,7 +183,8 @@ test('buildGoodbyeEmbed: action var filled (kicked/left)', () => {
 
 test('onMemberAdd end-to-end: welcome sent to the configured channel', async () => {
     const welcome = makeChannel('ch_w');
-    writeConfig({ channels: { welcome: 'ch_w' }, roles: { unverified: 'role_unverified' } });
+    // v3.23.0: join roles = purely the autorole list (unverified concept removed).
+    writeConfig({ channels: { welcome: 'ch_w' }, autorole: { roleIds: ['role_member'] } });
     const world = makeWorld({ channels: { welcome } });
 
     const rows = await captureConsole(() => require('../../src/bot/memberHandler').onMemberAdd(world.member));
@@ -190,7 +192,7 @@ test('onMemberAdd end-to-end: welcome sent to the configured channel', async () 
     assert.strictEqual(welcome.sent.length, 1, 'exactly one welcome message');
     assert.strictEqual(welcome.sent[0].content, '<@user_new>');
     assert.match(welcome.sent[0].embeds[0].data.title, /WELCOME/);
-    assert.deepStrictEqual(world.roleAdds, ['role_unverified'], 'unverified role granted');
+    assert.deepStrictEqual(world.roleAdds, ['role_member'], 'join role (autorole) granted');
     assert.ok(rows.some(r => r[0] === 'log' && /Welcome sent/.test(r[1])), 'success is logged (visible)');
 });
 

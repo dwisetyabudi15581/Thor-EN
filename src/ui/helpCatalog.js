@@ -83,7 +83,7 @@ const HELP_CATEGORIES = [
         short: 'New to the bot? Server setup order from scratch',
         lines: [
             '**New to this bot? Follow this order:**',
-            '1️⃣ `/set-role unverified @Unverified` — the marker role for new members',
+            '1️⃣ `/set-autorole action:add role:@Member` — auto-role on join · `action:toggle` = gone on a new role',
             '2️⃣ `/add-category` + `/add-product` — prepare the catalog',
             '3️⃣ `/setup-ticket-panel` — mount the ticket panel',
             '4️⃣ `/setup-selfrole` + `/selfrole-add` — self-role panels (e.g. a Verification panel)',
@@ -93,7 +93,7 @@ const HELP_CATEGORIES = [
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
             '**New to this bot? Set the server up in this order (once):**',
-            '1️⃣ `/set-role tipe:unverified role:@Unverified` — the marker role granted on join, removed automatically once a member gets any other role',
+            '1️⃣ `/set-autorole action:add role:@Member` — roles granted automatically on join; turn on `action:toggle` if you want them gone once the member gets any other role',
             '2️⃣ `/add-category` + `/add-product` — prepare what you sell (see the Products category)',
             '3️⃣ `/setup-ticket-panel` — mount the order panel members click to buy',
             '4️⃣ `/setup-selfrole` + `/selfrole-add` — mount a self-role panel (e.g. Verification: members click to get the Verified role)',
@@ -208,10 +208,10 @@ const HELP_CATEGORIES = [
             '• `/refresh-panel id` — re-render with the LATEST categories/products (run this after adding products — the embed otherwise keeps the old list).',
             '• `/delete-panel id` — remove a panel (message + config).',
             '',
-            '**Member verification (v3.22.0 — now self-role based)**',
+            '**Member verification (v3.23.0 — now purely self-role + auto-role)**',
             '• `/setup-selfrole title:Verification` + `/selfrole-add role:@Verified label:Verify Me` — a self-role panel members click to get the Verified role.',
-            '• `/set-role tipe:unverified role:@Unverified` — new members get this marker automatically; it disappears once they receive ANY other role.',
-            '• `/set-autorole action:add role:@Member` — extra roles granted automatically on join.',
+            '• `/set-autorole action:add role:@Member` — roles granted automatically on join (max 10).',
+            '• `/set-autorole action:toggle` — turns "join roles removed when the member gets another role" on/off — the replacement for the old Unverified role: one list + one toggle.',
             '• `/setup-ticket` — the legacy single-category panel (kept for old setups; prefer `/setup-ticket-panel`).',
             '',
             '❓ **Panel shows old prices?** Run `/refresh-panel id` — or `/update-panel` for texts.',
@@ -352,7 +352,7 @@ const HELP_CATEGORIES = [
         name: 'Roles & Self-Roles',
         short: 'System roles + member-choice role panels',
         lines: [
-            '• `/set-role verified @role` — system roles (verified/unverified/admin/midman/**booster**) · `/remove-role`',
+            '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
             '• `/setup-selfrole title:... type:button` — member-choice role panel',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
             '💡 `requires_role:@Verified` — conditionally locked role'
@@ -360,7 +360,8 @@ const HELP_CATEGORIES = [
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
             '**System roles (bot logic)** — `/set-role tipe role`:',
-            '• `tipe:verified` — granted after verification · `tipe:unverified` — held until then · `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers. `/remove-role tipe` clears one.',
+            '• `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers · `tipe:booster` — auto boost role. `/remove-role tipe` clears one. (The verified/unverified concepts were removed in v3.23.0.)',
+            '• `/set-autorole action:add role:@Member` — roles granted automatically on join (max 10); `action:toggle` = "join roles removed when the member gets another role" — perfect for a new-member marker.',
             '• `tipe:booster` (v3.9.59) — Booster role: granted **automatically** when a member boosts & removed when the boost ends; applied right away to existing boosters when set. Test the chain: `/test-booster`.',
             '',
             '**Self-role panels (member choice)** — members click to take/drop a role themselves:',

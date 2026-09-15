@@ -152,8 +152,8 @@ Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID
 ### Initial Configuration (once the bot is online)
 
 1. `/set-role admin @role` — the bot's admin role
-2. `/set-role verified @role` — the verified member role
-3. `/set-role unverified @role` — the default role for new members
+2. `/set-autorole action:add role:@Member` — auto-role on member join (max 10)
+3. `/set-autorole action:toggle` — (optional) join roles disappear automatically once a member gets another role — the Unverified-role replacement
 4. `/set-channel welcome #channel` — the welcome channel
 5. `/set-channel goodbye #channel` — the goodbye channel
 6. `/test-welcome tipe:welcome` — verify the welcome works (diagnostics + live preview)
@@ -163,7 +163,7 @@ Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID
 10. `/set-channel server-booster #channel` — boost notifications (optional — `/boosters` works without it)
 11. `/set-role booster @Booster` — booster auto role: granted while boosting, removed when the boost ends (optional — applied right away to existing boosters; `/test-booster` can check the chain)
 12. `/serverstats setup` — live counter channels (optional — `👥 Members: 123` style counters at the top of the channel list, auto-updating; pick which counters to show via the `members`/`bots`/`boosts`/`roles`/`channels` boolean options)
-13. `/setup-verify` — install the verification panel
+13. `/setup-selfrole` + `/selfrole-add role:@Verified` — mount a self-role panel (e.g. a Verification panel — members click to get the role)
 14. `/setup-ticket` — install the ticket panel
 15. `/config-show` — verify all settings
 

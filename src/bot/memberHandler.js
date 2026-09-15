@@ -7,14 +7,14 @@
  *   - src/commands/config.js (/test-welcome preview, v3.9.48)
  *
  * Logic:
- *   - onMemberAdd: grant the join roles (auto-role list + Unverified marker)
- *     via the Role Engine + send a welcome embed to the welcome channel.
+ *   - onMemberAdd: grant the join roles (the /set-autorole list) via the
+ *     Role Engine + send a welcome embed to the welcome channel.
  *   - onMemberRemove: check the audit log (kick/ban vs voluntary leave) + send a goodbye embed.
  *
- * v3.22.0: the join grant goes through the Role Engine (one gateway for
- * every role grant) and now includes the admin's /set-autorole list, not
- * just the Unverified role. The Unverified marker is removed automatically
- * by guildMemberUpdate the moment the member receives any OTHER role.
+ * v3.23.0: the join grant is now PURELY the /set-autorole list (the
+ * Unverified marker concept was removed). If the autorole.removeOnNewRole
+ * toggle is on, these join roles are stripped automatically by
+ * guildMemberUpdate the moment the member receives any OTHER role.
  *
  * v3.9.0 FIX: skip bot accounts.
  * v3.9.8 FIX: AuditLogEvent enum (not magic number 20/22), 10s window (was 5s),
@@ -91,10 +91,11 @@ async function onMemberAdd(member) {
         recordJoin(guild.id, user.id);
     } catch (_) {}
 
-    // v3.22.0: auto-role on join — the admin's /set-autorole list PLUS the
-    // Unverified marker role (when set), granted in ONE engine call. Hierarchy
-    // / managed / @everyone checks and actionable failure logs live in the
-    // engine, so this handler stays tiny.
+    // v3.23.0: auto-role on join — the admin's /set-autorole list, granted
+    // in ONE engine call. Hierarchy / managed / @everyone checks and
+    // actionable failure logs live in the engine, so this handler stays
+    // tiny. The "remove on another role" toggle (autorole.removeOnNewRole)
+    // is handled by guildMemberUpdate.
     const joinIds = joinRoleIds(config);
     if (joinIds.length > 0) {
         const res = await grantRoles(member, joinIds, { reason: 'auto-role on join' });

@@ -88,8 +88,9 @@ async function handleSelfRoleButton(interaction) {
 
     // v3.22.0: all grant/revoke calls go through the Role Engine — same
     // checks, same failure logging as every other feature. Granting a role
-    // here ALSO removes the member's Unverified marker automatically (the
-    // universal rule in guildMemberUpdate) — no special handling needed.
+    // here can also trigger the automatic removal of the member's join
+    // roles (the autorole.removeOnNewRole toggle in guildMemberUpdate) —
+    // no special handling needed.
     if (panel.exclusive && !hasRole) {
         // Exclusive mode: remove all other panel roles first, then add this one
         const toRemove = panel.roles

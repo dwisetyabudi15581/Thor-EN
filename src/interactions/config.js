@@ -7,7 +7,7 @@
  *
  * CustomId: modal_edit_message:<type>
  * type: welcomeTitle, welcomeBody, goodbyeTitle, goodbyeBody,
- *       verifyTitle, verifyBody, ticketTitle, ticketBody, ticketPriceHeader
+ *       ticketTitle, ticketBody, ticketPriceHeader
  */
 
 const { MessageFlags } = require('discord.js');
@@ -24,8 +24,6 @@ const VALID_TYPES = new Set([
     'welcomeBody',
     'goodbyeTitle',
     'goodbyeBody',
-    'verifyTitle',
-    'verifyBody',
     'ticketTitle',
     'ticketBody',
     'ticketPriceHeader'

@@ -43,13 +43,16 @@ const DEFAULTS = {
         // v3.9.11 Phase 1: ticket header is configurable (previously hardcoded "PRICE LIST KEY")
         ticketPriceHeader: '💰 PRICE LIST 💰'
     },
-    // v3.22.0: auto-role on join (Dyno-style). The admin's chosen roles are
-    // granted automatically to every new member. The Unverified marker role
-    // (roles.unverified, set via /set-role unverified) is granted on join too
-    // and is removed automatically the moment the member receives any OTHER
-    // role (see bot/events/guildMemberUpdate.js — the universal rule).
+    // v3.23.0: auto-role on join (Dyno-style). The admin's chosen roles are
+    // granted automatically to every new member. The removeOnNewRole toggle
+    // (default OFF): while ON, EVERY join role is stripped automatically the
+    // moment the member receives any OTHER role (see
+    // bot/events/guildMemberUpdate.js). The Unverified marker concept
+    // (roles.unverified) is REMOVED — a "marker" role now just goes into
+    // this list with the toggle turned on.
     autorole: {
-        roleIds: []
+        roleIds: [],
+        removeOnNewRole: false
     },
     // v3.9.18: ticket categories (4 built-in default categories)
     // - "Bantuan Staff" → "Help" (rename, simpler & international)
@@ -228,9 +231,10 @@ function getConfig(guildId) {
     let didV1Migration = false;
     if (raw.verifiedRoleId || raw.invoiceChannelId) {
         if (!raw.roles) raw.roles = {};
-        // v3.22.0: verifiedRoleId is no longer mapped anywhere — the dedicated
-        // verification feature was removed (verified is now a self-role panel).
-        if (raw.unverifiedRoleId && !raw.roles.unverified) raw.roles.unverified = raw.unverifiedRoleId;
+        // v3.23.0: verifiedRoleId / unverifiedRoleId are no longer mapped
+        // anywhere — the verified & unverified role concepts are gone
+        // (verified = a plain role on a self-role panel; unverified =
+        // auto-role + toggle).
         if (raw.adminRoleId && !raw.roles.admin) raw.roles.admin = raw.adminRoleId;
 
         if (!raw.channels) raw.channels = {};
@@ -257,15 +261,17 @@ function getConfig(guildId) {
         didV1Migration = true;
     }
 
-    // === v3.22.0 MIGRATION: the dedicated verification feature was REMOVED ===
-    // (verified role + verify button + verify panel → members now take roles
-    // from self-role panels; "verified" is just another role on a panel).
-    // Stale keys from old configs are cleaned here so they don't linger
-    // forever in data/config/<guildId>.json. roles.unverified STAYS — it is
-    // the Unverified marker role used by the universal first-role rule.
+    // === v3.23.0 MIGRATION: the Unverified marker concept was REMOVED ===
+    // (admin's request: "don't set an unverified role — just use auto-role
+    // on join + a toggle for the role to disappear on a new role"). Stale
+    // keys are cleaned here so they don't linger in
+    // data/config/<guildId>.json: if you used @Unverified as a marker, add
+    // that role to the /set-autorole list and turn the removeOnNewRole
+    // toggle on — the behavior is identical.
     let didVerifyCleanup = false;
-    if (raw.roles && 'verified' in raw.roles) {
+    if (raw.roles && ('verified' in raw.roles || 'unverified' in raw.roles)) {
         delete raw.roles.verified;
+        delete raw.roles.unverified;
         didVerifyCleanup = true;
     }
     if (raw.messages && ('verifyTitle' in raw.messages || 'verifyBody' in raw.messages)) {
@@ -278,7 +284,7 @@ function getConfig(guildId) {
         didVerifyCleanup = true;
     }
     if (didVerifyCleanup) {
-        console.log('🧹 [v3.22.0] Removed the legacy verification config for this guild (verify is now a self-role panel).');
+        console.log('🧹 [v3.23.0] Removed the legacy verify/unverified role config for this guild (now: autorole + toggle; verify = self-role panel).');
     }
 
     // === MERGE with DEFAULTS (deep for messages) ===

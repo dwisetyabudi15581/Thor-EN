@@ -124,9 +124,8 @@ async function handleResetConfigConfirm(interaction) {
             content:
                 '⚠️ **ALL configuration has been reset.**\n\n' +
                 'config.json is now empty. Set it up again:\n' +
-                '• `/set-role verified @role`\n' +
-                '• `/set-role unverified @role`\n' +
                 '• `/set-role admin @role`\n' +
+                '• `/set-autorole action:add role:@Member` (+ `action:toggle` if you want it gone on a new role)\n' +
                 '• `/set-channel welcome #channel`\n' +
                 '• `/set-channel goodbye #channel`\n' +
                 '• `/set-channel invoice #channel`\n' +

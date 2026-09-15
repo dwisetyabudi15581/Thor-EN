@@ -422,8 +422,9 @@ async function hookLeveling(message) {
         if (toAdd.length > 0) {
             // v3.22.0: level-role grants go through the Role Engine — the same
             // gateway as self-role/auto-role, with hierarchy/managed checks and
-            // actionable failure logs. Granting a level role also removes the
-            // member's Unverified marker automatically (universal rule).
+            // actionable failure logs. Granting a level role can also trigger
+            // the removal of the member's join roles (the
+            // autorole.removeOnNewRole toggle).
             const { grantRoles } = require('../../services/roleEngine');
             const res = await grantRoles(message.member, toAdd, {
                 reason: `level up — reached level ${newLevel}`
