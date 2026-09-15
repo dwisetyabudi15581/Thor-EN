@@ -510,7 +510,15 @@ function createDashHandler({ client, token, log = () => {} }) {
         const config = getConfig(guildId);
         return {
             config,
-            automod: automodManager.getGuildConfig(guildId),
+            // v3.23.1: a guild that never touched AutoMod makes
+            // getGuildConfig() return null — that null payload crashed the
+            // web Overview & AutoMod pages (reading .enabled off null).
+            // Fallback: default config with enabled=false (honest: for a
+            // fresh guild messageCreate skips automod because cfg is null,
+            // so show "off", not the default enabled=true).
+            automod:
+                automodManager.getGuildConfig(guildId) ||
+                { ...automodManager.getDefaultConfig(), enabled: false },
             responders: responderManager.getGuildResponders(guildId),
             selfroles: selfRoleManager.getPanelsByGuild(guildId),
             tempvoice: tempVoiceCfg

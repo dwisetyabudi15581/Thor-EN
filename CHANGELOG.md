@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.23.1] — 2026-09-16
+
+### Fixed — 🔴 WEB OVERVIEW & AUTOMOD PAGES CRASH FOR SERVERS THAT NEVER CONFIGURED AUTOMOD
+
+Owner's report: the dashboard's **Overview and AutoMod** pages showed *"This page couldn't load"* for servers that had never touched the AutoMod settings. Root cause: `automodManager.getGuildConfig()` returns **null** for a guild with no saved config, and the `GET /guilds/:id/dashboard` payload passed `automod: null` straight through — the web pages then read `.enabled`/`.wordRules` off null → browser exception. Other modules were unaffected because only Overview & AutoMod read `draft.automod`; the dev mock API always sent a full object, so tests never caught it.
+
+- 🔴 **DASH API:** the dashboard payload now sends a **default-object fallback** (enabled=false, empty wordRules/exemptWords arrays, etc.) when the guild has no automod config — honest about the real behavior (fresh guild: automod is indeed inactive, not the default enabled=true). The Overview & AutoMod pages load immediately.
+- 🟡 **Dashboard (defense in depth):** `GuildDashboard` normalizes the payload after fetch — a null `automod` is filled with defaults, non-array `responders`/`selfroles`/`announces` become `[]` — so the dashboard never crashes even if the bot still runs an older version.
+- 🟢 Tests: **736** (from 735) — a new test asserts a fresh guild's automod payload is always an object (not null), enabled=false, with complete arrays.
+
 ## [3.23.0] — 2026-09-15
 
 ### Changed — 🎭 UNIFIED AUTO-ROLE: THE UNVERIFIED ROLE CONCEPT IS REMOVED — JUST A JOIN LIST + ONE TOGGLE

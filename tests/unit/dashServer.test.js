@@ -222,6 +222,26 @@ test('dash: GET /guilds/:id/dashboard — all modules present', async () => {
     assert.strictEqual(typeof data.config.messages.welcomeTitle, 'string');
 });
 
+// v3.23.1: a guild that never configured AutoMod → getGuildConfig() is null.
+// The payload used to send `automod: null` → the web Overview & AutoMod
+// pages crashed (reading .enabled off null). Now it MUST fall back to a
+// default object with enabled=false (fresh guild: automod is indeed off).
+test('dash: fresh guild automod payload — default object fallback, not null', async () => {
+    // automod.json is still '[]' (no test has written a config yet) — the
+    // same condition as a real server that never opened the AutoMod page.
+    const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.ok(data.automod, 'payload.automod must not be null/undefined');
+    assert.strictEqual(typeof data.automod, 'object');
+    assert.strictEqual(data.automod.enabled, false, 'fresh guild: show off, not the default enabled=true');
+    assert.ok(Array.isArray(data.automod.wordRules), 'wordRules must be an array (web uses .some/.map)');
+    assert.strictEqual(data.automod.wordRules.length, 0);
+    assert.ok(Array.isArray(data.automod.exemptWords));
+    assert.strictEqual(typeof data.automod.spamThreshold, 'number');
+    assert.strictEqual(typeof data.automod.maxMentions, 'number');
+});
+
 // ====================================================
 // === PUT config ===
 // ====================================================

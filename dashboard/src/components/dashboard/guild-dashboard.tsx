@@ -157,6 +157,30 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
       return;
     }
     const data = (await res.json()) as DashboardPayload & { meta: GuildMeta };
+    // v3.23.1: defensive normalization — older bots send `automod: null` for
+    // guilds that never configured AutoMod, which crashed the Overview &
+    // AutoMod pages in the browser. This fallback guarantees the payload is
+    // always a complete object even if the bot has not been updated yet.
+    if (!data.automod) {
+      data.automod = {
+        enabled: false,
+        spamThreshold: 5,
+        spamWindowMs: 10000,
+        spamAction: "mute_10m",
+        blockLinks: false,
+        linkAllowedChannels: [],
+        linkAllowedRoles: [],
+        wordRules: [],
+        exemptWords: [],
+        wordMatchMode: "whole_word",
+        wordAction: "delete_only",
+        maxMentions: 5,
+        mentionAction: "warn",
+      };
+    }
+    if (!Array.isArray(data.responders)) data.responders = [];
+    if (!Array.isArray(data.selfroles)) data.selfroles = [];
+    if (!Array.isArray(data.announces)) data.announces = [];
     setPayload(data);
     setMeta(data.meta);
     // Draft = in-memory copy; dirty state resets (a fresh draft always comes from the bot).
