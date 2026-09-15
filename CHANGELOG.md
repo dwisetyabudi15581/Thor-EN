@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.21.2] — 2026-09-15
+
+### Fixed — 🟠 EDITING `.env` AFTER A BUILD NOW WORKS WITH A PLAIN RESTART
+
+- 🟠 **`dashboard/scripts/start-server.mjs`:** the script now loads `dashboard/.env` into `process.env` before starting the standalone server. Until now the standalone server only read the `.env` **copy baked into `.next/standalone/` at build time**, so editing `dashboard/.env` (e.g. `PUBLIC_ORIGIN` after moving to a domain — real case: OAuth `redirect_uri` kept pointing at the old address and login failed with `DNS_PROBE_FINISHED_BAD_CONFIG`) had **no effect until a full rebuild**. Values already exported in the shell still take precedence; @next/env never overrides variables already in `process.env`, so the fresh file always wins over the stale build-time copy. Verified end-to-end: build with a stale `PUBLIC_ORIGIN`, edit the file, restart → `[oauth] redirect_uri=` immediately reflects the new value.
+
 ## [3.21.1] — 2026-09-15
 
 ### Added — 📱 TERMUX/ANDROID SUPPORT: BOT + DASHBOARD RUN ON YOUR PHONE
