@@ -1,75 +1,29 @@
 /**
- * Verify domain handler — the `btn_verify` button.
+ * Verify domain handler — DEPRECATED STUB for the `btn_verify` button.
  *
- * Extracted from handlers/interactionHandler.js (v3.9.9 refactor).
- * Behavior preserved as-is — just moved to a new file.
+ * v3.22.0: the dedicated verification feature was REMOVED. "Verified" is now
+ * just another role on a self-role panel (/setup-selfrole + /selfrole-add),
+ * and the Unverified marker role is removed automatically the moment a
+ * member receives ANY other role (guildMemberUpdate → universal rule).
  *
- * The router (src/interactions/index.js) already applies:
- *   - dedup (checkAndMark)
- *   - `replied/deferred` guard
- *   - interaction type check (button/select/modal)
- *   - routing by customId prefix
- * So the domain handler can focus on its logic alone.
+ * Why this stub exists: servers that installed a verify panel before
+ * upgrading still have live `btn_verify` buttons in their channels. Without
+ * this handler those clicks would show the generic "This interaction
+ * failed" — instead the member gets a clear explanation and the admin gets
+ * the exact commands to migrate to a self-role panel.
  */
 
 const { MessageFlags } = require('discord.js');
-const { getConfig, resolveGuildId } = require('../commands/_shared');
 
 module.exports = async function (interaction) {
-    // The router calls this handler ONLY for customId === 'btn_verify'.
-    // v3.10.0 multi-guild: read this guild's config.
-    const config = getConfig(resolveGuildId(interaction));
-
-    if (!config.roles.verified) {
-        return interaction.reply({
-            content: '❌ The Verified role is not set yet. Ask an admin to run `/set-role verified @role`.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-    // v3.9.17 FIX: guard the member.roles access (partial member / user left before clicking).
-    if (!interaction.member?.roles?.cache) {
-        return interaction.reply({
-            content: '❌ Incomplete member data. Try again in a moment.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-    if (interaction.member.roles.cache.has(config.roles.verified)) {
-        return interaction.reply({ content: '✅ You are already verified!', flags: MessageFlags.Ephemeral });
-    }
-    try {
-        await interaction.member.roles.add(config.roles.verified);
-    } catch (err) {
-        console.error('Failed to add the verified role:', err.message);
-        return interaction.reply({
-            content: '❌ The bot cannot give you the Verified role. Make sure the bot\'s role is ABOVE the Verified role.',
-            flags: MessageFlags.Ephemeral
-        });
-    }
-    // v3.9.17 FIX: track whether the unverified role was actually removed. Previously,
-    // the message always said "the Unverified role has been removed" even when it failed.
-    let unverifiedRemoved = false;
-    let unverifiedNote = '';
-    if (config.roles.unverified) {
-        try {
-            await interaction.member.roles.remove(config.roles.unverified);
-            unverifiedRemoved = true;
-        } catch (err) {
-            console.error('Failed to remove the unverified role:', err.message);
-            unverifiedNote =
-                '\n⚠️ The bot cannot remove the Unverified role. Make sure the bot\'s role is ABOVE the Unverified role. Contact an admin to remove it manually.';
-        }
-    } else {
-        // unverified role not set in config — not an error, but the message shouldn't claim it was "removed".
-        unverifiedNote = '\nℹ️ The Unverified role is not set in config — only the Verified role was given.';
-    }
     return interaction.reply({
         content:
-            '✅ Verification successful! The Verified role has been given to you.' +
-            (config.roles.unverified
-                ? unverifiedRemoved
-                    ? ' The Unverified role has been removed.'
-                    : unverifiedNote
-                : unverifiedNote),
+            '⚠️ This verification button no longer works — the feature was replaced by **self-role panels**.\n\n' +
+            '👤 *Members:* pick your roles from the server\'s self-role panel.\n' +
+            '🛠️ *Admins:* delete this old panel and create a self-role one:\n' +
+            '```\n/setup-selfrole title:Verification description:Click below to verify yourself\n' +
+            '/selfrole-add panel_id:<id> role:@Verified label:Verify Me emoji:✅ style:Success\n```\n' +
+            '💡 Tip: the **Unverified** marker role now disappears automatically once a member receives any other role.',
         flags: MessageFlags.Ephemeral
     });
 };

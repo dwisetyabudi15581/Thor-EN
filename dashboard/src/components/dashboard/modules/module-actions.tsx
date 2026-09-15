@@ -614,7 +614,7 @@ export function ModuleOverview({ draft, meta }: { draft: DashboardPayload; meta:
   const mods = [
     { name: "AutoMod", on: draft.automod.enabled, note: draft.automod.blockLinks ? "spam + links + words" : "spam + words" },
     { name: "Leveling", on: c.leveling.enabled, note: `${c.levelRoles.length} role rewards` },
-    { name: "Verification", on: Boolean(c.roles.verified), note: c.roles.verified ? "role set" : "role not set" },
+    { name: "Auto-Role", on: Boolean(c.roles.unverified) || (c.autorole?.roleIds?.length ?? 0) > 0, note: c.roles.unverified ? `marker set${(c.autorole?.roleIds?.length ?? 0) > 0 ? ` + ${(c.autorole?.roleIds?.length ?? 0)} join roles` : ""}` : `${c.autorole?.roleIds?.length ?? 0} join roles` },
     { name: "Tickets", on: c.ticketCategories.length > 0, note: `${c.ticketCategories.length} categories · ${c.products.length} products` },
     { name: "Middleman", on: true, note: `${c.midman.feeMode === "percent" ? `${c.midman.feeValue}%` : `flat ${c.midman.feeValue}`} fee` },
     { name: "Responders", on: draft.responders.length > 0, note: `${draft.responders.length} triggers` },

@@ -1,6 +1,6 @@
 /**
  * Domain: config
- * Slash commands: /setup-verify, /setup-ticket, /set-role, /set-channel,
+ * Slash commands: /set-autorole, /setup-ticket, /set-role, /set-channel,
  *                 /set-message, /remove-role, /remove-channel, /list-messages,
  *                 /reset-message, /reset-config, /config-show, /test-welcome
  *
@@ -52,59 +52,111 @@ module.exports = async function (interaction) {
     const guildId = resolveGuildId(interaction);
     const config = getConfig(guildId);
 
-    // === SETUP VERIFY ===
-    if (interaction.commandName === 'setup-verify') {
+    // === SET AUTOROLE (v3.22.0 — auto-role on join, Dyno-style) ===
+    // One command, three actions: add / remove / list. The list (plus the
+    // Unverified marker role) is granted automatically to every new member
+    // by memberHandler → Role Engine.
+    if (interaction.commandName === 'set-autorole') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        // If the verified role isn't set yet, ask the admin to set it first
-        if (!config.roles.verified) {
+        const action = interaction.options.getString('action'); // add | remove | list
+        const role = interaction.options.getRole('role');
+        const MAX_AUTOROLE = 10;
+
+        if (action !== 'list' && !role) {
             return safeEditReply(interaction, {
-                content: '❌ The Verified role is not set yet. Use `/set-role verified @role` first.'
+                content: '❌ A role is required for `add` / `remove`. Use `/set-autorole action:list` to just view the list.'
             });
         }
 
-        const embed = new EmbedBuilder()
-            .setTitle(config.messages.verifyTitle)
-            .setDescription(config.messages.verifyBody.replace(/\{server\}/g, interaction.guild.name))
-            .setColor(0x2ecc71)
-            .setFooter({
-                text: interaction.client.user.username,
-                iconURL: interaction.client.user.displayAvatarURL({ dynamic: true })
-            })
-            .setTimestamp();
+        const current = Array.isArray(config.autorole?.roleIds) ? [...config.autorole.roleIds] : [];
 
-        // v3.9.11 Phase 1: verify button configurable (label/emoji/style from config.verifyButton).
-        const btnConfig = config.verifyButton || {};
-        const styleMap = {
-            Primary: ButtonStyle.Primary,
-            Secondary: ButtonStyle.Secondary,
-            Success: ButtonStyle.Success,
-            Danger: ButtonStyle.Danger
-        };
-        const btnStyle = styleMap[btnConfig.style] || ButtonStyle.Success;
-        const btnEmoji = btnConfig.emoji || '✅';
-        const btnLabel = btnConfig.label || 'Verify Me';
-
-        const verifyBtn = new ButtonBuilder()
-            .setCustomId('btn_verify')
-            .setLabel(btnLabel.slice(0, 80))
-            .setEmoji(btnEmoji)
-            .setStyle(btnStyle);
-
-        // v3.9.11 Phase 1: emoji can be a custom emoji ID (<:name:id>) or unicode.
-        // Discord ButtonBuilder.setEmoji handles both automatically.
-        const row = new ActionRowBuilder().addComponents(verifyBtn);
-
-        // Send the panel to the channel. If that fails (usually permissions), reply with a clear error
-        // so the admin knows what to fix.
-        try {
-            await interaction.channel.send({ embeds: [embed], components: [row] });
-        } catch (sendErr) {
+        // ---- LIST ----
+        if (action === 'list') {
+            const list =
+                current.length > 0
+                    ? current.map(id => `• <@&${id}>`).join('\n')
+                    : '_empty — no auto-role on join yet_';
+            const unverifiedNote = config.roles.unverified
+                ? `\n\n🎭 Unverified marker (also granted on join, removed automatically once the member gets any other role): <@&${config.roles.unverified}>`
+                : '';
             return safeEditReply(interaction, {
-                content: `❌ Failed to send the verification panel: ${sendErr.message}\n\nMake sure the bot has **Send Messages** and **Embed Links** permissions in this channel.`
+                content:
+                    `🎁 **AUTO-ROLE ON JOIN** (${current.length}/${MAX_AUTOROLE})\n${list}${unverifiedNote}\n\n` +
+                    `💡 \`/set-autorole action:add role:@role\` to add · \`/set-autorole action:remove role:@role\` to remove.`
             });
         }
-        return safeEditReply(interaction, { content: '✅ Verification panel installed!' });
+
+        // ---- ADD / REMOVE share the /set-role validation (v3.9.38) —
+        // @everyone, integration-managed roles and roles above the bot must be
+        // rejected up front, otherwise the join grant would silently fail on
+        // every new member.
+        if (role.id === interaction.guild.id) {
+            return safeEditReply(interaction, { content: '❌ @everyone cannot be used. Pick a regular role.' });
+        }
+        if (role.managed) {
+            return safeEditReply(interaction, {
+                content: '❌ This role is managed by another integration/bot — it cannot be assigned by the bot.'
+            });
+        }
+        const botHighestPos = interaction.guild.members.me?.roles?.highest?.position ?? 0;
+        if ((role.position ?? 0) >= botHighestPos) {
+            return safeEditReply(interaction, {
+                content:
+                    '❌ This role is positioned ABOVE the bot highest role — the bot cannot assign it. ' +
+                    'Move the bot role up in Server Settings → Roles, or pick another role.'
+            });
+        }
+
+        // ---- ADD ----
+        if (action === 'add') {
+            if (current.includes(role.id)) {
+                return safeEditReply(interaction, { content: `ℹ️ ${role} is already in the auto-role list.` });
+            }
+            if (current.length >= MAX_AUTOROLE) {
+                return safeEditReply(interaction, {
+                    content: `❌ The auto-role list is full (${MAX_AUTOROLE} roles). Remove one first with \`/set-autorole action:remove\`.`
+                });
+            }
+            current.push(role.id);
+            setField(guildId, 'autorole.roleIds', current);
+            await logAudit(interaction.client, {
+                action: 'SET_AUTOROLE',
+                actorId: interaction.user.id,
+                actorTag: interaction.user.tag,
+                details: `Auto-role on join: added ${role.name} (\`${role.id}\`) — list now ${current.length} role(s)`,
+                guildId: interaction.guild.id
+            });
+            return safeEditReply(interaction, {
+                content:
+                    `✅ ${role} added to the **auto-role on join** list (${current.length}/${MAX_AUTOROLE}).\n\n` +
+                    `Every new member now receives it automatically. Current list:\n${current
+                        .map(id => `• <@&${id}>`)
+                        .join('\n')}`
+            });
+        }
+
+        // ---- REMOVE ----
+        const idx = current.indexOf(role.id);
+        if (idx === -1) {
+            return safeEditReply(interaction, { content: `ℹ️ ${role} is not in the auto-role list.` });
+        }
+        current.splice(idx, 1);
+        setField(guildId, 'autorole.roleIds', current);
+        await logAudit(interaction.client, {
+            action: 'SET_AUTOROLE',
+            actorId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            details: `Auto-role on join: removed ${role.name} (\`${role.id}\`) — list now ${current.length} role(s)`,
+            guildId: interaction.guild.id
+        });
+        return safeEditReply(interaction, {
+            content:
+                `✅ ${role} removed from the auto-role list.\n\n` +
+                (current.length > 0
+                    ? `Current list:\n${current.map(id => `• <@&${id}>`).join('\n')}`
+                    : 'The list is now empty — new members only receive the Unverified marker (if set).')
+        });
     }
 
     // === SETUP TICKET ===
@@ -601,7 +653,6 @@ module.exports = async function (interaction) {
                     name: '🎭 Roles',
                     value: capFieldValue(
                         [
-                            `• Verified: ${fmt(config.roles.verified, '@&')}`,
                             `• Unverified: ${fmt(config.roles.unverified, '@&')}`,
                             `• Admin: ${fmt(config.roles.admin, '@&')}`,
                             `• Midman (Escrow): ${fmt(config.roles.midman, '@&')}`,
@@ -720,8 +771,6 @@ module.exports = async function (interaction) {
             welcomeBody: '👋 Welcome Body',
             goodbyeTitle: '👋 Goodbye Title',
             goodbyeBody: '👋 Goodbye Body',
-            verifyTitle: '✅ Verify Title',
-            verifyBody: '✅ Verify Body',
             ticketTitle: '🎫 Ticket Title',
             ticketBody: '🎫 Ticket Body',
             // v3.9.11 Phase 1: ticket price header configurable

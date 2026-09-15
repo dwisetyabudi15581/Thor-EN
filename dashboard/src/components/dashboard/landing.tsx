@@ -389,7 +389,7 @@ const MODULES = [
   { icon: Mic, name: "Temporary Voice", desc: "Private voice channels per member, controlled via buttons." },
   { icon: Megaphone, name: "Scheduled Announcements", desc: "One-shot or recurring daily/weekly announcements." },
   { icon: Activity, name: "Server Stats", desc: "Live member/boost/role counters in channel names." },
-  { icon: UserCheck, name: "Verification", desc: "Anti-raid gate with a verify button + automatic roles." },
+  { icon: Gift, name: "Auto-Role & Unverified", desc: "Roles granted on join; the Unverified marker disappears on a member's first role." },
   { icon: Globe, name: "Backup", desc: "Server structure snapshots, restore in emergencies." },
   { icon: Terminal, name: "Command Manager", desc: "Enable/disable each slash command per server — Dyno-style." },
   { icon: Gift, name: "Giveaway", desc: "Start giveaways with Join/Leave buttons from the web." },

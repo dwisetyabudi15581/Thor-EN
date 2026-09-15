@@ -31,9 +31,8 @@ const { upsertPanel } = require('../data/panelManager');
 // v3.9.17: shared parseColor + parseColorOrError for consistency across the whole codebase.
 const { parseColorOrError } = require('../infra/colors');
 // v3.9.24: normalize literal \n → real newline (command input on PC can't press Enter).
-const { normalizeNewlines, isValidEmoji } = require('../infra/text');
+const { normalizeNewlines } = require('../infra/text');
 
-const VALID_STYLES = ['Primary', 'Secondary', 'Success', 'Danger'];
 const STYLE_MAP = {
     Primary: ButtonStyle.Primary,
     Secondary: ButtonStyle.Secondary,
@@ -318,67 +317,11 @@ function buildTicketPanel(panel, ctx) {
 }
 
 module.exports = async function (interaction) {
-    // v3.10.0 multi-guild: panels & the verify button are stored in this guild's config.
+    // v3.10.0 multi-guild: panels are stored in this guild's config.
+    // v3.22.0: /set-verify-button REMOVED — the dedicated verification feature
+    // was deleted; "verified" is now just another role on a self-role panel.
     const guildId = resolveGuildId(interaction);
     const config = getConfig(guildId);
-
-    // === SET VERIFY BUTTON ===
-    if (interaction.commandName === 'set-verify-button') {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        const label = interaction.options.getString('label');
-        const emoji = interaction.options.getString('emoji');
-        const style = interaction.options.getString('style');
-
-        // Validate style
-        if (style && !VALID_STYLES.includes(style)) {
-            return safeEditReply(interaction, {
-                content: '❌ Invalid `style`. Choose: Primary, Secondary, Success, Danger.'
-            });
-        }
-
-        // v3.9.26: validate the emoji BEFORE saving (anti poison config). A free-form
-        // emoji string that gets stored makes setEmoji() throw later in /setup-verify —
-        // the verification panel stays dead until the config is fixed manually.
-        if (emoji && !isValidEmoji(emoji)) {
-            return safeEditReply(interaction, {
-                content: '❌ Invalid `emoji`. Use a unicode emoji (e.g. ✅) or a custom emoji in the format `<:name:id>`.'
-            });
-        }
-
-        // Build new verifyButton config
-        const newVerifyBtn = {
-            ...(config.verifyButton || {}),
-            label: label.slice(0, 80)
-        };
-        if (emoji) newVerifyBtn.emoji = emoji;
-        if (style) newVerifyBtn.style = style;
-
-        config.verifyButton = newVerifyBtn;
-        saveConfig(guildId, config);
-
-        await logAudit(interaction.client, {
-            action: 'SET_VERIFY_BUTTON',
-            actorId: interaction.user.id,
-            actorTag: interaction.user.tag,
-            details: `Update verify button — label: "${newVerifyBtn.label}", emoji: ${newVerifyBtn.emoji}, style: ${newVerifyBtn.style}`,
-            guildId: interaction.guild.id
-        });
-
-        // Preview button
-        const previewBtn = new ButtonBuilder()
-            .setCustomId('btn_verify_preview')
-            .setLabel(newVerifyBtn.label)
-            .setEmoji(newVerifyBtn.emoji || '✅')
-            .setStyle(STYLE_MAP[newVerifyBtn.style] || ButtonStyle.Success)
-            .setDisabled(true);
-        const previewRow = new ActionRowBuilder().addComponents(previewBtn);
-
-        return safeEditReply(interaction, {
-            content: '✅ Verify button updated!\n\n**Preview:**',
-            components: [previewRow]
-        });
-    }
 
     // === SETUP TICKET PANEL (multi-panel + full customization, v3.9.14) ===
     if (interaction.commandName === 'setup-ticket-panel') {

@@ -126,7 +126,9 @@ export type GuildConfig = {
   channels: Record<string, string | null>;
   messages: Record<string, string>;
   colors: Record<string, number>;
-  verifyButton: { label: string; emoji: string; style: string };
+  // v3.22.0: verifyButton REMOVED — verification is now a self-role panel.
+  // autorole = the join auto-role list (/set-autorole parity).
+  autorole: { roleIds: string[] };
   ticketCategories: TicketCategory[];
   leveling: {
     enabled: boolean;

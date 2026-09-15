@@ -10,12 +10,18 @@
 // call() (no SaveBar) → the bot applies it to the Discord server. Full
 // parity with the slash commands:
 //
-//   Step 1  Bot Admin Role        ≙ /set-role admin
-//   Step 2  Verified Role         ≙ /set-role verified
-//   Step 3  Categories & Products ≙ /add-category + /add-product
-//   Step 4  Install Ticket Panel  ≙ /setup-ticket-panel
-//   Step 5  Install Verification  ≙ /setup-verify
-//   Step 6  Server Log Channel    ≙ /set-channel server-log
+//   Step 1  Bot Admin Role          ≙ /set-role admin
+//   Step 2  Unverified Marker Role  ≙ /set-role unverified   (v3.22.0)
+//   Step 3  Categories & Products   ≙ /add-category + /add-product
+//   Step 4  Install Ticket Panel    ≙ /setup-ticket-panel
+//   Step 5  Self-Role Panel         ≙ /setup-selfrole        (v3.22.0)
+//   Step 6  Server Log Channel      ≙ /set-channel server-log
+//
+// v3.22.0: the dedicated verification feature was REMOVED — "verified" is now
+// just a role on a self-role panel, and the Unverified marker disappears
+// automatically once a member receives any other role. Step 2 registers the
+// marker; Step 5 sends the admin to the Self Roles module to mount a panel
+// (e.g. a Verification panel).
 //
 // Below that: "Next steps" — shortcuts to the other category modules
 // (serverstats / leveling / tempvoice / responder / selfrole) so the web
@@ -98,8 +104,8 @@ export function QuickStartModule({
   // Steps 1-2: roles (dropdown + manual ID field — initial value = saved one)
   const [adminPick, setAdminPick] = useState<string | null>(c.roles.admin ?? null);
   const [adminId, setAdminId] = useState("");
-  const [verifiedPick, setVerifiedPick] = useState<string | null>(c.roles.verified ?? null);
-  const [verifiedId, setVerifiedId] = useState("");
+  const [unverifiedPick, setUnverifiedPick] = useState<string | null>(c.roles.unverified ?? null);
+  const [unverifiedId, setUnverifiedId] = useState("");
 
   // Step 3: quick product add
   const [prdLabel, setPrdLabel] = useState("");
@@ -111,8 +117,6 @@ export function QuickStartModule({
   // Steps 4-5: panels
   const [panelChannel, setPanelChannel] = useState<string | null>(null);
   const [panelDropdown, setPanelDropdown] = useState(false);
-  const [verifyChannel, setVerifyChannel] = useState<string | null>(null);
-  const [verifySentTo, setVerifySentTo] = useState<string | null>(null);
 
   // Step 6: log channel
   const [logPick, setLogPick] = useState<string | null>(c.channels["server-log"] ?? null);
@@ -121,13 +125,14 @@ export function QuickStartModule({
   const cats = c.ticketCategories;
   const products = c.products;
   const panels = draft.panels ?? [];
+  const selfrolePanels = draft.selfroles ?? [];
 
   const done = {
     admin: !!c.roles.admin,
-    verified: !!c.roles.verified,
+    unverified: !!c.roles.unverified,
     catalog: products.length > 0,
     panel: panels.length > 0,
-    verify: verifySentTo !== null,
+    selfrole: selfrolePanels.length > 0,
     log: !!c.channels["server-log"],
   };
   const doneCount = Object.values(done).filter(Boolean).length;
@@ -185,23 +190,6 @@ export function QuickStartModule({
       await call("panels", "POST", { channelId: panelChannel, useDropdown: panelDropdown });
       await refresh();
       toast(`Ticket panel installed in ${channelLabel(meta.channels, panelChannel)} — check Discord.`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Failed to install the panel.", "err");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function installVerifyPanel() {
-    if (!verifyChannel) {
-      toast("Pick the target channel for the verification panel first.", "err");
-      return;
-    }
-    setBusy("verify");
-    try {
-      await call("verify-panel", "POST", { channelId: verifyChannel });
-      setVerifySentTo(verifyChannel);
-      toast(`Verification panel installed in ${channelLabel(meta.channels, verifyChannel)} — check Discord.`);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed to install the panel.", "err");
     } finally {
@@ -294,25 +282,25 @@ export function QuickStartModule({
         </Field>
       </StepCard>
 
-      {/* Step 2 — Verified role */}
+      {/* Step 2 — Unverified marker role (v3.22.0) */}
       <StepCard
         n={2}
-        title="Verified Role"
-        desc={<>The role members receive after clicking the verification button. Required before installing the verification panel. ≙ <code className="text-amber-300/80">/set-role verified</code></>}
-        done={done.verified}
+        title="Unverified Marker Role"
+        desc={<>Granted automatically to every new member and removed automatically the moment they receive any other role (a self-role, a level role, an admin grant — anything). Verification without a dedicated button. ≙ <code className="text-amber-300/80">/set-role unverified</code></>}
+        done={done.unverified}
       >
-        <Field label="Pick from the role list" hint={done.verified ? `Saved: ${roleLabel(meta.roles, c.roles.verified)}` : undefined}>
-          <RoleSelect value={verifiedPick} onChange={setVerifiedPick} roles={meta.roles} />
+        <Field label="Pick from the role list" hint={done.unverified ? `Saved: ${roleLabel(meta.roles, c.roles.unverified)}` : undefined}>
+          <RoleSelect value={unverifiedPick} onChange={setUnverifiedPick} roles={meta.roles} />
         </Field>
         <Field label="…or enter the role ID manually" hint={ID_HINT}>
           <div className="flex gap-2">
-            <TextInput value={verifiedId} onChange={setVerifiedId} placeholder="e.g. 888000111222333444" />
+            <TextInput value={unverifiedId} onChange={setUnverifiedId} placeholder="e.g. 888000111222333444" />
             <Button
-              onClick={() => applyRole("verified", "roles.verified", verifiedPick, verifiedId, "Verified role registered — new members can now be verified.")}
-              disabled={busy === "verified"}
+              onClick={() => applyRole("unverified", "roles.unverified", unverifiedPick, unverifiedId, "Unverified marker registered — new members get it on join, and it disappears on their first role.")}
+              disabled={busy === "unverified"}
               className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
             >
-              {busy === "verified" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              {busy === "unverified" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Register
             </Button>
           </div>
@@ -440,31 +428,27 @@ export function QuickStartModule({
         </Field>
       </StepCard>
 
-      {/* Step 5 — Verification panel */}
+      {/* Step 5 — Self-role panel (v3.22.0: replaces the old verification panel) */}
       <StepCard
         n={5}
-        title="Install Verification Panel"
-        desc={<>Verification gate: new members click the button → get the Verified role. Its text &amp; button are configured in the General module. ≙ <code className="text-amber-300/80">/setup-verify</code></>}
-        done={done.verify}
+        title="Self-Role Panel (e.g. Verification)"
+        desc={<>A panel where members pick their own roles by clicking buttons — add your Verified role here and it becomes your verification gate, with the style/label/emoji you want. ≙ <code className="text-amber-300/80">/setup-selfrole</code> + <code className="text-amber-300/80">/selfrole-add</code></>}
+        done={done.selfrole}
       >
         <Field
-          label="Target channel"
-          hint={verifySentTo ? `Last installed in: ${channelLabel(meta.channels, verifySentTo)} — you can reinstall anytime.` : "Usually the rules/welcome channel."}
+          label="Self-role panels"
+          hint={done.selfrole ? `${selfrolePanels.length} panel(s) installed — manage them in the Self Roles module.` : "None yet — create one in the Self Roles module."}
         >
-          <ChannelSelect value={verifyChannel} onChange={setVerifyChannel} channels={meta.channels} placeholder="— pick a channel —" />
-        </Field>
-        <Field label="Verification button" hint={`Current label: "${c.verifyButton.label}" — change it in the General module.`}>
           <div className="flex items-center">
             <span className="mr-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
-              {c.verifyButton.emoji} {c.verifyButton.label}
+              🎭 {selfrolePanels.length} panel{selfrolePanels.length === 1 ? "" : "s"}
             </span>
             <Button
-              onClick={installVerifyPanel}
-              disabled={busy === "verify"}
+              onClick={() => goTo("selfroles")}
               className="ml-auto bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
             >
-              {busy === "verify" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              Install
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              Create / Manage
             </Button>
           </div>
         </Field>

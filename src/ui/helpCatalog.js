@@ -83,20 +83,20 @@ const HELP_CATEGORIES = [
         short: 'New to the bot? Server setup order from scratch',
         lines: [
             '**New to this bot? Follow this order:**',
-            '1️⃣ `/set-role verified @Verified` — verified-member role',
+            '1️⃣ `/set-role unverified @Unverified` — the marker role for new members',
             '2️⃣ `/add-category` + `/add-product` — prepare the catalog',
             '3️⃣ `/setup-ticket-panel` — mount the ticket panel',
-            '4️⃣ `/setup-verify` — verification for new members',
+            '4️⃣ `/setup-selfrole` + `/selfrole-add` — self-role panels (e.g. a Verification panel)',
             '5️⃣ `/set-channel server-log #log` — enable server log',
             '💡 Then explore the other categories via the 📂 dropdown.'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
             '**New to this bot? Set the server up in this order (once):**',
-            '1️⃣ `/set-role tipe:verified role:@Verified` — the role members receive after verifying',
+            '1️⃣ `/set-role tipe:unverified role:@Unverified` — the marker role granted on join, removed automatically once a member gets any other role',
             '2️⃣ `/add-category` + `/add-product` — prepare what you sell (see the Products category)',
             '3️⃣ `/setup-ticket-panel` — mount the order panel members click to buy',
-            '4️⃣ `/setup-verify` — verification gate: new members click a button to get the verified role',
+            '4️⃣ `/setup-selfrole` + `/selfrole-add` — mount a self-role panel (e.g. Verification: members click to get the Verified role)',
             '5️⃣ `/set-channel tipe:server-log channel:#log` — record joins, leaves, deletions, bans',
             '',
             '**Nice extras once the basics run (all optional):**',
@@ -193,12 +193,11 @@ const HELP_CATEGORIES = [
     {
         id: 'panels',
         emoji: '🎫',
-        name: 'Ticket Panels & Verification',
-        short: 'Mount ticket panels & member verification',
+        name: 'Ticket Panels',
+        short: 'Mount ticket panels',
         lines: [
             '• `/setup-ticket-panel` — multi-category panel (`title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
-            '• `/setup-verify` — new-member verification · `/set-verify-button` — button style',
             '• `/setup-ticket` — legacy single-category panel'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
@@ -209,9 +208,10 @@ const HELP_CATEGORIES = [
             '• `/refresh-panel id` — re-render with the LATEST categories/products (run this after adding products — the embed otherwise keeps the old list).',
             '• `/delete-panel id` — remove a panel (message + config).',
             '',
-            '**Verification for new members**',
-            '• `/setup-verify` — mount the verify panel: joining members click a button to get the verified role (and drop the unverified one).',
-            '• `/set-verify-button label emoji style` — customize the button look.',
+            '**Member verification (v3.22.0 — now self-role based)**',
+            '• `/setup-selfrole title:Verification` + `/selfrole-add role:@Verified label:Verify Me` — a self-role panel members click to get the Verified role.',
+            '• `/set-role tipe:unverified role:@Unverified` — new members get this marker automatically; it disappears once they receive ANY other role.',
+            '• `/set-autorole action:add role:@Member` — extra roles granted automatically on join.',
             '• `/setup-ticket` — the legacy single-category panel (kept for old setups; prefer `/setup-ticket-panel`).',
             '',
             '❓ **Panel shows old prices?** Run `/refresh-panel id` — or `/update-panel` for texts.',

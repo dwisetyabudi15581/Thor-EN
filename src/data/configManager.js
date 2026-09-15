@@ -31,13 +31,10 @@ const DEFAULTS = {
     messages: {
         welcomeTitle: '👋 WELCOME!',
         welcomeBody:
-            'Hello {user}!\n\nWelcome to **{server}** 🎉\n\n🔐 Please verify yourself to get full access to the server.\n\n📊 You are member #**{count}**!',
+            'Hello {user}!\n\nWelcome to **{server}** 🎉\n\n🔐 Pick up a role to gain full access to the server.\n\n📊 You are member #**{count}**!',
         goodbyeTitle: '👋 FAREWELL',
         goodbyeBody:
             '**{username}** has {action} the server.\n\nSee you again! 👋\n\n📊 Remaining members: **{count}**',
-        verifyTitle: '✅ SERVER VERIFICATION',
-        verifyBody:
-            'Welcome to **{server}**!\n\nClick the button below to get verified and gain full access to all channels.',
         ticketTitle: '🎫 TICKET SYSTEM & PRICE LIST',
         // v3.9.12: the ticket body now supports template variables.
         // Available variables: {server}, {price_list}, {price_list:<category>}, {price_header}, {categories_list}
@@ -46,11 +43,13 @@ const DEFAULTS = {
         // v3.9.11 Phase 1: ticket header is configurable (previously hardcoded "PRICE LIST KEY")
         ticketPriceHeader: '💰 PRICE LIST 💰'
     },
-    // v3.9.11 Phase 1: verify button is configurable (previously hardcoded label/emoji/style)
-    verifyButton: {
-        label: 'Verify Me',
-        emoji: '✅',
-        style: 'Success' // Primary | Secondary | Success | Danger
+    // v3.22.0: auto-role on join (Dyno-style). The admin's chosen roles are
+    // granted automatically to every new member. The Unverified marker role
+    // (roles.unverified, set via /set-role unverified) is granted on join too
+    // and is removed automatically the moment the member receives any OTHER
+    // role (see bot/events/guildMemberUpdate.js — the universal rule).
+    autorole: {
+        roleIds: []
     },
     // v3.9.18: ticket categories (4 built-in default categories)
     // - "Bantuan Staff" → "Help" (rename, simpler & international)
@@ -229,7 +228,8 @@ function getConfig(guildId) {
     let didV1Migration = false;
     if (raw.verifiedRoleId || raw.invoiceChannelId) {
         if (!raw.roles) raw.roles = {};
-        if (raw.verifiedRoleId && !raw.roles.verified) raw.roles.verified = raw.verifiedRoleId;
+        // v3.22.0: verifiedRoleId is no longer mapped anywhere — the dedicated
+        // verification feature was removed (verified is now a self-role panel).
         if (raw.unverifiedRoleId && !raw.roles.unverified) raw.roles.unverified = raw.unverifiedRoleId;
         if (raw.adminRoleId && !raw.roles.admin) raw.roles.admin = raw.adminRoleId;
 
@@ -257,8 +257,32 @@ function getConfig(guildId) {
         didV1Migration = true;
     }
 
+    // === v3.22.0 MIGRATION: the dedicated verification feature was REMOVED ===
+    // (verified role + verify button + verify panel → members now take roles
+    // from self-role panels; "verified" is just another role on a panel).
+    // Stale keys from old configs are cleaned here so they don't linger
+    // forever in data/config/<guildId>.json. roles.unverified STAYS — it is
+    // the Unverified marker role used by the universal first-role rule.
+    let didVerifyCleanup = false;
+    if (raw.roles && 'verified' in raw.roles) {
+        delete raw.roles.verified;
+        didVerifyCleanup = true;
+    }
+    if (raw.messages && ('verifyTitle' in raw.messages || 'verifyBody' in raw.messages)) {
+        delete raw.messages.verifyTitle;
+        delete raw.messages.verifyBody;
+        didVerifyCleanup = true;
+    }
+    if ('verifyButton' in raw) {
+        delete raw.verifyButton;
+        didVerifyCleanup = true;
+    }
+    if (didVerifyCleanup) {
+        console.log('🧹 [v3.22.0] Removed the legacy verification config for this guild (verify is now a self-role panel).');
+    }
+
     // === MERGE with DEFAULTS (deep for messages) ===
-    // v3.9.11: added merge for verifyButton & ticketCategories
+    // v3.22.0: verifyButton merge REMOVED (feature deleted); autorole added.
     // v3.9.13: added merge for leveling & levelRoles
     // v3.9.17 FIX: preserve custom fields (ticketCategoryKey, ticketCategoryNoKey,
     //   and other non-standard fields). Before, only keys present in DEFAULTS were
@@ -271,7 +295,7 @@ function getConfig(guildId) {
         channels: { ...DEFAULTS.channels, ...(raw.channels || {}) },
         messages: { ...DEFAULTS.messages, ...(raw.messages || {}) },
         colors: { ...DEFAULTS.colors, ...(raw.colors || {}) },
-        verifyButton: { ...DEFAULTS.verifyButton, ...(raw.verifyButton || {}) },
+        autorole: { ...DEFAULTS.autorole, ...(raw.autorole || {}) },
         ticketCategories:
             Array.isArray(raw.ticketCategories) && raw.ticketCategories.length > 0
                 ? raw.ticketCategories

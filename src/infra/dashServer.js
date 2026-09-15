@@ -37,7 +37,7 @@
  *   DELETE /guilds/:id/selfroles/:panelId       → delete the panel + its message
  *   POST   /guilds/:id/serverstats/refresh      → force-refresh the counters
  *   POST   /guilds/:id/panels                   → install ticket panel to a channel (v3.21.0)
- *   POST   /guilds/:id/verify-panel             → install verification panel (v3.21.0)
+ *   POST   /guilds/:id/verify-panel             → REMOVED v3.22.0 (verification is now a self-role panel)
  *   DELETE /guilds/:id/tempvoice                → detach the temp voice setup (config only)
  *
  * Actor audit: every write operation receives `actor: { id, tag }` (the
@@ -135,20 +135,18 @@ const SECTION_VALIDATORS = {
         if (!Number.isInteger(n) || n < 0 || n > 0xffffff) return { ok: false, error: `colors.${key} must be an integer 0-16777215` };
         return { ok: true, value: n };
     },
-    verifyButton: (key, value) => {
-        if (key === 'label') {
-            if (!isStr(value, 80)) return { ok: false, error: 'Button label must be 1-80 characters' };
-            return { ok: true, value };
+    // v3.22.0: verifyButton section REMOVED — the verification feature was
+    // deleted (self-role panels now). Old dashboard builds that still send
+    // verifyButton.* get a clean "Unknown section" 422.
+    // v3.22.0: autorole — the join auto-role list (web parity with /set-autorole).
+    autorole: (key, value) => {
+        if (key !== '__array__') return { ok: false, error: 'autorole can only be set as a whole array (autorole.roleIds)' };
+        if (!Array.isArray(value)) return { ok: false, error: 'autorole must be an array of role IDs' };
+        if (value.length > 10) return { ok: false, error: 'autorole accepts at most 10 roles' };
+        for (const id of value) {
+            if (!isSnowflakeOrNull(id) || !id) return { ok: false, error: 'autorole must contain Discord role IDs (no nulls)' };
         }
-        if (key === 'emoji') {
-            if (!isStr(value, 64)) return { ok: false, error: 'Invalid emoji' };
-            return { ok: true, value };
-        }
-        if (key === 'style') {
-            if (!BUTTON_STYLES.includes(value)) return { ok: false, error: `Style must be one of: ${BUTTON_STYLES.join(', ')}` };
-            return { ok: true, value };
-        }
-        return { ok: false, error: `verifyButton.${key} is unknown` };
+        return { ok: true, value: { roleIds: value } };
     },
     leveling: (key, value) => {
         switch (key) {
@@ -290,8 +288,8 @@ function validateUpdate(dotPath, value) {
     const validator = SECTION_VALIDATORS[section];
     if (!validator) return { ok: false, error: `Unknown section: ${section}` };
 
-    // Array sections (levelRoles / ticketCategories / products) — always a whole array.
-    if (['levelRoles', 'ticketCategories', 'products'].includes(section)) {
+    // Array sections (levelRoles / ticketCategories / products / autorole) — always a whole array.
+    if (['levelRoles', 'ticketCategories', 'products', 'autorole'].includes(section)) {
         if (parts.length !== 1) return { ok: false, error: `${section} can only be set as a whole array` };
         const r = validator('__array__', value);
         return r.ok ? { ok: true, section, key: null, value: r.value } : r;
@@ -1260,7 +1258,7 @@ function createDashHandler({ client, token, log = () => {} }) {
 
                 // ========================================================
                 // ==== v3.21.0: QUICK START (WEB)                      ====
-                // ==== Parity with /setup-ticket-panel & /setup-verify  ====
+                // ==== Parity with /setup-ticket-panel  ====
                 // ========================================================
 
                 // ---- Install a ticket panel to a channel (parity with /setup-ticket-panel) ----
@@ -1342,55 +1340,11 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return sendJson(res, 201, { ok: true, panel: saved, url: sent.url });
                 }
 
-                // ---- Install a verification panel to a channel (parity with /setup-verify) ----
-                // Identical render: verifyTitle/verifyBody embed + button from
-                // config.verifyButton — same config source, exactly the same output.
-                if (method === 'POST' && rest[0] === 'verify-panel' && rest.length === 1) {
-                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
-                    const config = getConfig(guildId);
-
-                    if (!config.roles.verified) {
-                        return sendJson(res, 422, { error: 'The Verified role is not set yet — fill in Quick Start step 2 (Verified Role) first.' });
-                    }
-
-                    const channelId = String(body?.channelId || '');
-                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'channelId is not valid' });
-                    const channel = await client.channels.fetch(channelId).catch(() => null);
-                    if (!channel || channel.type !== ChannelType.GuildText) {
-                        return sendJson(res, 400, { error: 'The channel must be a text channel' });
-                    }
-
-                    const embed = new EmbedBuilder()
-                        .setTitle(config.messages.verifyTitle)
-                        .setDescription(String(config.messages.verifyBody || '').replace(/\{server\}/g, g.name))
-                        .setColor(0x2ecc71)
-                        .setFooter({
-                            text: client.user?.username || 'Community Bot',
-                            iconURL: client.user?.displayAvatarURL({ dynamic: true })
-                        })
-                        .setTimestamp();
-                    const btnConfig = config.verifyButton || {};
-                    const styleMap = {
-                        Primary: ButtonStyle.Primary,
-                        Secondary: ButtonStyle.Secondary,
-                        Success: ButtonStyle.Success,
-                        Danger: ButtonStyle.Danger
-                    };
-                    const verifyBtn = new ButtonBuilder()
-                        .setCustomId('btn_verify')
-                        .setLabel(String(btnConfig.label || 'Verify Me').slice(0, 80))
-                        .setEmoji(btnConfig.emoji || '✅')
-                        .setStyle(styleMap[btnConfig.style] || ButtonStyle.Success);
-                    const row = new ActionRowBuilder().addComponents(verifyBtn);
-
-                    const sent = await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
-                    if (!sent) {
-                        return sendJson(res, 502, { error: 'Failed to send the panel — make sure the bot has Send Messages + Embed Links permissions in that channel.' });
-                    }
-                    log(`[dash] verification panel installed in ${channelId} (${guildId}) by ${body?.actor?.tag || 'unknown'}`);
-                    return sendJson(res, 201, { ok: true, messageId: sent.id, url: sent.url });
-                }
+                // ---- v3.22.0: POST /guilds/:id/verify-panel REMOVED ----
+                // The dedicated verification feature was deleted — "verified"
+                // is now a role on a self-role panel (install via the ticket
+                // panel pattern or /setup-selfrole). Old dashboard builds that
+                // still call this endpoint get the generic 404 below.
             }
 
             return sendJson(res, 404, { error: 'Endpoint not found' });

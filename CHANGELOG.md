@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.22.0] — 2026-09-15
+
+### Changed — 🎭 ONE UNIFIED ROLE SYSTEM: Unverified marker + auto-role on join + self-role panels
+
+The three "ways to get a role" (verification, self-role, join auto-role) were systemically the same feature implemented three times. They are now ONE system: **every role grant flows through the Role Engine, and verification is simply "receiving your first role" — from any source.**
+
+- 🟠 **UNIVERSAL UNVERIFIED RULE:** a member holding the **Unverified marker role** (`/set-role unverified`) is automatically unmarked the moment they receive **any other role** — a self-role panel click, a level-up reward, a VIP purchase, a boost, an admin granting it manually, or even another bot. Silent removal + the standard ROLE_UPDATE server log (admin's choice). Roles the system itself grants at join are exempt, so `@Member + @Unverified` at join doesn't "verify" everyone instantly.
+- 🟠 **`/set-autorole` (NEW, Dyno-style):** manage the roles granted automatically to every new member (`action:add / remove / list`, max 10, same validation as `/set-role`). The Unverified marker is granted on join on top of this list.
+- 🟠 **`src/services/roleEngine.js` (NEW):** the single gateway for every role grant/revoke — @everyone / managed / hierarchy checks, idempotency, batch-with-per-role-retry, structured results, actionable failure logs. Migrated call sites: join auto-role, self-role buttons & selects, level-up rewards. (Booster/VIP/product flows keep their hardened custom logic by design.)
+- 🟠 **THE DEDICATED VERIFICATION FEATURE WAS REMOVED** (admin's decision — "verified is just another role on a self-role panel"): `/setup-verify`, `/set-verify-button`, the `btn_verify` handler (now a deprecation stub that guides admins to `/setup-selfrole` + `/selfrole-add`), `POST /guilds/:id/verify-panel` on the DASH API, and the `verifyButton`/`verifyTitle`/`verifyBody` config (auto-cleaned from old configs on load; `roles.unverified` stays as the marker). **Migration for existing servers:** create a self-role panel and add your Verified role to it — 2 commands, detailed in the stub reply and in `/help`.
+- 🟢 **Dashboard web parity:** Quick Start step 2 is now the Unverified marker, step 5 links to the Self Roles module (replaces "Install Verification"); the General module gained an **Auto-Role on Join** list editor and lost the verify-button section; `PUT /guilds/:id/config` accepts `autorole` as a whole array; the landing feature card was updated.
+- 🟢 Default welcome text: "Please verify yourself" → "Pick up a role to gain full access" (verification is no longer button-based).
+- 🟢 Tests: **727** (was 698) — new `tests/unit/unifiedRoles.test.js` (engine behaviors, the universal rule incl. join-exemption & boost counting, join grant, `/set-autorole` add/remove/list, the stub, anti-regression pins).
+
 ## [3.21.2] — 2026-09-15
 
 ### Fixed — 🟠 EDITING `.env` AFTER A BUILD NOW WORKS WITH A PLAIN RESTART

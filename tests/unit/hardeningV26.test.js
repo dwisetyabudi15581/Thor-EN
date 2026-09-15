@@ -135,6 +135,8 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
     const { getConfig } = require('../../src/data/configManager');
     // MIXED config: leftover v1 flat keys + v2 modern fields — previously the
     // auto-save migration only wrote the 5 main keys → ticketCategories/leveling were lost from disk.
+    // v3.22.0: verifyButton is REMOVED (the verification feature was deleted) —
+    // the fixture now uses autorole (its replacement) as the modern field.
     writeDataJSON('config/g_v26.json', {
         verifiedRoleId: 'r_verified_old',
         invoiceChannelId: 'c_invoice_old',
@@ -145,17 +147,18 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
             { id: 'jasa', label: 'Jasa', emoji: '🛠️', style: 'Success', requiresKey: false, isDefault: false }
         ],
         leveling: { enabled: true, xpPerMessage: 25 },
-        verifyButton: { label: 'Klik Aku', style: 'Danger' },
+        autorole: { roleIds: ['r_member'] },
         customFieldAdmin: 'preserve-me'
     });
 
     const config = getConfig('g_v26');
-    // Flat v1 → dipindah ke nested
-    assert.strictEqual(config.roles.verified, 'r_verified_old');
+    // Flat v1 → dipindah ke nested. v3.22.0: verifiedRoleId is no longer mapped
+    // anywhere (the verified role concept was removed).
+    assert.strictEqual(config.roles.verified, undefined, 'v3.22.0: verified is dropped (feature removed)');
     assert.strictEqual(config.channels.invoice, 'c_invoice_old');
     // Modern fields must be present in the merged result
     assert.strictEqual(config.leveling.enabled, true);
-    assert.strictEqual(config.verifyButton.label, 'Klik Aku');
+    assert.deepStrictEqual(config.autorole.roleIds, ['r_member']);
     assert.strictEqual(config.customFieldAdmin, 'preserve-me');
     const ids = config.ticketCategories.map(c => c.id);
     assert.ok(ids.includes('jasa'), 'custom ticketCategories must be preserved');

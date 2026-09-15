@@ -30,6 +30,9 @@ const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
 // v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
+// v3.22.0: universal Unverified rule — the Role Engine + guild config.
+const { revokeRoles, joinRoleIds } = require('../../services/roleEngine');
+const { getConfig } = require('../../data/configManager');
 // v3.9.49: boost notifications (server-booster channel + server log + history).
 // v3.9.59: applyBoostRole — booster auto role (called AFTER the notification
 // so the history stays recorded even when the role assignment fails).
@@ -76,6 +79,41 @@ async function onEvent(oldMember, newMember) {
             const removed = [...oldMember.roles.cache.values()].filter(
                 r => !newMember.roles.cache.has(r.id)
             );
+
+            // === v3.22.0: UNIVERSAL UNVERIFIED RULE ===
+            // A member who holds the Unverified marker role is considered
+            // verified the moment they receive ANY other role — from ANY
+            // source: a self-role panel, an admin granting it manually,
+            // leveling, a VIP purchase, a boost, or another bot. The Unverified
+            // role is removed silently (admin's choice: silent + logged).
+            //
+            // Exemptions (roles that do NOT count as the "first role"):
+            //   - the Unverified role itself (granted at join)
+            //   - the join roles the system granted at member join (the
+            //     /set-autorole list) — otherwise granting @Member + @Unverified
+            //     at join would instantly "verify" everyone and the marker
+            //     would be useless.
+            const config = getConfig(newMember.guild.id);
+            const unverifiedId = config.roles.unverified;
+            if (
+                unverifiedId &&
+                added.length > 0 &&
+                newMember.roles.cache.has(unverifiedId) &&
+                added.some(r => r.id !== unverifiedId && !joinRoleIds(config).includes(r.id))
+            ) {
+                const res = await revokeRoles(newMember, [unverifiedId], {
+                    reason: 'Unverified marker removed automatically — first role received'
+                });
+                if (res.revoked.length > 0) {
+                    console.log(
+                        `✅ [auto-verify] ${user.tag} received a role — Unverified marker removed.`
+                    );
+                }
+                // The removal itself fires guildMemberUpdate again → the standard
+                // ROLE_UPDATE server log below records it on that pass (➖ Unverified).
+                // No DM, no announcement — admin's choice: silent + logged.
+            }
+
             if (added.length > 0 || removed.length > 0) {
                 const lines = [];
                 if (added.length > 0) lines.push(`➕ ${added.map(r => `\`${r.name}\``).join(', ')}`);

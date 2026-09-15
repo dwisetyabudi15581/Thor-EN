@@ -231,7 +231,7 @@ test('dash: PUT config valid — saved & read back', async () => {
         body: {
             actor: { id: '42', tag: 'tester' },
             updates: {
-                'roles.verified': '888000111222333444',
+                'roles.unverified': '888000111222333444',
                 'channels.welcome': '777000111222333444',
                 'messages.welcomeTitle': 'HELLO FROM DASH',
                 'leveling.enabled': true,
@@ -246,7 +246,7 @@ test('dash: PUT config valid — saved & read back', async () => {
 
     // Read back via the dashboard — the values stick
     const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
-    assert.strictEqual(dash.config.roles.verified, '888000111222333444');
+    assert.strictEqual(dash.config.roles.unverified, '888000111222333444');
     assert.strictEqual(dash.config.channels.welcome, '777000111222333444');
     assert.strictEqual(dash.config.messages.welcomeTitle, 'HELLO FROM DASH');
     assert.strictEqual(dash.config.leveling.enabled, true);
@@ -507,7 +507,7 @@ test('dash: dashboard payload includes commands (list + disabled + protected)', 
     const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
     assert.strictEqual(res.status, 200);
     const data = await res.json();
-    assert.strictEqual(data.commands.list.length, 93, 'all commands from the registry');
+    assert.strictEqual(data.commands.list.length, 92, 'all commands from the registry');
     assert.ok(Array.isArray(data.commands.disabled), 'disabled is always an array');
     assert.ok(data.commands.protected.includes('commands'), '/commands is disable-proof');
     // Every command has a valid domain (for Dyno-style UI grouping)
@@ -522,7 +522,7 @@ test('dash: PUT /commands — save the disabled list', async () => {
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.deepStrictEqual(data.disabled, ['giveaway', 'poll']);
-    assert.strictEqual(data.total, 93);
+    assert.strictEqual(data.total, 92);
 
     // Read back through the payload
     const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
@@ -787,24 +787,39 @@ test('dash: POST /panels categoryIds with no match → 400', async () => {
     assert.strictEqual(res.status, 400);
 });
 
-test('dash: POST /verify-panel without roles.verified → 422 (parity with /setup-verify)', async () => {
-    await api('PUT', `/guilds/${GUILD_ID}/config`, { body: { updates: { 'roles.verified': null } } });
+test('dash: v3.22.0 — POST /verify-panel REMOVED → 404 (verification is now a self-role panel)', async () => {
     const res = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
         body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
     });
-    assert.strictEqual(res.status, 422);
-    assert.match((await res.json()).error, /Verified role/i);
+    assert.strictEqual(res.status, 404);
 });
 
-test('dash: POST /verify-panel valid → 201 (embed + verification button sent)', async () => {
+test('dash: v3.22.0 — PUT config verifyButton.* → 422 (section removed)', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'verifyButton.label': 'X' } }
+    });
+    assert.strictEqual(res.status, 422);
+});
+
+test('dash: v3.22.0 — PUT config autorole (whole array) → 200 & read back', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            actor: { id: '42', tag: 'tester' },
+            updates: { autorole: ['111000222333444555', '222000333444555666'] }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.deepStrictEqual(dash.config.autorole.roleIds, ['111000222333444555', '222000333444555666']);
+    // reset
     await api('PUT', `/guilds/${GUILD_ID}/config`, {
-        body: { updates: { 'roles.verified': '888000111222333444' } }
+        body: { actor: { id: '42', tag: 'tester' }, updates: { autorole: [] } }
     });
-    const res = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
-        body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+});
+
+test('dash: v3.22.0 — PUT config autorole invalid (null entry) → 422', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { autorole: ['111000222333444555', null] } }
     });
-    assert.strictEqual(res.status, 201);
-    const data = await res.json();
-    assert.ok(data.ok);
-    assert.strictEqual(typeof data.messageId, 'string');
+    assert.strictEqual(res.status, 422);
 });

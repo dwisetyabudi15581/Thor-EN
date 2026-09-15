@@ -137,7 +137,14 @@ function makeWorld({ channels = {}, auditEntries = [] } = {}) {
             createdTimestamp: Date.now() - 90 * 86400000,
             displayAvatarURL: () => 'https://cdn.example/avatar.png'
         },
-        roles: { add: async r => roleAdds.push(r.id) }
+        // v3.22.0: the Role Engine passes role IDs (or arrays of IDs) — exactly
+        // what discord.js accepts. Normalize both shapes here.
+        roles: {
+            add: async r => {
+                const list = Array.isArray(r) ? r : [r];
+                roleAdds.push(...list.map(x => (typeof x === 'string' ? x : x.id)));
+            }
+        }
     };
     return { guild, member, roleAdds };
 }

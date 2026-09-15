@@ -27,7 +27,9 @@ export type ModuleFormProps = {
 };
 
 /* ============================================================
- * MODULE: General (roles, channels, messages, verify button, colors)
+ * MODULE: General (roles, channels, messages, auto-role on join, colors)
+ * v3.22.0: the verify button section was REPLACED by the Auto-Role editor
+ * (parity with /set-autorole) and the Unverified marker explanation.
  * ============================================================ */
 
 const TEMPLATE_VARS = (
@@ -42,17 +44,59 @@ const TEMPLATE_VARS = (
 
 export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
   const c = draft.config;
+  // v3.22.0: local picker state for the auto-role list editor.
+  const [autorolePick, setAutorolePick] = useState<string | null>(null);
+  const autoroleIds = c.autorole?.roleIds ?? [];
+
+  const addAutorole = () => {
+    if (!autorolePick || autoroleIds.includes(autorolePick)) return;
+    setConfig("autorole", [...autoroleIds, autorolePick]);
+    setAutorolePick(null);
+  };
+  const removeAutorole = (id: string) => {
+    setConfig("autorole", autoroleIds.filter((r) => r !== id));
+  };
+
   return (
     <div className="space-y-5">
-      <Section title="Key Roles" desc="Roles used by the verification system and bot admin access. Pick from the server's role list.">
-        <Field label="Verified Role" hint="Granted automatically after a member clicks the verify button.">
-          <RoleSelect value={c.roles.verified ?? null} onChange={(v) => setConfig("roles.verified", v)} roles={meta.roles} />
-        </Field>
-        <Field label="Unverified Role" hint="A new member's starting role before verification (optional).">
+      <Section title="Key Roles" desc="The Unverified marker and the bot admin role. Pick from the server's role list.">
+        <Field label="Unverified Marker Role" hint="Granted automatically on join; removed automatically the moment the member receives ANY other role (self-role, level role, admin grant…).">
           <RoleSelect value={c.roles.unverified ?? null} onChange={(v) => setConfig("roles.unverified", v)} roles={meta.roles} />
         </Field>
         <Field label="Bot Admin Role" hint="Holders of this role can use every admin command on this server.">
           <RoleSelect value={c.roles.admin ?? null} onChange={(v) => setConfig("roles.admin", v)} roles={meta.roles} />
+        </Field>
+      </Section>
+
+      <Section title="Auto-Role on Join" desc="Roles granted automatically to every new member (≙ /set-autorole, max 10). The Unverified marker above is granted too when set — it is NOT part of this list.">
+        <div className="md:col-span-2">
+          <div className="flex flex-wrap gap-2">
+            {autoroleIds.length === 0 ? (
+              <span className="text-xs text-zinc-500">No join roles yet — add one below (e.g. @Member).</span>
+            ) : (
+              autoroleIds.map((id) => (
+                <span key={id} className="flex items-center gap-1 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300">
+                  <span className="text-zinc-500">@</span>
+                  {meta.roles.find((r) => r.id === id)?.name ?? id}
+                  <button type="button" onClick={() => removeAutorole(id)} className="ml-1 text-zinc-500 hover:text-red-400" aria-label="Remove role">×</button>
+                </span>
+              ))
+            )}
+          </div>
+        </div>
+        <Field label="Add a role to the join list" hint={`${autoroleIds.length}/10 roles` + (c.roles.unverified ? " — the Unverified marker is granted automatically on top of this list." : "")}>
+          <div className="flex gap-2">
+            <RoleSelect value={autorolePick} onChange={setAutorolePick} roles={meta.roles} placeholder="— pick a role —" />
+            <Button
+              type="button"
+              onClick={addAutorole}
+              disabled={!autorolePick || autoroleIds.includes(autorolePick) || autoroleIds.length >= 10}
+              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add
+            </Button>
+          </div>
         </Field>
       </Section>
 
@@ -80,7 +124,7 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
         </Field>
       </Section>
 
-      <Section title="Welcome & Verification Messages" desc={TEMPLATE_VARS}>
+      <Section title="Welcome & Goodbye Messages" desc={TEMPLATE_VARS}>
         <Field label="Welcome Title">
           <TextInput value={c.messages.welcomeTitle} onChange={(v) => setConfig("messages.welcomeTitle", v)} placeholder="👋 WELCOME!" />
         </Field>
@@ -97,32 +141,6 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
             <TextArea value={c.messages.goodbyeBody} onChange={(v) => setConfig("messages.goodbyeBody", v)} rows={4} />
           </Field>
         </div>
-        <Field label="Verification Embed Title">
-          <TextInput value={c.messages.verifyTitle} onChange={(v) => setConfig("messages.verifyTitle", v)} />
-        </Field>
-        <Field label="Verify Button Label">
-          <TextInput value={c.verifyButton.label} onChange={(v) => setConfig("verifyButton.label", v)} />
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Verification Embed Body">
-            <TextArea value={c.messages.verifyBody} onChange={(v) => setConfig("messages.verifyBody", v)} rows={3} />
-          </Field>
-        </div>
-        <Field label="Verify Button Emoji" hint="Example: ✅ or :custom_emoji:">
-          <TextInput value={c.verifyButton.emoji} onChange={(v) => setConfig("verifyButton.emoji", v)} />
-        </Field>
-        <Field label="Verify Button Color">
-          <Select
-            value={c.verifyButton.style}
-            onChange={(v) => setConfig("verifyButton.style", v)}
-            options={[
-              { value: "Primary", label: "Blue (Primary)" },
-              { value: "Secondary", label: "Gray (Secondary)" },
-              { value: "Success", label: "Green (Success)" },
-              { value: "Danger", label: "Red (Danger)" },
-            ]}
-          />
-        </Field>
       </Section>
 
       <Section title="Bot Embed Colors" desc="Embed edge colors used by all of the bot's notifications on this server.">

@@ -17,6 +17,11 @@
 
 const { MessageFlags } = require('discord.js');
 const { getPanel, buildPanelComponents } = require('../commands/_shared');
+// v3.22.0: the Role Engine — single gateway for every role grant/revoke.
+// Self-role panels, verification, auto-role on join, VIP purchases… all
+// funnel through here so hierarchy/managed/@everyone checks + failure logs
+// are identical everywhere.
+const { grantRoles, revokeRoles } = require('../services/roleEngine');
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -81,41 +86,62 @@ async function handleSelfRoleButton(interaction) {
     const member = interaction.member;
     const hasRole = member.roles.cache.has(roleId);
 
-    try {
-        if (panel.exclusive && !hasRole) {
-            // Exclusive mode: remove all other panel roles first, then add this one
-            const toRemove = panel.roles
-                .map(r => r.roleId)
-                .filter(rid => rid !== roleId && member.roles.cache.has(rid));
-            if (toRemove.length > 0) {
-                await member.roles.remove(toRemove);
-            }
-            await member.roles.add(roleId);
-            const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ');
+    // v3.22.0: all grant/revoke calls go through the Role Engine — same
+    // checks, same failure logging as every other feature. Granting a role
+    // here ALSO removes the member's Unverified marker automatically (the
+    // universal rule in guildMemberUpdate) — no special handling needed.
+    if (panel.exclusive && !hasRole) {
+        // Exclusive mode: remove all other panel roles first, then add this one
+        const toRemove = panel.roles
+            .map(r => r.roleId)
+            .filter(rid => rid !== roleId && member.roles.cache.has(rid));
+        const removeRes = toRemove.length > 0
+            ? await revokeRoles(member, toRemove, { reason: 'self-role panel (exclusive switch)' })
+            : null;
+        const addRes = await grantRoles(member, [roleId], { reason: 'self-role panel' });
+        if (!addRes.ok || (removeRes && !removeRes.ok)) {
             return interaction.reply({
-                content: `✅ Role ${role} added.${toRemove.length > 0 ? `\n↳ Other roles removed: ${removedMentions}` : ''}`,
+                content: `❌ Failed to change the role. Make sure the bot's role is ABOVE the ${role} role.`,
                 flags: MessageFlags.Ephemeral
             });
-        } else if (panel.exclusive && hasRole) {
-            // Exclusive + already has it → remove
-            await member.roles.remove(roleId);
-            return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
-        } else if (!panel.exclusive && !hasRole) {
-            // Multi + doesn't have it → add
-            await member.roles.add(roleId);
-            return interaction.reply({ content: `✅ Role ${role} added.`, flags: MessageFlags.Ephemeral });
-        } else {
-            // Multi + already has it → remove (toggle)
-            await member.roles.remove(roleId);
-            return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
         }
-    } catch (err) {
-        console.error('Self-role button error:', err.message);
+        const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ');
         return interaction.reply({
-            content: `❌ Failed to change the role. Make sure the bot's role is ABOVE the ${role} role.`,
+            content: `✅ Role ${role} added.${toRemove.length > 0 ? `\n↳ Other roles removed: ${removedMentions}` : ''}`,
             flags: MessageFlags.Ephemeral
         });
     }
+    if (panel.exclusive && hasRole) {
+        // Exclusive + already has it → remove
+        const res = await revokeRoles(member, [roleId], { reason: 'self-role panel (toggle off)' });
+        if (!res.ok) {
+            return interaction.reply({
+                content: `❌ Failed to remove the role. Make sure the bot's role is ABOVE the ${role} role.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+        return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
+    }
+    if (!panel.exclusive && !hasRole) {
+        // Multi + doesn't have it → add
+        const res = await grantRoles(member, [roleId], { reason: 'self-role panel' });
+        if (!res.ok) {
+            return interaction.reply({
+                content: `❌ Failed to give you the role. Make sure the bot's role is ABOVE the ${role} role.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+        return interaction.reply({ content: `✅ Role ${role} added.`, flags: MessageFlags.Ephemeral });
+    }
+    // Multi + already has it → remove (toggle)
+    const res = await revokeRoles(member, [roleId], { reason: 'self-role panel (toggle off)' });
+    if (!res.ok) {
+        return interaction.reply({
+            content: `❌ Failed to remove the role. Make sure the bot's role is ABOVE the ${role} role.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+    return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
 }
 
 // ====================================================
@@ -151,11 +177,14 @@ async function handleSelfRoleSelect(interaction) {
         const toRemoveExclusive = panelRoleIds.filter(rid => rid !== targetRoleId && member.roles.cache.has(rid));
         const toAddExclusive = targetRoleId && !member.roles.cache.has(targetRoleId) ? [targetRoleId] : [];
 
-        try {
-            if (toRemoveExclusive.length > 0) await member.roles.remove(toRemoveExclusive);
-            if (toAddExclusive.length > 0) await member.roles.add(toAddExclusive);
-        } catch (err) {
-            console.error('Self-role select (exclusive) error:', err.message);
+        // v3.22.0: Role Engine (same gateway as every other feature).
+        const removeRes = toRemoveExclusive.length > 0
+            ? await revokeRoles(member, toRemoveExclusive, { reason: 'self-role select (exclusive)' })
+            : null;
+        const addRes = toAddExclusive.length > 0
+            ? await grantRoles(member, toAddExclusive, { reason: 'self-role select (exclusive)' })
+            : null;
+        if ((removeRes && !removeRes.ok) || (addRes && !addRes.ok)) {
             return interaction.reply({
                 content: `❌ Failed to change the roles. Make sure the bot's role is ABOVE the selected roles.`,
                 flags: MessageFlags.Ephemeral
@@ -200,11 +229,14 @@ async function handleSelfRoleSelect(interaction) {
     const toAdd = panelRoleIds.filter(rid => qualifiedSelectedIds.has(rid) && !member.roles.cache.has(rid));
     const toRemove = panelRoleIds.filter(rid => !qualifiedSelectedIds.has(rid) && member.roles.cache.has(rid));
 
-    try {
-        if (toRemove.length > 0) await member.roles.remove(toRemove);
-        if (toAdd.length > 0) await member.roles.add(toAdd);
-    } catch (err) {
-        console.error('Self-role select error:', err.message);
+    // v3.22.0: Role Engine (same gateway as every other feature).
+    const removeRes = toRemove.length > 0
+        ? await revokeRoles(member, toRemove, { reason: 'self-role select' })
+        : null;
+    const addRes = toAdd.length > 0
+        ? await grantRoles(member, toAdd, { reason: 'self-role select' })
+        : null;
+    if ((removeRes && !removeRes.ok) || (addRes && !addRes.ok)) {
         return interaction.reply({
             content: `❌ Failed to change the roles. Make sure the bot's role is ABOVE the selected roles.`,
             flags: MessageFlags.Ephemeral

@@ -420,18 +420,23 @@ async function hookLeveling(message) {
         // Check which roles the user doesn't have yet
         const toAdd = roleIds.filter(id => !message.member.roles.cache.has(id));
         if (toAdd.length > 0) {
-            try {
-                await message.member.roles.add(toAdd);
+            // v3.22.0: level-role grants go through the Role Engine — the same
+            // gateway as self-role/auto-role, with hierarchy/managed checks and
+            // actionable failure logs. Granting a level role also removes the
+            // member's Unverified marker automatically (universal rule).
+            const { grantRoles } = require('../../services/roleEngine');
+            const res = await grantRoles(message.member, toAdd, {
+                reason: `level up — reached level ${newLevel}`
+            });
+            if (res.granted.length > 0) {
                 console.log(
-                    `📊 Granted ${toAdd.length} role(s) to ${message.author.tag} (level ${newLevel}): ${toAdd.join(', ')}`
+                    `📊 Granted ${res.granted.length} role(s) to ${message.author.tag} (level ${newLevel}): ${res.granted.join(', ')}`
                 );
                 try {
                     await message.author.send(
                         `🎉 You got new role(s) in **${message.guild.name}** for reaching Level ${newLevel}!`
                     );
                 } catch (_) {}
-            } catch (err) {
-                console.warn(`⚠️ Failed to grant level role(s): ${err.message}`);
             }
         }
     }

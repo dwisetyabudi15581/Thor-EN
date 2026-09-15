@@ -1,6 +1,6 @@
 /**
  * Unit tests for the Phase 1+2+3 features:
- * - config.verifyButton (custom label/emoji/style)
+ * - config.autorole (v3.22.0: join auto-role list — replaces verifyButton)
  * - config.ticketCategories (default + custom)
  * - config.messages.ticketPriceHeader
  * - ticketManager.createTicket with category & isHelp flag
@@ -15,14 +15,46 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-test('configManager: verifyButton defaults applied', () => {
-    const { getConfig, DEFAULTS } = require('../../src/data/configManager');
+test('configManager: v3.22.0 — verifyButton REMOVED + autorole defaults applied', () => {
+    const { getConfig } = require('../../src/data/configManager');
     const config = getConfig('g_phase_features');
-    assert.ok(config.verifyButton, 'verifyButton should exist');
-    assert.ok(typeof config.verifyButton === 'object');
-    assert.ok('label' in config.verifyButton);
-    assert.ok('emoji' in config.verifyButton);
-    assert.ok('style' in config.verifyButton);
+    // v3.22.0: the dedicated verification feature was removed.
+    assert.strictEqual(config.verifyButton, undefined, 'verifyButton must NOT exist anymore');
+    assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle must NOT exist anymore');
+    assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody must NOT exist anymore');
+    // The join auto-role list replaces it.
+    assert.ok(config.autorole, 'autorole should exist');
+    assert.ok(Array.isArray(config.autorole.roleIds), 'autorole.roleIds should be an array');
+    assert.strictEqual(config.autorole.roleIds.length, 0, 'autorole.roleIds defaults to empty');
+});
+
+test('configManager: v3.22.0 — legacy verify config keys cleaned on load', () => {
+    const { configPathFor } = require('../../src/data/configManager');
+    const fs = require('fs');
+    const guildId = 'g_legacy_verify';
+    const file = configPathFor(guildId);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // An old config with all the removed keys.
+    fs.writeFileSync(
+        file,
+        JSON.stringify({
+            roles: { verified: '111', unverified: '222', admin: '333' },
+            messages: { verifyTitle: 'OLD', verifyBody: 'OLD BODY' },
+            verifyButton: { label: 'Old', emoji: 'x', style: 'Success' }
+        })
+    );
+    const { getConfig } = require('../../src/data/configManager');
+    const config = getConfig(guildId);
+    assert.strictEqual(config.roles.verified, undefined, 'roles.verified cleaned');
+    assert.strictEqual(config.roles.unverified, '222', 'roles.unverified KEPT (the marker role)');
+    assert.strictEqual(config.roles.admin, '333', 'roles.admin untouched');
+    assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle cleaned');
+    assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody cleaned');
+    assert.strictEqual(config.verifyButton, undefined, 'verifyButton cleaned');
+    // Cleanup the test file.
+    try {
+        fs.unlinkSync(file);
+    } catch (_) {}
 });
 
 test('configManager: ticketCategories defaults applied', () => {

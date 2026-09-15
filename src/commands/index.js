@@ -125,7 +125,8 @@ const COMMAND_TO_DOMAIN = {
     help: 'help',
 
     // config
-    'setup-verify': 'config',
+    // v3.22.0: 'setup-verify' REMOVED — verification is now a self-role panel.
+    'set-autorole': 'config',
     'setup-ticket': 'config',
     'set-role': 'config',
     'set-channel': 'config',
@@ -231,10 +232,10 @@ const COMMAND_TO_DOMAIN = {
     'update-category': 'categories',
     'update-product': 'products',
 
-    // v3.9.11 Phase 1 & 3: panels (verify button, multi-panel ticket)
+    // v3.9.11 Phase 1 & 3: panels (multi-panel ticket)
     // v3.9.30: /set-transcript-channel removed — merged into /set-channel
     // type:transcript (config domain) so admins only memorize one channel command.
-    'set-verify-button': 'panels',
+    // v3.22.0: /set-verify-button REMOVED (verification feature deleted).
     'setup-ticket-panel': 'panels',
 
     // v3.9.14: panel management (list/delete/update/refresh)

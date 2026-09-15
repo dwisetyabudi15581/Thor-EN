@@ -34,20 +34,45 @@ function getCommands() {
 
         // === PANEL SETUP ===
         {
-            name: 'setup-verify',
-            description: 'Set up the verification panel',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild
-        },
-        {
             name: 'setup-ticket',
             description: 'Set up the ticket panel & price list',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
+        // === SET AUTOROLE (v3.22.0 — Dyno-style auto-role on join) ===
+        // The dedicated verification feature was REMOVED (v3.22.0): "verified"
+        // is now just another role on a self-role panel, and the Unverified
+        // marker disappears automatically once a member receives any other
+        // role. This command manages the roles granted on join.
+        {
+            name: 'set-autorole',
+            description: 'Manage the roles granted automatically when a member joins (plus the Unverified marker)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 3,
+                    name: 'action',
+                    description: 'Add / remove a role from the join list, or view the list',
+                    required: true,
+                    choices: [
+                        { name: 'Add role', value: 'add' },
+                        { name: 'Remove role', value: 'remove' },
+                        { name: 'List', value: 'list' }
+                    ]
+                },
+                {
+                    type: 8,
+                    name: 'role',
+                    description: 'The role to add/remove (not needed for List)',
+                    required: false
+                }
+            ]
+        },
+
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (verified / unverified / admin / midman / booster)',
+            description: 'Set roles (unverified / admin / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -56,8 +81,10 @@ function getCommands() {
                     description: 'Choose the role type',
                     required: true,
                     choices: [
-                        { name: 'Verified', value: 'verified' },
-                        { name: 'Unverified', value: 'unverified' },
+                        // v3.22.0: 'verified' REMOVED — verification is now a
+                        // self-role panel; "Verified" is just a regular role the
+                        // admin adds to a panel via /selfrole-add.
+                        { name: 'Unverified (removed on first role)', value: 'unverified' },
                         { name: 'Admin', value: 'admin' },
                         // v3.9.32: midman/escrow role — handles 3-party escrow deals.
                         { name: 'Midman (Escrow)', value: 'midman' },
@@ -153,40 +180,8 @@ function getCommands() {
             ]
         },
 
-        // v3.9.11 Phase 1: verify button configurable
-        {
-            name: 'set-verify-button',
-            description: 'Customize the verification button (label, emoji, style)',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [
-                {
-                    type: 3,
-                    name: 'label',
-                    description: 'Button text (max 80 chars)',
-                    required: true,
-                    min_length: 1,
-                    max_length: 80
-                },
-                {
-                    type: 3,
-                    name: 'emoji',
-                    description: 'Button emoji (unicode or custom <:name:id>)',
-                    required: false
-                },
-                {
-                    type: 3,
-                    name: 'style',
-                    description: 'Button color',
-                    required: false,
-                    choices: [
-                        { name: '🔵 Primary (Blurple)', value: 'Primary' },
-                        { name: '⚪ Secondary (Grey)', value: 'Secondary' },
-                        { name: '🟢 Success (Green)', value: 'Success' },
-                        { name: '🔴 Danger (Red)', value: 'Danger' }
-                    ]
-                }
-            ]
-        },
+        // v3.22.0: /set-verify-button REMOVED (dedicated verification feature
+        // deleted — "verified" is now a self-role panel; see /setup-selfrole).
 
         // v3.9.11 Phase 2: ticket category management
         {
