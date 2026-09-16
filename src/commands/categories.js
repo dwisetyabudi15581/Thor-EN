@@ -1,14 +1,17 @@
 /**
  * Domain: categories
- * Slash commands: /add-category, /list-categories, /remove-category
+ * Slash commands: /add-category, /list-categories, /remove-category, /restore-category
  *
  * v3.9.11 Phase 2: Ticket category management.
  * Admins can CRUD ticket categories from Discord. Categories are used by /setup-ticket
  * to render dynamic buttons.
+ * v3.24.3: /restore-category — bring a deleted built-in category back exactly as
+ * it shipped (parity with the dashboard's "Restore" menu).
  */
 
 const { EmbedBuilder, MessageFlags, getConfig, saveConfig, resolveGuildId, logAudit, safeEditReply } = require('./_shared');
 const { isValidEmoji } = require('../infra/text');
+const { getBuiltInCategories } = require('../data/configManager');
 
 const CATEGORY_ID_REGEX = /^[a-zA-Z0-9_-]{1,30}$/;
 
@@ -283,6 +286,102 @@ module.exports = async function (interaction) {
                 `✅ Category **${categories[idx].label}** (\`${categories[idx].id}\`) successfully updated!\n\n` +
                 `📝 Changes:\n${changes.map(c => `• ${c}`).join('\n')}\n\n` +
                 `💡 Use \`/refresh-panel <id>\` to re-render installed panels.`
+        });
+    }
+
+    // === RESTORE CATEGORY (v3.24.3) ===
+    // Bring a deleted built-in category back exactly as it shipped (same
+    // id/emoji/label/style/requiresKey as a fresh install) — the Discord-side
+    // twin of the dashboard's "Restore" menu. Also clears the dismissal flags
+    // (claimGiveawayDismissed / midmanCategoryDismissed) so getConfig() keeps
+    // the category after restarts instead of treating it as admin-dismissed.
+    if (interaction.commandName === 'restore-category') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const id = interaction.options.getString('id');
+        const categories = config.ticketCategories || [];
+        const builtIns = getBuiltInCategories();
+
+        // "all" restores every missing built-in in factory order.
+        if (id === 'all') {
+            const missing = builtIns.filter((b) => !categories.some((c) => c && c.id === b.id));
+            if (missing.length === 0) {
+                return safeEditReply(interaction, {
+                    content: 'ℹ️ All built-in categories are already present — nothing to restore.'
+                });
+            }
+            if (categories.length + missing.length > 25) {
+                return safeEditReply(interaction, {
+                    content: `❌ Restoring all ${missing.length} built-in categories would exceed the 25-category limit (currently ${categories.length}). Remove a custom category first.`
+                });
+            }
+            config.ticketCategories = [...categories, ...missing];
+            for (const b of missing) {
+                if (b.id === 'claim_giveaway') delete config.claimGiveawayDismissed;
+                if (b.id === 'midman') delete config.midmanCategoryDismissed;
+            }
+            saveConfig(guildId, config);
+
+            await logAudit(interaction.client, {
+                action: 'RESTORE_CATEGORY',
+                actorId: interaction.user.id,
+                actorTag: interaction.user.tag,
+                details: `Restore ALL built-in ticket categories: ${missing.map((b) => `**${b.label}** (\`${b.id}\`)`).join(', ')}`,
+                guildId: interaction.guild.id
+            });
+
+            return safeEditReply(interaction, {
+                content:
+                    `✅ Restored ${missing.length} built-in categor${missing.length === 1 ? 'y' : 'ies'}:\n\n` +
+                    missing.map((b) => `${b.emoji} **${b.label}** (\`${b.id}\`) — ${b.style}`).join('\n') +
+                    `\n\n💡 Use \`/refresh-panel <id>\` to re-render installed panels.`
+            });
+        }
+
+        // Single built-in category.
+        const factory = builtIns.find((b) => b.id === id);
+        if (!factory) {
+            return safeEditReply(interaction, {
+                content:
+                    `❌ \`${id}\` is not a built-in category. Only the 5 factory categories (transaction, help, report, claim_giveaway, midman) can be restored.\n` +
+                    `Custom categories cannot be restored — rebuild them with \`/add-category\`.`
+            });
+        }
+        if (categories.some((c) => c && c.id === id)) {
+            return safeEditReply(interaction, {
+                content: `ℹ️ The built-in category **${factory.label}** (\`${id}\`) already exists — nothing to restore.`
+            });
+        }
+        if (categories.length >= 25) {
+            return safeEditReply(interaction, {
+                content: '❌ Maximum of 25 categories (Discord limit: 25 buttons per message). Remove a category first.'
+            });
+        }
+
+        config.ticketCategories = [...categories, { ...factory }];
+        // Clear the dismissal flags so getConfig()'s migration does not consider
+        // this category admin-dismissed (symmetric with the dashboard path).
+        if (id === 'claim_giveaway') delete config.claimGiveawayDismissed;
+        if (id === 'midman') delete config.midmanCategoryDismissed;
+        saveConfig(guildId, config);
+
+        await logAudit(interaction.client, {
+            action: 'RESTORE_CATEGORY',
+            actorId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            details: `Restore built-in ticket category: **${factory.label}** (\`${factory.id}\`) — emoji: ${factory.emoji}, style: ${factory.style}, requiresKey: ${factory.requiresKey}`,
+            guildId: interaction.guild.id
+        });
+
+        return safeEditReply(interaction, {
+            content:
+                `✅ Built-in category restored to factory defaults!\n\n` +
+                `🎫 ID: \`${factory.id}\`\n` +
+                `📝 Label: **${factory.label}**\n` +
+                `${factory.emoji} Emoji: ${factory.emoji}\n` +
+                `🎨 Style: ${factory.style}\n` +
+                `🔑 Requires Key: ${factory.requiresKey ? 'Yes' : 'No'}\n\n` +
+                `💡 Use \`/setup-ticket\` (or \`/refresh-panel <id>\` if the panel already exists) to apply it.`
         });
     }
 };

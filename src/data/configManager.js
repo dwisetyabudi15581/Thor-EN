@@ -525,6 +525,14 @@ function fillTemplate(text, vars = {}) {
     return result;
 }
 
+// v3.24.3: the 5 factory ticket categories, exposed for /restore-category
+// (categories.js) so the Discord command and the web dashboard "Restore" menu
+// restore the EXACT same factory definition (id/emoji/label/style/requiresKey).
+// Cloned per access so callers can never mutate DEFAULTS through this export.
+function getBuiltInCategories() {
+    return DEFAULTS.ticketCategories.map((c) => ({ ...c }));
+}
+
 module.exports = {
     getConfig,
     saveConfig,
@@ -532,6 +540,7 @@ module.exports = {
     fillTemplate,
     DEFAULTS,
     configPathFor,
+    getBuiltInCategories,
     // v3.11.0: unit-test only — resets the in-process claim flag so the
     // migration flow can be exercised repeatedly within one process. Production never uses this.
     _resetLegacyClaimForTest: () => {

@@ -225,6 +225,8 @@ const COMMAND_TO_DOMAIN = {
     'add-category': 'categories',
     'list-categories': 'categories',
     'remove-category': 'categories',
+    // v3.24.3: restore a deleted built-in category (factory defaults).
+    'restore-category': 'categories',
     // v3.9.24 FIX: these two commands were previously REGISTERED in the registry + had a
     // handler + were advertised in /help, but were NOT mapped here → always errored
     // with "Command not supported by router". The bug stayed hidden because the

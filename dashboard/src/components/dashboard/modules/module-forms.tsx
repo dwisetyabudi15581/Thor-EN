@@ -264,6 +264,17 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
     setRestoreOpen(false);
     toast(`Restored "${def.label}" — press Save to apply.`);
   }
+  // v3.24.3: one-click restore of every deleted built-in (parity with
+  // /restore-category id:all on Discord).
+  function restoreAllDefaults() {
+    if (cats.length + missingDefaults.length > 25) {
+      toast("Restoring all would exceed the 25-category limit.", "err");
+      return;
+    }
+    setConfig("ticketCategories", [...cats, ...missingDefaults.map((d) => ({ ...d }))]);
+    setRestoreOpen(false);
+    toast(`Restored ${missingDefaults.length} built-in categories — press Save to apply.`);
+  }
   function moveCat(idx: number, dir: -1 | 1) {
     const to = idx + dir;
     if (to < 0 || to >= cats.length) return;
@@ -381,6 +392,15 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
                         <span aria-hidden="true">{d.emoji}</span> {d.label}
                       </button>
                     ))}
+                    {missingDefaults.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={restoreAllDefaults}
+                        className="flex w-full items-center gap-2 border-t border-zinc-800 px-3 py-2 text-left text-xs font-semibold text-emerald-400 transition-colors hover:bg-zinc-800"
+                      >
+                        <span aria-hidden="true">♻️</span> Restore all ({missingDefaults.length})
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

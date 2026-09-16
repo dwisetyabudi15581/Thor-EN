@@ -299,6 +299,30 @@ function getCommands() {
             ]
         },
 
+        // v3.24.3: restore a deleted built-in category to factory defaults —
+        // the Discord-side twin of the dashboard's "Restore" menu.
+        {
+            name: 'restore-category',
+            description: 'Restore a deleted built-in ticket category to its factory defaults',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                {
+                    type: 3,
+                    name: 'id',
+                    description: 'Which built-in category to restore',
+                    required: true,
+                    choices: [
+                        { name: '🔑 transaction — Buy Key / Transaction', value: 'transaction' },
+                        { name: '📞 help — Help', value: 'help' },
+                        { name: '⚠️ report — Report', value: 'report' },
+                        { name: '🎁 claim_giveaway — Claim Giveaway', value: 'claim_giveaway' },
+                        { name: '🤝 midman — Midman / Escrow', value: 'midman' },
+                        { name: '♻️ ALL — restore every missing built-in', value: 'all' }
+                    ]
+                }
+            ]
+        },
+
         // v3.9.11 Phase 3: multi-panel ticket (v3.9.14: full customization)
         {
             name: 'setup-ticket-panel',

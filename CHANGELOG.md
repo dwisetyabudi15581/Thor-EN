@@ -4,6 +4,30 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.24.3] — 2026-09-17
+
+### Added — ♻️ /restore-category — THE DISCORD-SIDE TWIN OF THE DASHBOARD'S "RESTORE" MENU
+
+Owner's request: *"make a restore menu on the web AND a slash command."* The web side already existed since v3.24.2 (the "Restore" dropdown in Ticket Categories); this release adds its Discord twin + a one-click "Restore all" on both sides.
+
+**New slash command:**
+
+- 🟢 **`/restore-category id:<transaction|help|report|claim_giveaway|midman|all>`** — brings a deleted built-in category back **exactly as it shipped** (same id / emoji / label / style / requiresKey as a fresh install) instead of rebuilding it by hand with `/add-category`. The `id` option is a **choice dropdown** (no typos possible), and **`all`** restores every missing built-in in one command.
+- 🟢 **Symmetric with the web:** restoring clears the dismissal flags (`claimGiveawayDismissed` / `midmanCategoryDismissed`) so `getConfig()`'s migration keeps the category after restarts — delete stays deleted, restore stays restored (no see-saw, both directions covered by tests).
+- 🟢 Guard rails: a custom id is rejected with a clear message (custom categories cannot be restored — rebuild them), an already-present built-in replies "nothing to restore" without touching the config, and the 25-category Discord limit is enforced on both the single and `all` paths.
+- 🟢 Audit trail: every restore logs a `RESTORE_CATEGORY` entry (single or the full list).
+
+**Dashboard (web):**
+
+- 🟢 The "Restore" dropdown now offers **"♻️ Restore all (N)"** when more than one built-in category is missing — parity with `/restore-category id:all`.
+
+**Under the hood:**
+
+- 🟢 `configManager.getBuiltInCategories()` — the factory list (cloned per access, mutation-proof) is now the single source of truth for both the Discord command and future consumers; the dashboard keeps its typed copy pinned by a test.
+- 🟢 `/help` (categories section, both the compact All-Commands listing and the full detail guide) now documents `/restore-category`. The compact listing was kept inside the strict 5,800-character All-Commands budget (20/20 categories still listed).
+
+**Tests:** 10 new regression tests (779 total, all passing) — registry/router contracts (6 choices incl. `all`), factory-definition restore for midman & claim_giveaway with flag clearing + cold re-read stability, `id:all` (all 5 built-ins, no duplicates, custom categories untouched, both flags cleared), nothing-to-restore info path, custom-id rejection, 25-limit refusal, and `getBuiltInCategories` mirroring `DEFAULTS`.
+
 ## [3.24.2] — 2026-09-17
 
 ### Fixed & Improved — 🎨 DASHBOARD UX PASS: TICKET CATEGORIES REWORK + BRAND CLEANUP

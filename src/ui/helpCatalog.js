@@ -225,7 +225,7 @@ const HELP_CATEGORIES = [
         short: 'Category CRUD + 3-category auto-split',
         lines: [
             '• `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`',
-            '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories`',
+            '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories` · `/restore-category`',
             '💡 With products → dropdown; without → creates a ticket directly.',
             '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
         ],
@@ -234,7 +234,7 @@ const HELP_CATEGORIES = [
             '**Categories = the doors on the panel. Each has an `id`, a `label` (what members see), an `emoji` and a button `style` (color).**',
             '• `/add-category id label emoji style requires_key` — e.g. `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`.',
             '• `requires_key:true` — the category sells products: members get the product dropdown + price list. `requires_key:false` — a plain help/report ticket.',
-            '• `/update-category id` — edit label/emoji/style/requires_key without delete+re-add · `/remove-category id` · `/list-categories`.',
+            '• `/update-category id` — edit label/emoji/style/requires_key without delete+re-add · `/remove-category id` · `/list-categories` · `/restore-category id` — restore a deleted built-in category to factory defaults.',
             '💡 A category WITH products shows a dropdown; WITHOUT products, clicking creates the ticket directly.',
             '',
             '**Auto-Split (default): tickets are organized into 3 categories** — 🎫 TRANSACTIONS (product orders) · 🎫 ASSISTANCE (help/report) · 🤝 ESCROW (midman deals). Rename them via `/edit-message` types `ticketCategoryKey`, `ticketCategoryNoKey`, `midman.category`.',
