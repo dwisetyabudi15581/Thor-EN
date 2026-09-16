@@ -11,7 +11,7 @@
 //   toast     — small notifications
 
 import { useState } from "react";
-import { Plus, Trash2, ArrowUp, ArrowDown, ChevronDown, Info, FlaskConical, Loader2 } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, ChevronDown, Info, FlaskConical, Loader2, RotateCcw, Heart, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
@@ -51,13 +51,58 @@ const TEMPLATE_VARS = (
   </span>
 );
 
-export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call, toast }: ModuleFormProps) {
+export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call, refresh, toast }: ModuleFormProps) {
   const c = draft.config;
   // v3.22.0: local picker state for the auto-role list editor.
   const [autorolePick, setAutorolePick] = useState<string | null>(null);
   // v3.24.0: Test Welcome/Goodbye buttons — POST welcome-test (parity with
   // /test-welcome): diagnosis + send the REAL embed to the configured channel.
   const [testing, setTesting] = useState<string | null>(null);
+  // v3.24.4: Reset messages (parity with /reset-message), the FULL config
+  // reset (parity with /reset-config), and Test Booster (parity with
+  // /test-booster).
+  const [resetting, setResetting] = useState<string | null>(null);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  // v3.24.4: Test Booster delivery toggle — pure simulation by default.
+  const [boosterTestLive, setBoosterTestLive] = useState(false);
+
+  // v3.24.4: one helper for every /reset-message group. The endpoint saves
+  // on the bot side, so a refresh (not setConfig) brings the draft back in
+  // sync — that also discards unsaved message edits, which is exactly what a
+  // "reset to default" should do.
+  async function resetMessages(type: "welcome" | "goodbye" | "ticket" | "ALL") {
+    if (!call || !refresh) return;
+    if (type !== "ALL" && !window.confirm(`Reset the ${type} messages back to the factory default? Unsaved edits are discarded.`)) return;
+    setResetting(type);
+    try {
+      await call("messages/reset", "POST", { type });
+      await refresh();
+      toast(type === "ALL" ? "All messages reset to default." : `${type[0].toUpperCase() + type.slice(1)} messages reset to default.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to reset the messages.", "err");
+    } finally {
+      setResetting(null);
+    }
+  }
+
+  // v3.24.4: FULL factory reset (parity with /reset-config) — typed
+  // confirmation, then the bot rebuilds the config from DEFAULTS.
+  async function fullConfigReset() {
+    if (!call || !refresh) return;
+    if (resetConfirmText !== "RESET") return;
+    setResetting("FULL");
+    try {
+      await call("config/reset", "POST", { confirm: "RESET" });
+      await refresh();
+      setResetConfirmText("");
+      toast("Full config reset — every setting is back to factory defaults.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to reset the config.", "err");
+    } finally {
+      setResetting(null);
+    }
+  }
+
   const autoroleIds = c.autorole?.roleIds ?? [];
   // v3.23.0: the "join roles removed on another role" toggle —
   // replacement for the removed Unverified marker concept.
@@ -207,6 +252,95 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
               Test {tipe === "welcome" ? "Welcome" : "Goodbye"}
             </Button>
           ))}
+          {/* v3.24.4: /test-booster parity — pure simulation by default; the
+              toggle also delivers the preview to the REAL booster channel. */}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={testing !== null || !call}
+            onClick={async () => {
+              if (!call) return;
+              setTesting("booster");
+              try {
+                const res = (await call("booster-test", "POST", { type: "add", live: boosterTestLive })) as { lines?: string[] };
+                toast(boosterTestLive ? `Booster test delivered to the channel. ${res?.lines?.[0] ?? ""}` : `Booster preview OK (nothing sent). ${res?.lines?.[0] ?? ""}`);
+              } catch (e) {
+                toast(e instanceof Error ? e.message : "Failed to test the booster message.", "err");
+              } finally {
+                setTesting(null);
+              }
+            }}
+            className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            {testing === "booster" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Heart className="h-3.5 w-3.5 text-pink-400" aria-hidden="true" />}
+            Test Booster (add)
+          </Button>
+          <label className="flex select-none items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={boosterTestLive}
+              onChange={(e) => setBoosterTestLive(e.target.checked)}
+              className="h-3.5 w-3.5 accent-pink-400"
+            />
+            Deliver to the booster channel
+          </label>
+        </div>
+      </section>
+
+      {/* v3.24.4: /reset-message parity — restore any message group to the
+          factory default without rebuilding the text by hand. */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+          <RotateCcw className="h-4 w-4 text-amber-300" aria-hidden="true" /> Reset Messages to Default
+        </h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Restore a message group to the factory text (≙ <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/reset-message</code>). Saved immediately — unsaved edits in the draft are discarded.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {(["welcome", "goodbye", "ticket", "ALL"] as const).map((type) => (
+            <Button
+              key={type}
+              size="sm"
+              variant="outline"
+              disabled={resetting !== null || !call || !refresh}
+              onClick={() => {
+                if (type === "ALL" && !window.confirm("Reset ALL messages (welcome, goodbye, ticket) to the factory defaults?")) return;
+                void resetMessages(type);
+              }}
+              className={type === "ALL" ? "border-red-900/60 bg-transparent text-red-300 hover:bg-red-950/40" : "border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"}
+            >
+              {resetting === type ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />}
+              {type === "ALL" ? "Reset ALL messages" : `Reset ${type[0].toUpperCase() + type.slice(1)}`}
+            </Button>
+          ))}
+        </div>
+      </section>
+
+      {/* v3.24.4: /reset-config parity — the Danger Zone. Typed confirmation,
+          exactly one button, no misclick path. */}
+      <section className="rounded-2xl border border-red-900/50 bg-red-950/10 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-red-300">
+          <TriangleAlert className="h-4 w-4" aria-hidden="true" /> Danger Zone — Full Reset
+        </h3>
+        <p className="mt-1 text-xs leading-relaxed text-red-200/70">
+          Deletes <span className="font-semibold">ALL settings</span> on this server — roles, channels, products, categories, messages, automod — and restores the factory defaults (≙ <code className="rounded bg-red-950/60 px-1.5 py-0.5 text-[11px]">/reset-config</code>). This cannot be undone. Type <code className="rounded bg-red-950/60 px-1.5 py-0.5 text-[11px] font-semibold">RESET</code> to enable the button.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <input
+            value={resetConfirmText}
+            onChange={(e) => setResetConfirmText(e.target.value.toUpperCase())}
+            placeholder="Type RESET to confirm"
+            className="h-9 w-44 rounded-lg border border-red-900/60 bg-zinc-950/60 px-3 text-sm tracking-widest text-red-200 placeholder:text-zinc-600 focus:border-red-500/60 focus:outline-none"
+          />
+          <Button
+            size="sm"
+            disabled={resetConfirmText !== "RESET" || resetting !== null || !call || !refresh}
+            onClick={() => void fullConfigReset()}
+            className="bg-red-600 font-semibold text-white hover:bg-red-500"
+          >
+            {resetting === "FULL" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TriangleAlert className="h-4 w-4" aria-hidden="true" />}
+            Reset EVERYTHING
+          </Button>
         </div>
       </section>
     </div>

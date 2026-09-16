@@ -90,6 +90,21 @@ const levelManager = require('../data/levelManager');
 // v3.24.0: /test-welcome from the web — the SAME builder as the real event.
 const { buildWelcomeEmbed, buildGoodbyeEmbed } = require('../bot/memberHandler');
 const { buildTicketPanel } = require('../commands/panels');
+// v3.24.4: full slash-command parity from the web — moderation guards
+// (hierarchy/timeout/purge validation, the SAME rules as the slash commands),
+// the boost preview builders, and the audit logger for the new mutation
+// endpoints (reset-message/reset-config/warn/send-message/booster-test/
+// moderate/purge).
+const {
+    validateModerationTarget,
+    validateTimeoutDuration,
+    validatePurgeAmount,
+    filterBulkDeletable,
+    isValidUserId,
+    BAN_DELETE_DAYS_MAX
+} = require('./moderationGuards');
+const { buildBoostAddEmbed, buildBoostRemoveEmbed } = require('../bot/boostHandler');
+const { logAudit } = require('./auditLog');
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -1575,6 +1590,511 @@ function createDashHandler({ client, token, log = () => {} }) {
                     const saved = panelManager.upsertPanel({ ...panelMeta, messageId: sent.id });
                     log(`[dash] ticket panel installed in ${channelId} (${guildId}, panel ${saved.id}) by ${body?.actor?.tag || 'unknown'}`);
                     return sendJson(res, 201, { ok: true, panel: saved, url: sent.url });
+                }
+
+                // ---- v3.24.4: Reset messages (parity with /reset-message) ----
+                // type: 'welcome' | 'goodbye' | 'ticket' | 'ALL' — resets that
+                // message group to the factory defaults and returns the new
+                // values so the web draft updates in place.
+                if (method === 'POST' && rest[0] === 'messages' && rest[1] === 'reset') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const GROUPS = {
+                        welcome: ['welcomeTitle', 'welcomeBody'],
+                        goodbye: ['goodbyeTitle', 'goodbyeBody'],
+                        ticket: ['ticketTitle', 'ticketBody', 'ticketPriceHeader'],
+                        ALL: Object.keys(DEFAULTS.messages)
+                    };
+                    const type = String(body?.type || '');
+                    const keys = GROUPS[type];
+                    if (!keys) {
+                        return sendJson(res, 400, { error: 'type must be one of: welcome, goodbye, ticket, ALL' });
+                    }
+                    const config = getConfig(guildId);
+                    const messages = { ...config.messages };
+                    for (const k of keys) messages[k] = DEFAULTS.messages[k];
+                    config.messages = messages;
+                    saveConfig(guildId, config);
+                    await logAudit(client, {
+                        action: 'RESET_MESSAGE',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Reset ${type === 'ALL' ? 'ALL messages' : `the ${type} message group`} to default`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] messages/${type} reset in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, type, messages });
+                }
+
+                // ---- v3.24.4: FULL config reset (parity with /reset-config) ----
+                // Dangerous by design — requires the explicit confirm string.
+                // Rebuilds the config from DEFAULTS (only the dashboard-mode
+                // essentials survive: nothing — this is a true factory reset).
+                if (method === 'POST' && rest[0] === 'config' && rest[1] === 'reset') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    if (body?.confirm !== 'RESET') {
+                        return sendJson(res, 400, { error: 'Confirmation required — send { confirm: "RESET" }' });
+                    }
+                    const fresh = JSON.parse(JSON.stringify(DEFAULTS));
+                    saveConfig(guildId, fresh);
+                    await logAudit(client, {
+                        action: 'RESET_CONFIG',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: 'FULL config reset from the web dashboard — all settings back to factory defaults',
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] FULL config reset in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, config: getConfig(guildId) });
+                }
+
+                // ---- v3.24.4: Warn a member (parity with /warn) ----
+                // Same rules as the slash command: hierarchy guard, the warn
+                // threshold auto-actions (3=timeout 1h, 5=timeout 1d, 7=kick),
+                // a DM to the member, and an audit entry.
+                if (method === 'POST' && rest[0] === 'warn' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const userId = String(body?.userId || '');
+                    const reason = normalizeNewlines(String(body?.reason || '')).trim();
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
+                    if (!reason) return sendJson(res, 400, { error: 'A reason is required' });
+                    if (reason.length > 500) return sendJson(res, 400, { error: 'Reason too long (max 500 chars)' });
+
+                    const actorId = String(body?.actor?.id || '');
+                    const actorTag = String(body?.actor?.tag || 'web dashboard');
+                    if (!SNOWFLAKE_RE.test(actorId)) return sendJson(res, 400, { error: 'Invalid actor.id' });
+
+                    const member = await g.members.fetch(userId).catch(() => null);
+                    if (!member) return sendJson(res, 404, { error: 'That user is not on this server' });
+                    const actorMember = await g.members.fetch(actorId).catch(() => null);
+                    if (!actorMember) return sendJson(res, 404, { error: 'You are not on this server (actor)' });
+                    const guard = validateModerationTarget({
+                        moderatorMember: actorMember,
+                        targetMember: member,
+                        botMember: g.members?.me || null
+                    });
+                    if (!guard.ok) {
+                        const GUARD_MSG = {
+                            'not-in-guild': 'That user is not on this server.',
+                            self: 'You cannot warn yourself.',
+                            'bot-self': 'You cannot warn the bot.',
+                            'target-bot': 'You cannot warn a bot.',
+                            hierarchy: 'You cannot warn a member with a role equal to or higher than yours.',
+                            'bot-hierarchy': "The bot's role is lower than the target's highest role — move it up in Server Settings → Roles."
+                        };
+                        return sendJson(res, 403, { error: GUARD_MSG[guard.error] || guard.error });
+                    }
+
+                    const result = warnManager.addWarn(guildId, userId, {
+                        reason,
+                        warnedBy: actorId,
+                        warnedByTag: actorTag,
+                        guildId
+                    });
+
+                    // Auto-action chain (identical thresholds to /warn).
+                    let actionMsg = '';
+                    let botHierarchyWarning = false;
+                    const botMember = g.members?.me || null;
+                    if (botMember && member.roles?.highest?.position >= (botMember.roles?.highest?.position ?? 0)) {
+                        botHierarchyWarning = true;
+                    }
+                    if (result.actionAlreadyTaken) {
+                        actionMsg = 'Auto-action not repeated (the user already received the same action before).';
+                    } else if (result.actionToTake) {
+                        try {
+                            if (result.actionToTake === 'mute_1h' || result.actionToTake === 'mute_1d') {
+                                const durationMin = result.actionToTake === 'mute_1h' ? 60 : 1440;
+                                await member.timeout(durationMin * 60 * 1000, `Auto-action: ${result.count} warnings`);
+                                warnManager.markActionTaken(guildId, userId, result.warnEntry.id, result.actionToTake);
+                                actionMsg = `Auto-action: timeout ${durationMin === 60 ? '1 hour' : '1 day'} (${result.count} warnings)`;
+                            } else if (result.actionToTake === 'kick') {
+                                await member.kick(`Auto-action: ${result.count} warnings`);
+                                warnManager.markActionTaken(guildId, userId, result.warnEntry.id, result.actionToTake);
+                                actionMsg = `Auto-action: kicked (${result.count} warnings)`;
+                            }
+                        } catch (err) {
+                            actionMsg = `Auto-action failed: ${err.message}`;
+                        }
+                    }
+
+                    // DM the member (best-effort, like /warn).
+                    let dmOk = true;
+                    try {
+                        await member.send(
+                            `⚠️ **You received a warning in ${g.name}**\n\nReason: ${reason}\nTotal warnings: ${result.count}\n${result.actionToTake ? `Action: ${result.actionToTake}` : 'No auto-action yet (thresholds: 3=mute 1h, 5=mute 1d, 7=kick)'}`
+                        );
+                    } catch (_) { dmOk = false; }
+
+                    await logAudit(client, {
+                        action: 'WARN_ADD',
+                        actorId,
+                        actorTag,
+                        details: `Warn <@${userId}> — Reason: "${reason}" — Total: ${result.count} warn (from the web)`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] warn ${userId} in ${guildId} by ${actorTag} (count: ${result.count})`);
+                    return sendJson(res, 200, {
+                        ok: true,
+                        count: result.count,
+                        actionMsg,
+                        dmOk,
+                        botHierarchyWarning
+                    });
+                }
+
+                // ---- v3.24.4: Remove one warn (parity with /warn-remove) ----
+                if (method === 'POST' && rest[0] === 'warns' && rest[1] === 'remove') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const userId = String(body?.userId || '');
+                    const warnId = String(body?.warnId || '');
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
+                    if (!warnId) return sendJson(res, 400, { error: 'warnId is required' });
+                    const ok = warnManager.removeWarn(guildId, userId, warnId);
+                    if (!ok) return sendJson(res, 404, { error: 'Warn not found' });
+                    await logAudit(client, {
+                        action: 'WARN_REMOVE',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Remove warn \`${warnId}\` from <@${userId}> (from the web)`,
+                        guildId
+                    }).catch(() => {});
+                    return sendJson(res, 200, { ok: true });
+                }
+
+                // ---- v3.24.4: Clear all warns of a member (parity with /warn-clear) ----
+                if (method === 'POST' && rest[0] === 'warns' && rest[1] === 'clear') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const userId = String(body?.userId || '');
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
+                    const removed = warnManager.clearWarns(guildId, userId);
+                    await logAudit(client, {
+                        action: 'WARN_CLEAR',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Clear all warns of <@${userId}> (${removed} removed, from the web)`,
+                        guildId
+                    }).catch(() => {});
+                    return sendJson(res, 200, { ok: true, removed });
+                }
+
+                // ---- v3.24.4: Send a plain message (parity with /send-message) ----
+                if (method === 'POST' && rest[0] === 'send-message') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const channelId = String(body?.channelId || '');
+                    const rawMessage = String(body?.message || '');
+                    const mention = body?.mention ? String(body.mention) : '';
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+
+                    const channel = g.channels.cache.get(channelId);
+                    if (!channel) return sendJson(res, 404, { error: 'Channel not found in this guild' });
+                    if (channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'Channel must be a text channel (not voice/category/forum)' });
+                    }
+                    const perms = channel.permissionsFor?.(g.members?.me ?? null);
+                    if (!perms?.has?.(PermissionFlagsBits.SendMessages)) {
+                        return sendJson(res, 403, { error: 'The bot lacks the Send Messages permission in that channel' });
+                    }
+
+                    // Same mention whitelist as /send-message (anti injection).
+                    let mentionContent = '';
+                    if (mention) {
+                        const m = mention.trim().toLowerCase();
+                        if (m === 'everyone' || m === '@everyone') mentionContent = '@everyone';
+                        else if (m === 'here' || m === '@here') mentionContent = '@here';
+                        else if (/^<@&\d{17,20}>$/.test(mention)) mentionContent = mention;
+                        else if (/^<@!?\d{17,20}>$/.test(mention)) mentionContent = mention;
+                        else return sendJson(res, 400, { error: 'Invalid mention format — use @everyone, @here, or a pasted <@&id> / <@id> mention' });
+                    }
+
+                    const message = normalizeNewlines(rawMessage);
+                    if (message.length > 2000) {
+                        return sendJson(res, 400, { error: `Message too long (${message.length} chars, max 2000)` });
+                    }
+                    if (message.trim().length === 0 && !mentionContent) {
+                        return sendJson(res, 400, { error: 'Message cannot be empty' });
+                    }
+
+                    try {
+                        const sent = await channel.send({ content: (mentionContent ? `${mentionContent} ` : '') + message });
+                        await logAudit(client, {
+                            action: 'SEND_MESSAGE',
+                            actorId: String(body?.actor?.id || ''),
+                            actorTag: String(body?.actor?.tag || 'web dashboard'),
+                            details: `Send a message to <#${channelId}> from the web (${message.length} chars${mentionContent ? `, mention: ${mentionContent}` : ''})`,
+                            guildId
+                        }).catch(() => {});
+                        log(`[dash] send-message → #${channel.name} in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                        return sendJson(res, 200, { ok: true, messageId: sent.id, channelId });
+                    } catch (err) {
+                        return sendJson(res, 502, { error: `Failed to send: ${err.message}` });
+                    }
+                }
+
+                // ---- v3.24.4: Test the boost notification (parity with /test-booster) ----
+                // Pure simulation by default (nothing recorded); live:true ALSO
+                // delivers the preview to the REAL server-booster channel.
+                if (method === 'POST' && rest[0] === 'booster-test') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const tipe = body?.type === 'remove' ? 'remove' : 'add';
+                    const live = body?.live === true;
+                    const actorId = String(body?.actor?.id || '');
+                    if (!SNOWFLAKE_RE.test(actorId)) return sendJson(res, 400, { error: 'Invalid actor.id' });
+
+                    const config = getConfig(guildId);
+                    const configuredId = config.channels['server-booster'];
+                    const me = g.members?.me || null;
+                    const lines = [];
+                    let channel = null;
+                    if (!configuredId) {
+                        lines.push('❌ booster channel: not set yet — configure it in the General module (System Channels).');
+                    } else {
+                        channel = g.channels.cache.get(configuredId) || null;
+                        if (!channel) {
+                            lines.push(`❌ booster channel: not found (ID ${configuredId}) — deleted? Set it again in the General module.`);
+                        } else {
+                            lines.push(`✅ booster channel: #${channel.name}`);
+                            const perms = channel.permissionsFor?.(me ?? null);
+                            const canSend = perms?.has?.(PermissionFlagsBits.SendMessages) ?? false;
+                            const canEmbed = perms?.has?.(PermissionFlagsBits.EmbedLinks) ?? false;
+                            lines.push(`${canSend ? '✅' : '❌'} Send Messages · ${canEmbed ? '✅' : '❌'} Embed Links (bot permissions)`);
+                        }
+                    }
+                    lines.push(`ℹ️ Server now: Level ${g.premiumTier ?? 0} · ${g.premiumSubscriptionCount ?? 0} boost(s)`);
+
+                    // The actor plays the booster. Same builders as the live event.
+                    let member = await g.members.fetch(actorId).catch(() => null);
+                    if (!member || typeof member.user?.displayAvatarURL !== 'function') {
+                        member = {
+                            user: {
+                                id: actorId,
+                                tag: String(body?.actor?.tag || `user-${actorId}`),
+                                displayAvatarURL: () => 'https://cdn.discordapp.com/embed/avatars/0.png'
+                            }
+                        };
+                    }
+                    const embed = tipe === 'add' ? buildBoostAddEmbed(member) : buildBoostRemoveEmbed(member, Date.now() - 86400000);
+
+                    if (!live) {
+                        return sendJson(res, 200, { ok: true, lines, live: false, note: 'Preview built — nothing was sent or recorded (pure simulation).' });
+                    }
+                    if (!channel) {
+                        return sendJson(res, 422, { ok: false, lines, error: 'The booster channel is not ready — fix it first.' });
+                    }
+                    try {
+                        await channel.send({ embeds: [embed] });
+                        log(`[dash] booster-test (${tipe}, live) sent by ${body?.actor?.tag || actorId}`);
+                        return sendJson(res, 200, { ok: true, lines, live: true, sent: true, channelId: channel.id });
+                    } catch (err) {
+                        lines.push(`⚠️ Failed to send to the channel: ${err.message}`);
+                        return sendJson(res, 502, { ok: false, lines, error: `The bot cannot send to the booster channel: ${err.message}` });
+                    }
+                }
+
+                // ---- v3.24.4: Moderation actions (parity with /kick /ban /unban /timeout /untimeout) ----
+                if (method === 'POST' && rest[0] === 'moderate') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const ACTIONS = ['kick', 'ban', 'unban', 'timeout', 'untimeout'];
+                    const action = String(body?.action || '');
+                    if (!ACTIONS.includes(action)) {
+                        return sendJson(res, 400, { error: `action must be one of: ${ACTIONS.join(', ')}` });
+                    }
+                    const userId = String(body?.userId || '');
+                    const reason = normalizeNewlines(String(body?.reason || '(no reason given)')).slice(0, 500);
+                    const actorId = String(body?.actor?.id || '');
+                    const actorTag = String(body?.actor?.tag || 'web dashboard');
+                    if (!SNOWFLAKE_RE.test(actorId)) return sendJson(res, 400, { error: 'Invalid actor.id' });
+                    if (!isValidUserId(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
+
+                    const actorMember = await g.members.fetch(actorId).catch(() => null);
+                    if (!actorMember) return sendJson(res, 404, { error: 'You are not on this server (actor)' });
+                    const botMember = g.members?.me || null;
+
+                    // unban works on users NOT in the guild — separate path.
+                    if (action === 'unban') {
+                        if (userId === actorId) return sendJson(res, 403, { error: 'You cannot unban yourself.' });
+                        if (userId === botMember?.id) return sendJson(res, 403, { error: 'You cannot unban the bot.' });
+                        if (!botMember?.permissions?.has?.(PermissionFlagsBits.BanMembers)) {
+                            return sendJson(res, 403, { error: 'The bot is missing the Ban Members permission.' });
+                        }
+                        const banInfo = await g.bans.fetch(userId).catch(() => null);
+                        if (!banInfo) return sendJson(res, 404, { error: 'That user is not on this server\u2019s ban list.' });
+                        await g.bans.remove(userId, ` by ${actorTag}: ${reason}`.slice(0, 512));
+                        modLogManager.addModLog(guildId, userId, { type: 'unban', reason, moderatorId: actorId, moderatorTag: actorTag });
+                        await logAudit(client, {
+                            action: 'MOD_UNBAN',
+                            actorId,
+                            actorTag,
+                            details: `Unban \`${userId}\`${banInfo.user?.tag ? ` (${banInfo.user.tag})` : ''} — Reason: "${reason}" (from the web)`,
+                            guildId
+                        }).catch(() => {});
+                        log(`[dash] unban ${userId} in ${guildId} by ${actorTag}`);
+                        return sendJson(res, 200, { ok: true, action, userId });
+                    }
+
+                    // In-guild actions need the member + the hierarchy guard.
+                    const member = await g.members.fetch(userId).catch(() => null);
+                    const guard = validateModerationTarget({
+                        moderatorMember: actorMember,
+                        targetMember: member,
+                        botMember
+                    });
+                    if (!guard.ok) {
+                        const GUARD_MSG = {
+                            'not-in-guild': 'That user is not on this server.',
+                            self: 'You cannot moderate yourself.',
+                            'bot-self': 'You cannot moderate the bot.',
+                            'target-bot': 'You cannot moderate a bot.',
+                            hierarchy: 'You cannot moderate a member with a role equal to or higher than yours.',
+                            'bot-hierarchy': "The bot's role is lower than the target's highest role — move it up in Server Settings → Roles."
+                        };
+                        return sendJson(res, 403, { error: GUARD_MSG[guard.error] || guard.error });
+                    }
+
+                    const dmTarget = async (text) => {
+                        try { await member.send(text); return true; } catch (_) { return false; }
+                    };
+
+                    if (action === 'kick') {
+                        if (!botMember.permissions.has(PermissionFlagsBits.KickMembers)) {
+                            return sendJson(res, 403, { error: 'The bot is missing the Kick Members permission.' });
+                        }
+                        const dmOk = await dmTarget(`👢 **You were kicked from ${g.name}**\n\nReason: ${reason}\nBy: ${actorTag}\n\nYou can rejoin using the server's invite link.`);
+                        await member.kick(` by ${actorTag}: ${reason}`.slice(0, 512));
+                        modLogManager.addModLog(guildId, userId, { type: 'kick', reason, moderatorId: actorId, moderatorTag: actorTag });
+                        await logAudit(client, {
+                            action: 'MOD_KICK', actorId, actorTag,
+                            details: `Kick <@${userId}> — Reason: "${reason}" (from the web)`, guildId
+                        }).catch(() => {});
+                        log(`[dash] kick ${userId} in ${guildId} by ${actorTag}`);
+                        return sendJson(res, 200, { ok: true, action, userId, dmOk });
+                    }
+
+                    if (action === 'ban') {
+                        const deleteDays = Number(body?.deleteDays || 0);
+                        if (!Number.isInteger(deleteDays) || deleteDays < 0 || deleteDays > BAN_DELETE_DAYS_MAX) {
+                            return sendJson(res, 400, { error: `deleteDays must be 0–${BAN_DELETE_DAYS_MAX}` });
+                        }
+                        if (!botMember.permissions.has(PermissionFlagsBits.BanMembers)) {
+                            return sendJson(res, 403, { error: 'The bot is missing the Ban Members permission.' });
+                        }
+                        const dmOk = await dmTarget(`🔨 **You were BANNED from ${g.name}**\n\nReason: ${reason}\nBy: ${actorTag}${deleteDays > 0 ? `\nYour messages from the last ${deleteDays} days were also deleted.` : ''}`);
+                        await member.ban({
+                            deleteMessageSeconds: deleteDays * 86400,
+                            reason: ` by ${actorTag}: ${reason}`.slice(0, 512)
+                        });
+                        modLogManager.addModLog(guildId, userId, { type: 'ban', reason, moderatorId: actorId, moderatorTag: actorTag });
+                        await logAudit(client, {
+                            action: 'MOD_BAN', actorId, actorTag,
+                            details: `Ban <@${userId}>${deleteDays > 0 ? ` + delete ${deleteDays} days of messages` : ''} — Reason: "${reason}" (from the web)`, guildId
+                        }).catch(() => {});
+                        log(`[dash] ban ${userId} in ${guildId} by ${actorTag}`);
+                        return sendJson(res, 200, { ok: true, action, userId, dmOk });
+                    }
+
+                    if (action === 'timeout') {
+                        const minutes = Number(body?.minutes || 0);
+                        const dur = validateTimeoutDuration(minutes);
+                        if (!dur.ok) {
+                            return sendJson(res, 400, {
+                                error: dur.error === 'too-long'
+                                    ? `The maximum timeout duration is 28 days (43200 minutes).`
+                                    : 'The minimum duration is 1 minute.'
+                            });
+                        }
+                        if (!botMember.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+                            return sendJson(res, 403, { error: 'The bot is missing the Moderate Members permission.' });
+                        }
+                        await member.timeout(dur.ms, ` by ${actorTag}: ${reason}`.slice(0, 512));
+                        modLogManager.addModLog(guildId, userId, { type: 'timeout', reason, durationMs: dur.ms, moderatorId: actorId, moderatorTag: actorTag });
+                        await logAudit(client, {
+                            action: 'MOD_TIMEOUT', actorId, actorTag,
+                            details: `Timeout <@${userId}> for ${minutes} minutes — Reason: "${reason}" (from the web)`, guildId
+                        }).catch(() => {});
+                        log(`[dash] timeout ${userId} (${minutes}m) in ${guildId} by ${actorTag}`);
+                        return sendJson(res, 200, { ok: true, action, userId, minutes });
+                    }
+
+                    if (action === 'untimeout') {
+                        if (!botMember.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+                            return sendJson(res, 403, { error: 'The bot is missing the Moderate Members permission.' });
+                        }
+                        if (!member.isCommunicationDisabled?.()) {
+                            return sendJson(res, 200, { ok: true, action, userId, note: 'That member is not timed out.' });
+                        }
+                        await member.timeout(null, ` by ${actorTag}: ${reason}`.slice(0, 512));
+                        modLogManager.addModLog(guildId, userId, { type: 'untimeout', reason, moderatorId: actorId, moderatorTag: actorTag });
+                        await logAudit(client, {
+                            action: 'MOD_UNTIMEOUT', actorId, actorTag,
+                            details: `Remove the timeout of <@${userId}> — Reason: "${reason}" (from the web)`, guildId
+                        }).catch(() => {});
+                        log(`[dash] untimeout ${userId} in ${guildId} by ${actorTag}`);
+                        return sendJson(res, 200, { ok: true, action, userId });
+                    }
+                }
+
+                // ---- v3.24.4: Purge messages (parity with /purge) ----
+                if (method === 'POST' && rest[0] === 'purge') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const channelId = String(body?.channelId || '');
+                    const amount = Number(body?.amount || 0);
+                    const filterUserId = body?.userId ? String(body.userId) : '';
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+                    if (filterUserId && !SNOWFLAKE_RE.test(filterUserId)) return sendJson(res, 400, { error: 'Invalid userId filter' });
+                    const check = validatePurgeAmount(amount);
+                    if (!check.ok) {
+                        return sendJson(res, 400, { error: check.error === 'too-large' ? 'Maximum 100 messages per purge (Discord limit).' : 'Minimum 1 message.' });
+                    }
+
+                    const channel = g.channels.cache.get(channelId);
+                    if (!channel) return sendJson(res, 404, { error: 'Channel not found in this guild' });
+                    if (channel.type !== ChannelType.GuildText) {
+                        return sendJson(res, 400, { error: 'Purge only works in text channels.' });
+                    }
+                    const botMember = g.members?.me || null;
+                    if (!botMember?.permissions?.has?.(PermissionFlagsBits.ManageMessages)) {
+                        return sendJson(res, 403, { error: 'The bot is missing the Manage Messages permission.' });
+                    }
+
+                    const fetched = await channel.messages.fetch({ limit: 100 });
+                    let pool = [...fetched.values()];
+                    if (filterUserId) pool = pool.filter((m) => m.author?.id === filterUserId);
+                    pool = pool.slice(0, amount);
+                    const deletable = filterBulkDeletable(pool);
+                    const skippedOld = pool.length - deletable.length;
+
+                    if (deletable.length === 0) {
+                        return sendJson(res, 200, {
+                            ok: true,
+                            deleted: 0,
+                            note: filterUserId
+                                ? 'No deletable messages from that user found (within the last 100 messages).'
+                                : 'No deletable messages found (messages older than 14 days cannot be bulk-deleted).'
+                        });
+                    }
+                    if (deletable.length === 1) {
+                        await deletable[0].delete().catch(() => null);
+                    } else {
+                        await channel.bulkDelete(deletable, true);
+                    }
+
+                    await logAudit(client, {
+                        action: 'MOD_PURGE',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Purged ${deletable.length} messages in #${channel.name}${filterUserId ? ` (only <@${filterUserId}>'s messages)` : ''}${skippedOld > 0 ? ` — ${skippedOld} skipped (>14 days old)` : ''} (from the web)`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] purge ${deletable.length} in #${channel.name} (${guildId}) by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, deleted: deletable.length, skippedOld });
                 }
 
                 // ---- v3.22.0: POST /guilds/:id/verify-panel REMOVED ----

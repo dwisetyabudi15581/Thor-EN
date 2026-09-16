@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 import {
   Plus, Trash2, Loader2, RefreshCw, Search, ToggleLeft, ToggleRight,
   CheckCircle2, XCircle, KeyRound, Gift, BarChart3, ShieldAlert, Download,
-  Wand2, Pencil, RotateCcw,
+  Wand2, Pencil, RotateCcw, Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -935,8 +935,20 @@ const MODLOG_LABEL: Record<string, string> = {
   unban: "♻️ Unban",
 };
 
-export function ModerationModule({ draft, toast }: ModuleActionProps) {
+export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleActionProps) {
   const [warnFilter, setWarnFilter] = useState("");
+  // v3.24.4: moderation actions from the web — full /parity with the slash
+  // commands (warn/kick/ban/unban/timeout/untimeout/purge + warn management).
+  const [targetUser, setTargetUser] = useState("");
+  const [modAction, setModAction] = useState("warn");
+  const [modReason, setModReason] = useState("");
+  const [timeoutMinutes, setTimeoutMinutes] = useState("60");
+  const [banDeleteDays, setBanDeleteDays] = useState("0");
+  const [purgeChannel, setPurgeChannel] = useState<string | null>(null);
+  const [purgeAmount, setPurgeAmount] = useState("10");
+  const [purgeUser, setPurgeUser] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const warns = useMemo(() => {
     const q = warnFilter.trim().toLowerCase();
@@ -944,37 +956,181 @@ export function ModerationModule({ draft, toast }: ModuleActionProps) {
     return draft.warns.filter((w) => w.reason.toLowerCase().includes(q) || w.userId.includes(q) || w.warnedByTag.toLowerCase().includes(q));
   }, [draft.warns, warnFilter]);
 
+  async function doWarn() {
+    if (!call || !refresh) return;
+    setBusy("warn");
+    try {
+      const res = (await call("warn", "POST", { userId: targetUser.trim(), reason: modReason.trim() })) as {
+        count?: number; actionMsg?: string; dmOk?: boolean; botHierarchyWarning?: boolean;
+      };
+      const notes = [
+        res.actionMsg ? `⚡ ${res.actionMsg}` : "",
+        res.dmOk === false ? "⚠️ DM not delivered (DMs closed)." : "",
+        res.botHierarchyWarning ? "⚠️ The bot role is below the member's top role — auto-actions may fail." : "",
+      ].filter(Boolean).join(" ");
+      toast(`Warned — total ${res.count ?? "?"} warning(s). ${notes}`);
+      setTargetUser(""); setModReason("");
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to warn.", "err");
+    } finally { setBusy(null); }
+  }
+
+  async function doModerate() {
+    if (!call || !refresh) return;
+    const action = modAction;
+    if ((action === "kick" || action === "ban") && !window.confirm(`${action.toUpperCase()} ${targetUser.trim()}? This is logged in the moderation history.`)) return;
+    setBusy("moderate");
+    try {
+      const body: Record<string, unknown> = { action, userId: targetUser.trim(), reason: modReason.trim() || "(no reason given)" };
+      if (action === "timeout") body.minutes = parseInt(timeoutMinutes, 10) || 0;
+      if (action === "ban") body.deleteDays = parseInt(banDeleteDays, 10) || 0;
+      const res = (await call("moderate", "POST", body)) as { note?: string; dmOk?: boolean };
+      const label = action === "timeout" ? `timed out for ${timeoutMinutes}m` : action;
+      toast(`${targetUser.trim()} ${label}. ${res.note ?? ""} ${res.dmOk === false ? "⚠️ DM not delivered." : ""}`);
+      setTargetUser(""); setModReason("");
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : `Failed to ${action}.`, "err");
+    } finally { setBusy(null); }
+  }
+
+  async function doPurge() {
+    if (!call || !refresh || !purgeChannel) return;
+    if (!window.confirm(`Delete the last ${purgeAmount} message(s) from ${channelLabel(meta.channels, purgeChannel)}? This cannot be undone.`)) return;
+    setBusy("purge");
+    try {
+      const res = (await call("purge", "POST", {
+        channelId: purgeChannel,
+        amount: parseInt(purgeAmount, 10) || 0,
+        userId: purgeUser.trim() || undefined,
+      })) as { deleted?: number; skippedOld?: number; note?: string };
+      toast(res.deleted === 0 ? (res.note ?? "Nothing to delete.") : `Purged ${res.deleted} message(s).${res.skippedOld ? ` ${res.skippedOld} skipped (>14 days old).` : ""}`);
+      setPurgeUser("");
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to purge.", "err");
+    } finally { setBusy(null); }
+  }
+
+  async function removeWarn(warnId: string, userId: string) {
+    if (!call || !refresh) return;
+    setBusy(warnId);
+    try {
+      await call("warns/remove", "POST", { userId, warnId });
+      toast("Warn removed.");
+      setConfirmId(null);
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to remove the warn.", "err");
+    } finally { setBusy(null); }
+  }
+
+  async function clearUserWarns(userId: string) {
+    if (!call || !refresh) return;
+    setBusy(`clear:${userId}`);
+    try {
+      const res = (await call("warns/clear", "POST", { userId })) as { removed?: number };
+      toast(`Cleared ${res.removed ?? 0} warning(s) for ${userId}.`);
+      setConfirmId(null);
+      await refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to clear the warns.", "err");
+    } finally { setBusy(null); }
+  }
+
   return (
     <div className="space-y-5">
       <Section
-        title="Moderation History"
+        title="Take Action"
         desc={
           <>
-            Combines <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/warn-list</code> and
-            moderator actions (timeout/kick/ban) — the 50 most recent entries, read-only. Actions stay on Discord.
+            Every moderation slash command works here too — the same guards (role hierarchy, bot permissions) and the same moderation history as Discord. <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/warn</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/kick</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/ban</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/unban</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/timeout</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/untimeout</code>
           </>
         }
       >
-        <div className="md:col-span-2">
-          <Field label="Search Warns" hint="Filter by reason, user ID, or moderator.">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
-              <input
-                value={warnFilter}
-                onChange={(e) => setWarnFilter(e.target.value)}
-                placeholder="e.g. spam, 123456789…"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-400/50 focus:outline-none"
-              />
-            </div>
+        <Field label="Action">
+          <Select
+            value={modAction}
+            onChange={setModAction}
+            options={[
+              { value: "warn", label: "⚠️ Warn (3=timeout 1h · 5=1d · 7=kick)" },
+              { value: "timeout", label: "🔇 Timeout (mute)" },
+              { value: "untimeout", label: "🔊 Lift a timeout" },
+              { value: "kick", label: "👢 Kick" },
+              { value: "ban", label: "🔨 Ban" },
+              { value: "unban", label: "♻️ Unban (by ID)" },
+            ]}
+          />
+        </Field>
+        <Field label="Target User ID" hint="Right-click the user → Copy User ID (Developer Mode). For unban: the banned user's ID.">
+          <TextInput value={targetUser} onChange={(v) => setTargetUser(v.replace(/[^0-9]/g, ""))} placeholder="e.g. 123456789012345678" />
+        </Field>
+        {modAction === "timeout" ? (
+          <Field label="Duration (minutes)" hint="1 – 43200 (28 days, the Discord maximum).">
+            <TextInput value={timeoutMinutes} onChange={(v) => setTimeoutMinutes(v.replace(/[^0-9]/g, ""))} placeholder="60" />
           </Field>
+        ) : null}
+        {modAction === "ban" ? (
+          <Field label="Delete message history (days)" hint="0–7 days of the member's messages also deleted (Discord limit).">
+            <TextInput value={banDeleteDays} onChange={(v) => setBanDeleteDays(v.replace(/[^0-9]/g, ""))} placeholder="0" />
+          </Field>
+        ) : null}
+        <div className="md:col-span-2">
+          <Field label="Reason" hint={modAction === "warn" ? "Sent to the member via DM. Supports \n for newlines." : "Logged in the moderation history. Supports \n for newlines."}>
+            <TextArea value={modReason} onChange={setModReason} rows={2} placeholder="e.g. spamming in #general" />
+          </Field>
+        </div>
+        <div className="flex items-end md:col-span-2">
+          <Button
+            onClick={() => void (modAction === "warn" ? doWarn() : doModerate())}
+            disabled={busy !== null || !call || !refresh || !targetUser.trim() || (modAction === "warn" && !modReason.trim()) || (modAction === "timeout" && !timeoutMinutes)}
+            className={modAction === "ban" || modAction === "kick" ? "bg-red-600 font-semibold text-white hover:bg-red-500" : "bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"}
+          >
+            {busy === "warn" || busy === "moderate" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ShieldAlert className="h-4 w-4" aria-hidden="true" />}
+            {modAction === "warn" ? "Warn the member" : modAction.charAt(0).toUpperCase() + modAction.slice(1) + " the member"}
+          </Button>
+        </div>
+      </Section>
+
+      <Section
+        title="Purge Messages"
+        desc={<>Bulk-delete the newest messages in a channel (≙ <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/purge</code>). Messages older than 14 days are skipped (Discord bulk-delete limit).</>}
+      >
+        <Field label="Channel">
+          <ChannelSelect value={purgeChannel} onChange={setPurgeChannel} channels={meta.channels} />
+        </Field>
+        <Field label="Amount (1–100)" hint="Discord caps a single purge at 100 messages.">
+          <TextInput value={purgeAmount} onChange={(v) => setPurgeAmount(v.replace(/[^0-9]/g, ""))} placeholder="10" />
+        </Field>
+        <Field label="Only from this user (optional)" hint="Leave empty to delete everyone's messages.">
+          <TextInput value={purgeUser} onChange={(v) => setPurgeUser(v.replace(/[^0-9]/g, ""))} placeholder="User ID filter (optional)" />
+        </Field>
+        <div className="flex items-end">
+          <Button
+            onClick={() => void doPurge()}
+            disabled={busy !== null || !purgeChannel || !call || !refresh}
+            className="bg-zinc-100 font-semibold text-zinc-900 hover:bg-zinc-300"
+          >
+            {busy === "purge" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}
+            Purge
+          </Button>
         </div>
       </Section>
 
       <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-          <ShieldAlert className="h-4 w-4 text-amber-300" aria-hidden="true" />
-          Warns ({warns.length} most recent)
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-zinc-100">Warns ({warns.length} most recent)</h3>
+          <div className="relative w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
+            <input
+              value={warnFilter}
+              onChange={(e) => setWarnFilter(e.target.value)}
+              placeholder="Filter by reason, user ID, or moderator"
+              className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-400/50 focus:outline-none"
+            />
+          </div>
+        </div>
         <div className="mt-4 space-y-2">
           {warns.length === 0 ? (
             <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
@@ -982,15 +1138,48 @@ export function ModerationModule({ draft, toast }: ModuleActionProps) {
             </p>
           ) : (
             warns.map((w) => (
-              <div key={w.id} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
-                <p className="text-[13px] text-zinc-100">
-                  <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{w.userId}</code>{" "}
-                  — {w.reason}
-                </p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  by {w.warnedByTag} · {fmtDate(w.createdAt)}
-                  {w.actionTaken ? ` · automatic action: ${w.actionTaken}` : ""}
-                </p>
+              <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[13px] text-zinc-100">
+                    <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{w.userId}</code>{" "}
+
+                    — {w.reason}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    by {w.warnedByTag} · {fmtDate(w.createdAt)}
+                    {w.actionTaken ? ` · automatic action: ${w.actionTaken}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {confirmId === w.id ? (
+                    <>
+                      <Button size="sm" variant="outline" onClick={() => void removeWarn(w.id, w.userId)} disabled={busy !== null} className="h-7 border-red-900/60 bg-transparent px-2 text-xs text-red-300 hover:bg-red-950/40">
+                        {busy === w.id ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : null} Confirm remove
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setConfirmId(null)} disabled={busy !== null} className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800">
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setConfirmId(w.id)} disabled={busy !== null} className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100" title="Remove this single warn">
+                      Remove
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (confirmId === `clear:${w.userId}`) void clearUserWarns(w.userId);
+                      else setConfirmId(`clear:${w.userId}`);
+                    }}
+                    disabled={busy !== null}
+                    className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    title={`Clear ALL warns of ${w.userId}`}
+                  >
+                    {busy === `clear:${w.userId}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : null}
+                    {confirmId === `clear:${w.userId}` ? "Confirm clear ALL" : "Clear all"}
+                  </Button>
+                </div>
               </div>
             ))
           )}
@@ -1009,7 +1198,7 @@ export function ModerationModule({ draft, toast }: ModuleActionProps) {
               <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
                 <div className="min-w-0">
                   <p className="text-[13px] text-zinc-100">
-                    {MODLOG_LABEL[m.type] ?? m.type} — <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{m.userId}</code>
+                    {MODLOG_LABEL[m.type as keyof typeof MODLOG_LABEL] ?? m.type} — <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{m.userId}</code>
                   </p>
                   <p className="mt-0.5 text-xs text-zinc-500">
                     {m.reason} · by {m.moderatorTag} · {fmtDate(m.createdAt)}
@@ -1167,6 +1356,79 @@ export function KeysModule({ draft, meta, call, refresh, toast }: ModuleActionPr
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+/* ============================================================
+ * MODULE: Send Message (v3.24.4)
+ * /send-message parity — plain text to any channel as the bot.
+ * Complements the Embed Builder (embeds) with the plain-text path:
+ * channel picker + up to 2000 chars + a strict mention picker.
+ * ============================================================ */
+export function SendMessageModule({ meta, call, toast }: ModuleActionProps) {
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+  const [mention, setMention] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    if (!call || !channelId) return;
+    setBusy(true);
+    try {
+      await call("send-message", "POST", {
+        channelId,
+        message,
+        mention: mention === "" ? undefined : mention,
+      });
+      toast("Message sent — check the channel.");
+      setMessage("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to send the message.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <Section
+        title="Send a Plain Message"
+        desc={
+          <>
+            The web twin of <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/send-message</code> — the bot sends your text to the chosen channel as-is. For a rich embed use the Embed Builder module instead. The message is audit-logged.
+          </>
+        }
+      >
+        <Field label="Channel" hint="Text channels only — voice, categories and forums are rejected.">
+          <ChannelSelect value={channelId} onChange={setChannelId} channels={meta.channels} />
+        </Field>
+        <Field label="Mention (optional)" hint="Strictly validated — only these formats are accepted (anti mention-injection).">
+          <MentionSelect value={mention} onChange={setMention} roles={meta.roles} />
+        </Field>
+        <div className="md:col-span-2">
+          <Field
+            label={`Message (${message.length}/2000)`}
+            hint={
+              <span>
+                Supports <code className="text-amber-300/80">{"\\n"}</code> for newlines · plain text only (no markdown preview here — Discord renders it).
+              </span>
+            }
+          >
+            <TextArea value={message} onChange={setMessage} rows={6} placeholder={"Hello @everyone! The shop is open again!\\n- New stock just arrived"} />
+          </Field>
+        </div>
+        <div className="flex items-end">
+          <Button
+            onClick={() => void send()}
+            disabled={busy || !channelId || (!message.trim() && mention === "")}
+            className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+            Send as the bot
+          </Button>
+        </div>
+      </Section>
     </div>
   );
 }

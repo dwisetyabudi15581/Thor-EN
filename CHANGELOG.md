@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.24.4] — 2026-09-17
+
+### Added — 🌐 FULL SLASH-COMMAND PARITY FROM THE WEB — THE COMPLETE AUDIT
+
+Owner's request: *"where is the Restore menu? Give me a restore for messages too, like /reset-message — and if possible make ALL slash commands accessible from the web dashboard. Do a full audit."* A complete audit of all 93 registered commands against the dashboard found every CONFIG command was already 100% manageable from the web (v3.24.0), and this release closes every remaining ACTION gap. After v3.24.4, every admin-capable slash command has a web twin. Only personal commands stay Discord-only by design: `/help`, `/afk` (set your own status), `/rank`, `/my-stats`.
+
+**New web capabilities (9 new DASH API endpoints + UI):**
+
+- 🟢 **Reset Messages (parity with `/reset-message`)** — the General module now has a "Reset Messages to Default" section: reset the welcome, goodbye, or ticket message group (or ALL of them) back to the exact factory text in one click, audit-logged. Previously a mis-edited message had to be rebuilt by hand.
+- 🟢 **Danger Zone — Full Reset (parity with `/reset-config`)** — the same 2-step protection as the slash command: type `RESET` to enable the single red button. Rebuilds the config from factory DEFAULTS and refreshes the whole dashboard.
+- 🟢 **Test Booster (parity with `/test-booster`)** — a "Test Booster (add)" button in Test Automated Messages: pure simulation by default (channel + permission + role-chain diagnostics, nothing recorded), or flip "Deliver to the booster channel" for the full end-to-end delivery test using the same builders as the live boost event.
+- 🟢 **Moderation module reworked — every moderation command now works from the web:**
+  - **Take Action** form: warn (with the same auto-action thresholds — 3=timeout 1h, 5=timeout 1d, 7=kick), timeout, untimeout, kick, ban (with the 0–7 day message-delete option), and unban by ID. All the same guards as Discord: role hierarchy (actor vs target vs bot), self/bot protection, and bot permission checks. Every action lands in the moderation history + audit log, and DMs the member (kick/ban) with a "DM not delivered" warning when closed.
+  - **Purge Messages**: channel picker + amount (1–100) + optional per-user filter — the same 14-day bulk-delete limit handling as `/purge`.
+  - **Warn management**: each warn in the list now has Remove (with confirm) and Clear-all-per-user buttons (parity with `/warn-remove` / `/warn-clear`).
+- 🟢 **Send Message module (NEW, Tools group — parity with `/send-message`)** — send plain text as the bot to any channel: channel picker, the strict mention whitelist (no @everyone/@here/role mention injection — only the exact validated formats), a live 2000-char counter, and `\n` newline support. Complements the Embed Builder, which handles embeds.
+
+**Audit results (93 commands → web coverage):**
+
+- ✅ 89 admin commands: ALL now fully manageable from the web (config + view + actions).
+- ℹ️ 4 personal commands stay Discord-only by design (`/help`, `/afk`, `/rank`, `/my-stats`) — they act as the invoking member.
+- ℹ️ `/list-messages` + `/config-show` are inherently covered — the dashboard IS the live config view.
+
+**Tests:** 14 new endpoint tests (793 total, all passing) — messages/reset (group + ALL + invalid type 400), config/reset (confirm required + full rebuild), warn (hierarchy guard both ways, validation, count), warns/remove + clear (incl. unknown warn 404), send-message (5 guard paths + valid mention), booster-test (simulation + live + broken channel 422), moderate (timeout bounds, self-hierarchy 403, unban 404/200, unknown action/member), purge (4 validation paths + a real filtered bulk delete).
+
 ## [3.24.3] — 2026-09-17
 
 ### Added — ♻️ /restore-category — THE DISCORD-SIDE TWIN OF THE DASHBOARD'S "RESTORE" MENU

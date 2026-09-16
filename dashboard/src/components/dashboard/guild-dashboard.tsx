@@ -21,7 +21,7 @@ import {
   Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
-  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon,
+  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon, Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
@@ -42,7 +42,7 @@ import {
 // Backup/Moderation/Keys. All actions go straight through call() (Discord ↔ web parity).
 import {
   CommandManagerModule, GiveawayModule, PollModule, EmbedModule,
-  BackupModule, ModerationModule, KeysModule, CustomCommandsModule,
+  BackupModule, ModerationModule, KeysModule, CustomCommandsModule, SendMessageModule,
 } from "./modules/module-tools";
 
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
@@ -55,7 +55,9 @@ type ModuleId =
   // v3.20.0
   | "custom"
   // v3.24.0
-  | "stats" | "afk";
+  | "stats" | "afk"
+  // v3.24.4
+  | "send-message";
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
@@ -83,6 +85,8 @@ const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard
   { id: "embed", label: "Embed", icon: SquarePen, group: "Tools" },
   { id: "custom", label: "Custom Command", icon: Wand2, group: "Tools" },
   { id: "poll", label: "Poll", icon: Vote, group: "Tools" },
+  // v3.24.4: /send-message parity — plain text (complements the Embed Builder).
+  { id: "send-message", label: "Send Message", icon: Send, group: "Tools" },
 ];
 
 const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
@@ -109,6 +113,8 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   // v3.24.0
   stats: { title: "Statistics", desc: "Server aggregates, a 4-metric leaderboard (messages, purchases, spending, giveaways), and the booster list — the same data as /stats, /leaderboard, /boosters." },
   afk: { title: "AFK", desc: "Members who marked themselves AFK — view the list and clear finished statuses (parity with /afk-list & /afk-clear)." },
+  // v3.24.4
+  "send-message": { title: "Send Message", desc: "Send plain text to any channel as the bot (parity with /send-message) — complements the Embed Builder for embeds." },
 };
 
 function setPath(obj: Record<string, unknown>, dotPath: string, value: unknown) {
@@ -486,6 +492,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           {/* v3.20.0 */}
           {module === "custom" && actionProps ? <CustomCommandsModule {...actionProps} /> : null}
           {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
+          {/* v3.24.4: /send-message parity. */}
+          {module === "send-message" && actionProps ? <SendMessageModule {...actionProps} /> : null}
           {/* v3.24.0: insight modules — VIEW data + the clear-AFK action. */}
           {module === "stats" && actionProps ? <StatsModule {...actionProps} /> : null}
           {module === "afk" && actionProps ? <AfkModule {...actionProps} /> : null}
