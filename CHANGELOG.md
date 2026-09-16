@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.25.0] — 2026-09-17
+
+### Changed — 🧭 SIDEBAR NAVIGATION — SIDE MENU ON EVERY SCREEN, BUILT FOR MOBILE & DESKTOP
+
+Owner's request: *"I want the menu moved to the side instead of the top so it's tidy and easy to access. Make the UI as optimal as possible for mobile and desktop — user-friendly enough that every visitor understands it immediately without long explanations."* The module menu now lives on the side on every device: a permanent left sidebar on desktop and a slide-in drawer behind the ☰ button on mobile. The old mobile experience — a horizontal pill strip at the top of the page that had to be swiped sideways, with no grouping and no search — is gone.
+
+**One menu, two shells (new `side-nav.tsx`):**
+
+- 🟢 **Desktop (lg+): permanent full-height left sidebar** — the module list is always visible, exactly where the eye expects it. The page no longer needs a top header: the server identity, search, and refresh all moved into the sidebar, giving the content the full viewport height.
+- 🟢 **Mobile: ☰ → slide-in drawer** — the header keeps only what matters on a small screen (menu button, server avatar + name, refresh) and shows the **active module name** as the subtitle so you always know where you are while scrolling. Touch targets in the menu are ≥40px tall.
+- 🟢 **Live module search** — with 25 modules the fastest way to jump: type "give" → the list filters to Giveaway instantly, with a ✕ clear button and a friendly empty state. Works in both the desktop sidebar and the mobile drawer.
+- 🟢 **Grouped, self-explanatory menu** — SERVER / PROTECTION / COMMUNITY / TOOLS sections with an icon + full text label on every entry (no icon-only guessing), an amber highlight + left accent bar on the active module, the server identity (icon, name, member count) pinned above the list, an explicit "← All servers" escape hatch at the top, and a "Refresh data" footer button.
+- 🟢 **Breadcrumb above the module title** — the group name (e.g. PROTECTION) now appears above the page title, and the sidebar/drawer selection matches it, so orientation survives even with the drawer closed on mobile.
+
+**Safety & accessibility:**
+
+- 🟡 **Refresh & "All servers" now confirm before discarding unsaved changes** — both are SPA-side navigations that `beforeunload` cannot intercept, and the old refresh silently threw the draft away. Now: `You have N unsaved changes — refreshing will discard them.`
+- 🟢 **Drawer a11y done right** — `aria-expanded`/`aria-controls` wiring, `role="dialog"` + `aria-modal`, Escape closes, focus moves into the drawer on open and returns to the ☰ button on close, and the closed drawer is `inert` (invisible to keyboard/screen readers, `pointer-events` off) while still animating smoothly in/out via transforms.
+- 🟢 Content scrolls independently of the sidebar (`overscroll-contain`, `100dvh` app shell — no more rubber-banding the whole page on iOS), the SaveBar and toasts layer correctly above/below the drawer, and the empty `aria-controls` reference found during verification was fixed.
+
+**Verification:** full browser walkthrough on the production standalone build against the mock DASH API (desktop: module switching, search filtering; mobile: drawer open → search → select Middleman → drawer auto-closes + title switches to "Middleman / Escrow", Escape close; screenshots in `download/ui-*.png`). TypeScript, ESLint, the dashboard production build, and the full bot test suite (793) all pass. No bot-side changes — dashboard-only release.
+
 ## [3.24.4] — 2026-09-17
 
 ### Added — 🌐 FULL SLASH-COMMAND PARITY FROM THE WEB — THE COMPLETE AUDIT

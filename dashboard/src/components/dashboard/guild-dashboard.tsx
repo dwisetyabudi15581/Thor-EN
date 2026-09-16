@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
+  Loader2, ArrowLeft, Menu, RefreshCw, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
   ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon, Send,
@@ -44,6 +44,8 @@ import {
   CommandManagerModule, GiveawayModule, PollModule, EmbedModule,
   BackupModule, ModerationModule, KeysModule, CustomCommandsModule, SendMessageModule,
 } from "./modules/module-tools";
+// v3.25.0: sidebar navigation — one menu shared by the desktop sidebar & the mobile drawer.
+import { SideNav } from "./side-nav";
 
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
 
@@ -145,6 +147,17 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const [configUpdates, setConfigUpdates] = useState<Record<string, unknown>>({});
   const [automodPatch, setAutomodPatch] = useState<Partial<AutoModConfig>>({});
   const [saving, setSaving] = useState(false);
+  // v3.25.0: sidebar navigation state — mobile drawer + refresh spinner.
+  const [navOpen, setNavOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
+  const drawerPanelRef = useRef<HTMLDivElement | null>(null);
+  const navWasOpen = useRef(false);
+
+  const openNav = useCallback(() => {
+    navWasOpen.current = true;
+    setNavOpen(true);
+  }, []);
 
   const showToast = useCallback((msg: string, tone: "ok" | "err" = "ok") => {
     setToast({ msg, tone, id: Date.now() });
@@ -313,6 +326,23 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirtyCount]);
 
+  // v3.25.0: drawer keyboard & focus handling — Escape closes, focus moves
+  // into the drawer on open and returns to the ☰ button on close.
+  useEffect(() => {
+    if (navOpen) {
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") setNavOpen(false);
+      };
+      window.addEventListener("keydown", onKey);
+      drawerPanelRef.current?.focus();
+      return () => window.removeEventListener("keydown", onKey);
+    }
+    if (navWasOpen.current) {
+      navWasOpen.current = false;
+      menuBtnRef.current?.focus();
+    }
+  }, [navOpen]);
+
   async function save() {
     setSaving(true);
     try {
@@ -337,6 +367,31 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     setConfigUpdates({});
     setAutomodPatch({});
     showToast("Draft discarded — back to the bot's data.");
+  }
+
+  // v3.25.0: Refresh and "All servers" are SPA-side navigations, so
+  // beforeunload can't help — with unsaved changes, ask instead of silently
+  // dropping the draft (the old refresh button discarded it without warning).
+  function confirmIfDirty(action: string): boolean {
+    if (dirtyCount === 0) return true;
+    return window.confirm(
+      `You have ${dirtyCount} unsaved change${dirtyCount > 1 ? "s" : ""} — ${action} will discard them.`
+    );
+  }
+
+  async function doRefresh() {
+    if (!confirmIfDirty("refreshing")) return;
+    setRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function goBack() {
+    if (!confirmIfDirty("leaving")) return;
+    router.push("/app");
   }
 
   const formProps: ModuleFormProps | null = useMemo(
@@ -377,127 +432,143 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     );
   }
 
-  const groups = [...new Set(MODULES.map((m) => m.group))];
   const currentDesc = MODULE_DESC[module];
+  const currentModule = MODULES.find((m) => m.id === module);
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Guild header */}
-      <header className="sticky top-0 z-40 border-b border-zinc-900/80 bg-zinc-950/85 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => router.push("/app")} className="h-9 w-9 shrink-0 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60" title="Pick another server">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            {meta.icon ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={`https://cdn.discordapp.com/icons/${guildId}/${meta.icon}.png?size=64`} alt="" className="h-9 w-9 rounded-lg" />
-            ) : (
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-800 text-xs font-semibold text-zinc-300">
-                {meta.name.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-semibold text-zinc-100">{meta.name}</p>
-              <p className="hidden sm:block text-[10px] text-zinc-500">
-                Thor Dashboard · {meta.memberCount?.toLocaleString("en-US") ?? "—"} members
+    <div className="flex h-dvh overflow-hidden bg-zinc-950 text-zinc-100">
+      {/* Desktop sidebar — permanent, full height (v3.25.0) */}
+      <aside className="hidden w-64 shrink-0 border-r border-zinc-900/80 lg:block">
+        <SideNav
+          modules={MODULES}
+          current={module}
+          onSelect={(id) => setModule(id as ModuleId)}
+          guildId={guildId}
+          meta={meta}
+          onBack={goBack}
+          onRefresh={() => void doRefresh()}
+          refreshing={refreshing}
+        />
+      </aside>
+
+      {/* Main column */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile header — ☰ opens the navigation drawer */}
+        <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-zinc-900/80 bg-zinc-950 px-2.5 lg:hidden">
+          <Button
+            ref={menuBtnRef}
+            variant="ghost"
+            size="icon"
+            onClick={openNav}
+            className="h-10 w-10 text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100"
+            aria-label="Open navigation menu"
+            aria-expanded={navOpen}
+            aria-controls="mobile-nav-drawer"
+          >
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </Button>
+          {meta.icon ? (
+            <img src={`https://cdn.discordapp.com/icons/${guildId}/${meta.icon}.png?size=64`} alt="" className="h-8 w-8 shrink-0 rounded-lg" />
+          ) : (
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-xs font-semibold text-zinc-300">
+              {meta.name.slice(0, 2).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="truncate text-sm font-semibold text-zinc-100">{meta.name}</p>
+            <p className="truncate text-[10px] text-zinc-500">{currentModule?.label ?? ""}</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => void doRefresh()}
+            disabled={refreshing}
+            className="h-10 w-10 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+            title="Reload data"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+          </Button>
+        </header>
+
+        {/* Content — scrolls independently of the sidebar */}
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto w-full max-w-6xl px-4 pb-32 pt-5 md:px-8 md:pt-7">
+            <div className="mb-5">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400/80">
+                {currentModule?.group}
               </p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">{currentDesc.title}</h1>
+              <p className="mt-1 text-sm leading-relaxed text-zinc-400">{currentDesc.desc}</p>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => void refresh()} className="h-9 w-9 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60" title="Reload data">
-              <Hammer className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-      </header>
 
-      <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6 md:px-6">
-        {/* Module sidebar (desktop) */}
-        <aside className="sticky top-[88px] hidden h-fit w-56 shrink-0 lg:block">
-          <nav className="space-y-5">
-            {groups.map((g) => (
-              <div key={g}>
-                <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">{g}</p>
-                <div className="space-y-0.5">
-                  {MODULES.filter((m) => m.group === g).map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setModule(m.id)}
-                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-colors ${
-                        module === m.id
-                          ? "bg-amber-400/10 text-amber-300 border border-amber-400/25"
-                          : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200 border border-transparent"
-                      }`}
-                    >
-                      <m.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </nav>
-        </aside>
-
-        {/* Content */}
-        <main className="min-w-0 flex-1 pb-28">
-          {/* Mobile module nav */}
-          <div className="-mx-4 mb-5 overflow-x-auto px-4 lg:hidden">
-            <div className="flex w-max gap-1.5">
-              {MODULES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setModule(m.id)}
-                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                    module === m.id
-                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                      : "border-zinc-800 bg-zinc-900/40 text-zinc-400"
-                  }`}
-                >
-                  <m.icon className="h-3.5 w-3.5" aria-hidden="true" />
-                  {m.label}
-                </button>
-              ))}
-            </div>
+            {module === "overview" ? <ModuleOverview draft={draft} meta={meta} /> : null}
+            {/* v3.21.0: Quick Start — all actions are immediate (call → refresh). */}
+            {module === "quickstart" && actionProps ? <QuickStartModule {...actionProps} goTo={(m) => setModule(m as ModuleId)} /> : null}
+            {module === "general" && formProps ? <GeneralModule {...formProps} /> : null}
+            {module === "tickets" && formProps ? <TicketsModule {...formProps} /> : null}
+            {module === "automod" && formProps ? <AutoModModule {...formProps} /> : null}
+            {module === "leveling" && formProps ? <LevelingModule {...formProps} /> : null}
+            {module === "midman" && formProps ? <MidmanModule {...formProps} /> : null}
+            {module === "responders" && actionProps ? <RespondersModule {...actionProps} /> : null}
+            {module === "selfroles" && actionProps ? <SelfRolesModule {...actionProps} /> : null}
+            {module === "announce" && actionProps ? <AnnounceModule {...actionProps} /> : null}
+            {module === "tempvoice" && actionProps ? <TempVoiceModule {...actionProps} /> : null}
+            {module === "serverstats" && actionProps ? <ServerStatsModule {...actionProps} /> : null}
+            {/* v3.19.0 */}
+            {module === "commands" && actionProps ? <CommandManagerModule {...actionProps} /> : null}
+            {module === "backup" && actionProps ? <BackupModule {...actionProps} /> : null}
+            {module === "moderation" && actionProps ? <ModerationModule {...actionProps} /> : null}
+            {module === "keys" && actionProps ? <KeysModule {...actionProps} /> : null}
+            {module === "giveaway" && actionProps ? <GiveawayModule {...actionProps} /> : null}
+            {module === "embed" && actionProps ? <EmbedModule {...actionProps} /> : null}
+            {/* v3.20.0 */}
+            {module === "custom" && actionProps ? <CustomCommandsModule {...actionProps} /> : null}
+            {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
+            {/* v3.24.4: /send-message parity. */}
+            {module === "send-message" && actionProps ? <SendMessageModule {...actionProps} /> : null}
+            {/* v3.24.0: insight modules — VIEW data + the clear-AFK action. */}
+            {module === "stats" && actionProps ? <StatsModule {...actionProps} /> : null}
+            {module === "afk" && actionProps ? <AfkModule {...actionProps} /> : null}
           </div>
-
-          <div className="mb-5">
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-50">{currentDesc.title}</h1>
-            <p className="mt-1 text-sm text-zinc-400">{currentDesc.desc}</p>
-          </div>
-
-          {module === "overview" ? <ModuleOverview draft={draft} meta={meta} /> : null}
-          {/* v3.21.0: Quick Start — all actions are immediate (call → refresh). */}
-          {module === "quickstart" && actionProps ? <QuickStartModule {...actionProps} goTo={(m) => setModule(m as ModuleId)} /> : null}
-          {module === "general" && formProps ? <GeneralModule {...formProps} /> : null}
-          {module === "tickets" && formProps ? <TicketsModule {...formProps} /> : null}
-          {module === "automod" && formProps ? <AutoModModule {...formProps} /> : null}
-          {module === "leveling" && formProps ? <LevelingModule {...formProps} /> : null}
-          {module === "midman" && formProps ? <MidmanModule {...formProps} /> : null}
-          {module === "responders" && actionProps ? <RespondersModule {...actionProps} /> : null}
-          {module === "selfroles" && actionProps ? <SelfRolesModule {...actionProps} /> : null}
-          {module === "announce" && actionProps ? <AnnounceModule {...actionProps} /> : null}
-          {module === "tempvoice" && actionProps ? <TempVoiceModule {...actionProps} /> : null}
-          {module === "serverstats" && actionProps ? <ServerStatsModule {...actionProps} /> : null}
-          {/* v3.19.0 */}
-          {module === "commands" && actionProps ? <CommandManagerModule {...actionProps} /> : null}
-          {module === "backup" && actionProps ? <BackupModule {...actionProps} /> : null}
-          {module === "moderation" && actionProps ? <ModerationModule {...actionProps} /> : null}
-          {module === "keys" && actionProps ? <KeysModule {...actionProps} /> : null}
-          {module === "giveaway" && actionProps ? <GiveawayModule {...actionProps} /> : null}
-          {module === "embed" && actionProps ? <EmbedModule {...actionProps} /> : null}
-          {/* v3.20.0 */}
-          {module === "custom" && actionProps ? <CustomCommandsModule {...actionProps} /> : null}
-          {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
-          {/* v3.24.4: /send-message parity. */}
-          {module === "send-message" && actionProps ? <SendMessageModule {...actionProps} /> : null}
-          {/* v3.24.0: insight modules — VIEW data + the clear-AFK action. */}
-          {module === "stats" && actionProps ? <StatsModule {...actionProps} /> : null}
-          {module === "afk" && actionProps ? <AfkModule {...actionProps} /> : null}
         </main>
+      </div>
+
+      {/* Mobile navigation drawer (v3.25.0) — same menu as the desktop sidebar */}
+      <div
+        id="mobile-nav-drawer"
+        className={`fixed inset-0 z-[60] lg:hidden ${navOpen ? "" : "pointer-events-none"}`}
+        inert={!navOpen}
+      >
+        <div
+          onClick={() => setNavOpen(false)}
+          className={`absolute inset-0 bg-black/60 transition-opacity duration-200 ${navOpen ? "opacity-100" : "opacity-0"}`}
+          aria-hidden="true"
+        />
+        <div
+          ref={drawerPanelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+          tabIndex={-1}
+          className={`absolute inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-zinc-800 bg-zinc-950 shadow-2xl transition-transform duration-200 ease-out ${
+            navOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <SideNav
+            modules={MODULES}
+            current={module}
+            onSelect={(id) => {
+              setModule(id as ModuleId);
+              setNavOpen(false);
+            }}
+            guildId={guildId}
+            meta={meta}
+            onBack={goBack}
+            onRefresh={() => void doRefresh()}
+            refreshing={refreshing}
+            onClose={() => setNavOpen(false)}
+          />
+        </div>
       </div>
 
       {/* SaveBar */}
