@@ -187,6 +187,42 @@ export function RoleSelect({
   );
 }
 
+/**
+ * v3.24.0: MentionSelect — pick a mention from a dropdown, no role ID typing.
+ * The value is a ready-to-use mention string: "" | "@everyone" | "@here" | "<@&roleId>".
+ * Used by Announce & the Embed Builder (parity with the role-picker-based
+ * mention option of /announce, /send-message, /announce-schedule on Discord).
+ */
+export function MentionSelect({
+  value, onChange, roles,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  roles: BotRole[];
+}) {
+  const isPlain = value === "" || value === "@everyone" || value === "@here";
+  const selectedRoleId = value.startsWith("<@&") ? value.slice(3, -1) : "";
+  // A role that no longer exists stays visible (an explicit option) so the
+  // old state doesn't "silently disappear".
+  const ghost = selectedRoleId && !roles.some((r) => r.id === selectedRoleId);
+  return (
+    <Select
+      value={ghost ? "__ghost__" : isPlain ? value : selectedRoleId}
+      onChange={(v) => {
+        if (v === "__ghost__") return;
+        onChange(v === "" ? "" : v === "@everyone" ? "@everyone" : v === "@here" ? "@here" : `<@&${v}>`);
+      }}
+      options={[
+        { value: "", label: "No mention" },
+        { value: "@everyone", label: "@everyone (all members)" },
+        { value: "@here", label: "@here (online members)" },
+        ...(ghost ? [{ value: "__ghost__", label: `Deleted role (${selectedRoleId})` }] : []),
+        ...roles.map((r) => ({ value: r.id, label: `@${r.name}` })),
+      ]}
+    />
+  );
+}
+
 /* ---------------- Color utility ---------------- */
 
 export function ColorInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {

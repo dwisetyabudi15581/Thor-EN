@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.24.0] — 2026-09-16
+
+### Added — 📊 FULL DYNO-STYLE DASHBOARD PARITY: PICKER-BASED MENTIONS + STATISTICS & AFK MODULES + ALL VIEW DATA ON THE WEB
+
+Owner's request: *"add an optional select-role mention to the announcement and embed builder so I don't have to type role IDs. Also badwords aren't in the dashboard — check every command so we can manage everything from the dashboard, like Dyno."* Audit of the 92 slash commands: **every setting (config) was already 100% manageable from the web** — including badwords (AutoMod module → the "Word Blocking" section, present for a long time; the page used to crash due to the v3.23.1 bug, which made it look missing). What was missing were the VIEW/operational features. This release closes all of those gaps + replaces every "paste the ID manually" input with a dropdown picker.
+
+- 🟠 **`MentionSelect` (NEW):** a mention dropdown — No mention / @everyone / @here / the server's role list — used by the **Announcements** module (replacing the manual `<@&id>` text input) and the **Embed Builder** (the mention is merged into the outer text on send + appears in the preview). Deleted roles stay visible as an explicit option so the old state doesn't silently disappear.
+- 🟠 **STATISTICS MODULE (NEW, Server group):** server aggregates (tracked members, total messages, purchases, revenue, giveaways won) + a **4-metric leaderboard** (messages / purchases / spending / giveaway wins) + the **booster list** (active + recent activity) — exactly the same data as `/stats`, `/leaderboard`, `/boosters`.
+- 🟠 **AFK MODULE (NEW, Community group):** the AFK members list + a **Clear** button per member (parity with `/afk-list` + `/afk-clear`) — new DASH API endpoint `DELETE /guilds/:id/afk/:userId`.
+- 🟡 **Middleman:** the module now shows **Active Deals** — channel, state, buyer⇄seller, item, the buyer's total (price+fee) — parity with `/midman-deals`.
+- 🟡 **Leveling:** the module now shows the **Leveling Leaderboard** (top 10 by total XP + level) — parity with `/leaderboard-level`.
+- 🟡 **General:** **Test Welcome / Test Goodbye** buttons — send the REAL embed (the same builder as the genuine join event) to the configured channel + permission diagnosis, using your own data as "the new member" — parity with `/test-welcome`. New DASH API endpoint `POST /guilds/:id/welcome-test`.
+- 🟡 **AutoMod:** the "Link-Allowed Channels" & "Link-Allowed Roles" whitelists are now **dropdown pickers + chips** (with channel/role names) — replacing the TextArea that asked for one ID per line.
+- 🟢 **Dashboard payload:** + `stats` (aggregates + 4 top-10s), `levelTop`, `afk`, `midmanDeals` (slim + fee totals), `boosters` (live from the guild cache + recent events) — all read-only, slim shapes, guarded for partial guilds; defensively normalized on the web so an older bot never crashes the dashboard.
+- 🟢 Tests: **740** (from 736) — VIEW payload (shape & types), welcome-test success/400/422, DELETE afk (200/404 + gone from the payload); the dev mock API follows the new shape. Dashboard 20 → **22 modules**.
+
 ## [3.23.1] — 2026-09-16
 
 ### Fixed — 🔴 WEB OVERVIEW & AUTOMOD PAGES CRASH FOR SERVERS THAT NEVER CONFIGURED AUTOMOD

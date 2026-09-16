@@ -417,6 +417,56 @@ function seedGuild({ id, name, icon, memberCount }) {
         useCount: 128,
       },
     ],
+    // v3.24.0: insight modules — statistics + leaderboards + boosters + AFK + deals.
+    stats: {
+      server: { totalUsers: 128, totalMessages: 45210, totalPurchases: 89, totalRevenue: 12500000, totalGiveawaysWon: 34 },
+      top: {
+        messages: [
+          { userId: "444444444444444444", value: 8214 },
+          { userId: "555555555555555555", value: 6102 },
+          { userId: "666666666666666666", value: 4550 },
+        ],
+        purchases: [
+          { userId: "555555555555555555", value: 12 },
+          { userId: "444444444444444444", value: 7 },
+        ],
+        spends: [
+          { userId: "555555555555555555", value: 2400000 },
+          { userId: "444444444444444444", value: 980000 },
+        ],
+        wins: [{ userId: "666666666666666666", value: 5 }],
+      },
+    },
+    levelTop: [
+      { userId: "444444444444444444", level: 42, totalXp: 28450, xp: 320 },
+      { userId: "555555555555555555", level: 31, totalXp: 19120, xp: 80 },
+    ],
+    afk: [
+      { userId: "666666666666666666", reason: "hard at work", since: Date.now() - 5400000 },
+      { userId: "777777777777777777", reason: "lunch break", since: Date.now() - 1800000 },
+    ],
+    midmanDeals: [
+      {
+        id: "deal_demo_1",
+        channelId: "111111111111111112",
+        state: "locked",
+        stateLabel: "Locked",
+        buyerId: "444444444444444444",
+        sellerId: "555555555555555555",
+        item: "Radiant Valorant account",
+        buyerPays: 105000,
+        sellerGets: 100000,
+        fee: 5000,
+        createdAt: Date.now() - 7200000,
+      },
+    ],
+    boosters: {
+      live: [{ userId: "888888888888888888", tag: "Booster#0001", since: Date.now() - 2592000000 }],
+      recent: [
+        { userId: "888888888888888888", event: "boost_added", at: Date.now() - 2592000000 },
+        { userId: "999999999999999999", event: "boost_removed", at: Date.now() - 86400000 },
+      ],
+    },
   };
   guilds.set(id, { meta, data });
   return guilds.get(id);
@@ -523,6 +573,31 @@ const server = http.createServer(async (req, res) => {
     delete body.actor;
     entry.data.automod = { ...entry.data.automod, ...body };
     return send(200, { ok: true, automod: entry.data.automod });
+  }
+
+  // v3.24.0: test welcome/goodbye — the mock always "succeeds" + diagnosis lines.
+  if (req.method === "POST" && rest[0] === "welcome-test" && rest.length === 1) {
+    const body = await readBody();
+    const tipe = body?.type === "goodbye" ? "goodbye" : body?.type === "welcome" ? "welcome" : null;
+    if (!tipe) return send(400, { error: "type must be welcome | goodbye" });
+    const channelId = entry.data.config.channels?.[tipe] ?? null;
+    if (!channelId) {
+      return send(422, { ok: false, lines: [`❌ ${tipe} channel: not set yet — configure it in the General module.`], error: `The ${tipe} channel is not ready — fix it first.` });
+    }
+    return send(200, {
+      ok: true,
+      sent: true,
+      channelId,
+      lines: [`✅ ${tipe} channel: ready`, "✅ Send Messages · ✅ Embed Links (bot permissions)"],
+    });
+  }
+
+  // v3.24.0: clear a member's AFK status.
+  if (req.method === "DELETE" && rest[0] === "afk" && rest.length === 2) {
+    const before = entry.data.afk.length;
+    entry.data.afk = entry.data.afk.filter((u) => u.userId !== rest[1]);
+    if (entry.data.afk.length === before) return send(404, { error: "That member is not currently AFK" });
+    return send(200, { ok: true });
   }
 
   // v3.19.0: Command Manager — save the disabled list

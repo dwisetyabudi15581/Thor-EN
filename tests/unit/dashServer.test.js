@@ -35,11 +35,14 @@ const TOUCHED = [
     // v3.19.0: files touched by the new modules (giveaway/poll/keys/schedule)
     'giveaways.json', 'polls.json', 'keys.json', 'scheduledRoles.json',
     // v3.21.0: the Quick Start endpoints write ticket panels
-    'panels.json'
+    'panels.json',
+    // v3.24.0: VIEW payload data (stats/level/boost/deal — read-only) +
+    // afk.json which IS WRITTEN by the DELETE /afk/:userId endpoint
+    'afk.json', 'stats.json', 'levels.json', 'boosts.json', 'deals.json'
 ];
-// panels.json is an OBJECT MAP (not an array) — an empty file must be '{}'
-// so loadPanels doesn't quarantine it as an invalid format.
-const INIT_CONTENT = { 'panels.json': '{}' };
+// panels.json + the v3.24.0 data files are OBJECT MAPs (not arrays) — empty
+// files must be '{}' so the loaders don't quarantine them as invalid.
+const INIT_CONTENT = { 'panels.json': '{}', 'afk.json': '{}', 'stats.json': '{}', 'levels.json': '{}', 'boosts.json': '{}', 'deals.json': '{}' };
 const backups = {}; // path -> old content (null = did not exist)
 let configDirBackup = null; // old file names in data/config/
 
@@ -90,8 +93,8 @@ function makeMockClient({ failChannelFetch = false } = {}) {
         ownerId: '111000111000111000',
         channels: {
             cache: new Map([
-                ['777000111222333444', { id: '777000111222333444', name: 'general', type: 0, rawPosition: 1 }],
-                ['777000111222333555', { id: '777000111222333555', name: 'vc-zone', type: 2, rawPosition: 0 }]
+                ['777000111222333444', { id: '777000111222333444', name: 'general', type: 0, rawPosition: 1, send: async (opts) => ({ id: 'msg_welcome_test', opts }) }],
+                ['777000111222333555', { id: '777000111222333555', name: 'vc-zone', type: 2, rawPosition: 0, send: async (opts) => ({ id: 'msg_welcome_test', opts }) }]
             ])
         },
         roles: {
@@ -240,6 +243,98 @@ test('dash: fresh guild automod payload — default object fallback, not null', 
     assert.ok(Array.isArray(data.automod.exemptWords));
     assert.strictEqual(typeof data.automod.spamThreshold, 'number');
     assert.strictEqual(typeof data.automod.maxMentions, 'number');
+});
+
+// ====================================================
+// === v3.24.0: VIEW payload (stats/levelTop/afk/midmanDeals/boosters) ===
+// ====================================================
+
+test('dash: v3.24.0 payload — stats, levelTop, afk, midmanDeals, boosters present & well-shaped', async () => {
+    const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    // stats: server aggregates + 4 leaderboards (parity with /stats & /leaderboard)
+    assert.ok(data.stats && typeof data.stats === 'object', 'payload.stats must be an object');
+    assert.strictEqual(typeof data.stats.server.totalMessages, 'number');
+    assert.strictEqual(typeof data.stats.server.totalRevenue, 'number');
+    for (const key of ['messages', 'purchases', 'spends', 'wins']) {
+        assert.ok(Array.isArray(data.stats.top[key]), `stats.top.${key} must be an array`);
+        for (const row of data.stats.top[key]) {
+            assert.ok(row.userId, `stats.top.${key} rows must have userId`);
+            assert.strictEqual(typeof row.value, 'number');
+        }
+    }
+    // levelTop: XP leaderboard (parity with /leaderboard-level)
+    assert.ok(Array.isArray(data.levelTop));
+    // afk: the guild's AFK list (parity with /afk-list)
+    assert.ok(Array.isArray(data.afk));
+    // midmanDeals: slim active deals (parity with /midman-deals)
+    assert.ok(Array.isArray(data.midmanDeals));
+    // boosters: live + recent
+    assert.ok(data.boosters && Array.isArray(data.boosters.live) && Array.isArray(data.boosters.recent));
+});
+
+// ====================================================
+// === v3.24.0: POST welcome-test (parity with /test-welcome) ===
+// ====================================================
+
+test('dash: POST welcome-test — the REAL embed is sent to the configured channel', async () => {
+    // Set the welcome channel to the mocked 'general' channel
+    const put = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: { actor: { id: '42', tag: 'tester' }, updates: { 'channels.welcome': '777000111222333444' } }
+    });
+    assert.strictEqual(put.status, 200);
+
+    const res = await api('POST', `/guilds/${GUILD_ID}/welcome-test`, {
+        body: { actor: { id: '111000111000111000', tag: 'Tester#0001' }, type: 'welcome' }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.sent, true);
+    assert.strictEqual(data.channelId, '777000111222333444');
+    assert.ok(Array.isArray(data.lines) && data.lines.length > 0, 'diagnosis lines must be present');
+});
+
+test('dash: POST welcome-test invalid type → 400; channel not set → 422', async () => {
+    const res = await api('POST', `/guilds/${GUILD_ID}/welcome-test`, {
+        body: { actor: { id: '111000111000111000' }, type: 'bogus' }
+    });
+    assert.strictEqual(res.status, 400);
+
+    // goodbye was never set → 422 + diagnosis lines (not a 500)
+    const res2 = await api('POST', `/guilds/${GUILD_ID}/welcome-test`, {
+        body: { actor: { id: '111000111000111000' }, type: 'goodbye' }
+    });
+    assert.strictEqual(res2.status, 422);
+    const data2 = await res2.json();
+    assert.ok(Array.isArray(data2.lines) && data2.lines.length > 0);
+});
+
+// ====================================================
+// === v3.24.0: DELETE afk/:userId (parity with /afk-clear) ===
+// ====================================================
+
+test('dash: DELETE afk/:userId — clear a member\'s AFK status', async () => {
+    const afkManager = require('../../src/data/afkManager');
+    afkManager.setAFK(GUILD_ID, '111000111000111000', 'quick nap');
+
+    // Visible in the payload (parity with /afk-list)
+    let dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.afk.length, 1);
+    assert.strictEqual(dash.afk[0].userId, '111000111000111000');
+
+    const res = await api('DELETE', `/guilds/${GUILD_ID}/afk/111000111000111000`);
+    assert.strictEqual(res.status, 200);
+    assert.ok((await res.json()).ok);
+
+    // Gone from the payload after clearing
+    dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    assert.strictEqual(dash.afk.length, 0);
+
+    // A member who is not AFK → 404
+    const res2 = await api('DELETE', `/guilds/${GUILD_ID}/afk/111000111000111000`);
+    assert.strictEqual(res2.status, 404);
 });
 
 // ====================================================

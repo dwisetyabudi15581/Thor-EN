@@ -346,6 +346,61 @@ export type DashboardPayload = {
   customCommands: CustomCommand[];
   // v3.21.0: installed ticket panels — status of the "install ticket panel" step.
   panels: TicketPanelInfo[];
+  // v3.24.0: full Dyno-style parity — VIEW data that used to be Discord-only
+  // now ships with the payload (read-only; write actions go through their
+  // own endpoints). All fields are defensively normalized in GuildDashboard
+  // so an older bot (without these fields) never crashes the web UI.
+  stats?: StatsSection;
+  levelTop?: LevelTopRow[];
+  afk?: AfkRow[];
+  midmanDeals?: MidmanDealInfo[];
+  boosters?: BoostersSection;
+};
+
+// v3.24.0: server statistics + leaderboards (parity with /stats & /leaderboard).
+export type StatsSection = {
+  server: {
+    totalUsers: number;
+    totalMessages: number;
+    totalPurchases: number;
+    totalRevenue: number;
+    totalGiveawaysWon: number;
+  };
+  top: {
+    messages: StatRow[];
+    purchases: StatRow[];
+    spends: StatRow[];
+    wins: StatRow[];
+  };
+};
+
+export type StatRow = { userId: string; value: number };
+
+// v3.24.0: leveling leaderboard (parity with /leaderboard-level).
+export type LevelTopRow = { userId: string; level: number; totalXp: number; xp: number };
+
+// v3.24.0: the AFK members list (parity with /afk-list).
+export type AfkRow = { userId: string; reason: string; since: number; guildId?: string };
+
+// v3.24.0: active midman deals, slim shape (parity with /midman-deals).
+export type MidmanDealInfo = {
+  id: string;
+  channelId: string;
+  state: string;
+  stateLabel: string;
+  buyerId: string;
+  sellerId: string;
+  item: string;
+  buyerPays: number;
+  sellerGets: number;
+  fee: number;
+  createdAt: number | null;
+};
+
+// v3.24.0: live boosters + recent activity (parity with /boosters).
+export type BoostersSection = {
+  live: Array<{ userId: string; tag: string | null; since: number }>;
+  recent: Array<{ userId: string; event: string; at: number; boostedAt?: number | null }>;
 };
 
 export type GuildMeta = {

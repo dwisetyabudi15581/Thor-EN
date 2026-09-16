@@ -21,7 +21,7 @@ import {
   Hammer, Loader2, ArrowLeft, Save, X, CheckCircle2, AlertTriangle,
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
-  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket,
+  ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
@@ -31,6 +31,9 @@ import {
 // v3.21.0: Quick Start — server setup checklist from the web (mirrors the 🚀
 // category in /help): a form per step → the bot applies it directly.
 import { QuickStartModule } from "./modules/module-quickstart";
+// v3.24.0: insight modules — Statistics (parity with /stats /leaderboard
+// /boosters) + AFK (parity with /afk-list /afk-clear).
+import { StatsModule, AfkModule } from "./modules/module-insights";
 import {
   RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule, ModuleOverview,
   type ModuleActionProps,
@@ -50,7 +53,9 @@ type ModuleId =
   // v3.19.0
   | "commands" | "backup" | "moderation" | "keys" | "giveaway" | "embed" | "poll"
   // v3.20.0
-  | "custom";
+  | "custom"
+  // v3.24.0
+  | "stats" | "afk";
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
@@ -59,6 +64,8 @@ const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard
   { id: "general", label: "General", icon: Settings2, group: "Server" },
   { id: "commands", label: "Command Manager", icon: Terminal, group: "Server" },
   { id: "backup", label: "Backup", icon: Archive, group: "Server" },
+  // v3.24.0: Statistics — leaderboards + boosters (parity with /stats /leaderboard /boosters).
+  { id: "stats", label: "Statistics", icon: Trophy, group: "Server" },
   { id: "automod", label: "AutoMod", icon: Hash, group: "Protection" },
   { id: "midman", label: "Middleman", icon: Handshake, group: "Protection" },
   { id: "moderation", label: "Moderation", icon: ShieldAlert, group: "Protection" },
@@ -71,6 +78,8 @@ const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard
   { id: "giveaway", label: "Giveaway", icon: Gift, group: "Community" },
   { id: "tempvoice", label: "Temp Voice", icon: Mic, group: "Community" },
   { id: "serverstats", label: "Server Stats", icon: BarChart3, group: "Community" },
+  // v3.24.0: AFK — list + clear (parity with /afk-list /afk-clear).
+  { id: "afk", label: "AFK", icon: Moon, group: "Community" },
   { id: "embed", label: "Embed", icon: SquarePen, group: "Tools" },
   { id: "custom", label: "Custom Command", icon: Wand2, group: "Tools" },
   { id: "poll", label: "Poll", icon: Vote, group: "Tools" },
@@ -97,6 +106,9 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   embed: { title: "Embed Builder", desc: "Build a complete embed (author, fields, images, footer) with a Discord-style live preview, then send it to any channel." },
   custom: { title: "Custom Command", desc: "Build your own slash command from the web — automatically registered on Discord and usable by every member (Dyno Custom Commands)." },
   poll: { title: "Poll", desc: "Create a poll with interactive vote buttons." },
+  // v3.24.0
+  stats: { title: "Statistics", desc: "Server aggregates, a 4-metric leaderboard (messages, purchases, spending, giveaways), and the booster list — the same data as /stats, /leaderboard, /boosters." },
+  afk: { title: "AFK", desc: "Members who marked themselves AFK — view the list and clear finished statuses (parity with /afk-list & /afk-clear)." },
 };
 
 function setPath(obj: Record<string, unknown>, dotPath: string, value: unknown) {
@@ -181,6 +193,21 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     if (!Array.isArray(data.responders)) data.responders = [];
     if (!Array.isArray(data.selfroles)) data.selfroles = [];
     if (!Array.isArray(data.announces)) data.announces = [];
+    // v3.24.0: new VIEW fields — normalized so an older bot (fields undefined)
+    // stays safe: the Statistics/AFK/Middleman/Leveling modules show "empty"
+    // instead of crashing.
+    if (!data.stats || typeof data.stats !== "object" || !data.stats.server || !data.stats.top) {
+      data.stats = {
+        server: { totalUsers: 0, totalMessages: 0, totalPurchases: 0, totalRevenue: 0, totalGiveawaysWon: 0 },
+        top: { messages: [], purchases: [], spends: [], wins: [] },
+      };
+    }
+    if (!Array.isArray(data.levelTop)) data.levelTop = [];
+    if (!Array.isArray(data.afk)) data.afk = [];
+    if (!Array.isArray(data.midmanDeals)) data.midmanDeals = [];
+    if (!data.boosters || !Array.isArray(data.boosters.live) || !Array.isArray(data.boosters.recent)) {
+      data.boosters = { live: [], recent: [] };
+    }
     setPayload(data);
     setMeta(data.meta);
     // Draft = in-memory copy; dirty state resets (a fresh draft always comes from the bot).
@@ -276,8 +303,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   }
 
   const formProps: ModuleFormProps | null = useMemo(
-    () => (draft && meta ? { draft, meta, setConfig, setAutomod, toast: showToast } : null),
-    [draft, meta, setConfig, setAutomod, showToast]
+    () => (draft && meta ? { draft, meta, setConfig, setAutomod, toast: showToast, call, refresh } : null),
+    [draft, meta, setConfig, setAutomod, showToast, call, refresh]
   );
   const actionProps: ModuleActionProps | null = useMemo(
     () => (draft && meta ? { draft, meta, call, refresh, toast: showToast } : null),
@@ -428,6 +455,9 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           {/* v3.20.0 */}
           {module === "custom" && actionProps ? <CustomCommandsModule {...actionProps} /> : null}
           {module === "poll" && actionProps ? <PollModule {...actionProps} /> : null}
+          {/* v3.24.0: insight modules — VIEW data + the clear-AFK action. */}
+          {module === "stats" && actionProps ? <StatsModule {...actionProps} /> : null}
+          {module === "afk" && actionProps ? <AfkModule {...actionProps} /> : null}
         </main>
       </div>
 

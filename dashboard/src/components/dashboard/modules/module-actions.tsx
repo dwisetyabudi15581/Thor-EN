@@ -11,7 +11,7 @@ import { useState } from "react";
 import { Plus, Trash2, Loader2, RefreshCw, Clock, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, Pill, channelLabel, roleLabel,
+  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, MentionSelect, Pill, channelLabel, roleLabel,
 } from "../fields";
 import type { DashboardPayload, GuildMeta } from "@/lib/bot-api";
 
@@ -434,8 +434,11 @@ export function AnnounceModule({ draft, meta, call, refresh, toast }: ModuleActi
             ]}
           />
         </Field>
-        <Field label="Mention (optional)" hint="e.g. @everyone or <@&roleId>">
-          <TextInput value={mention} onChange={setMention} placeholder="@everyone" />
+        <Field label="Mention (optional)" hint="Pick a role / everyone — no ID typing.">
+          {/* v3.24.0: Discord-style mention dropdown — previously you had to
+              type <@&id> manually. Raw values ("@everyone" / "<@&id>") are
+              still accepted by the bot, but the UI is now picker-based. */}
+          <MentionSelect value={mention} onChange={setMention} roles={meta.roles} />
         </Field>
         <div className="md:col-span-2">
           <Button onClick={schedule} disabled={busy} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">

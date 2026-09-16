@@ -11,10 +11,10 @@
 //   toast     — small notifications
 
 import { useState } from "react";
-import { Plus, Trash2, GripVertical, Info } from "lucide-react";
+import { Plus, Trash2, GripVertical, Info, FlaskConical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill,
+  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
 } from "../fields";
 import type { AutoModConfig, DashboardPayload, GuildMeta, Product, TicketCategory } from "@/lib/bot-api";
 
@@ -24,6 +24,11 @@ export type ModuleFormProps = {
   setConfig: (dotPath: string, value: unknown) => void;
   setAutomod: (patch: Partial<AutoModConfig>) => void;
   toast: (msg: string, tone?: "ok" | "err") => void;
+  // v3.24.0: direct actions for forms that need a dedicated endpoint (e.g. the
+  // "Test Welcome" button in the General module → POST welcome-test).
+  // Optional so the other modules don't have to declare it.
+  call?: (action: string, method: "POST" | "PUT" | "DELETE", body?: unknown) => Promise<Record<string, unknown>>;
+  refresh?: () => Promise<void>;
 };
 
 /* ============================================================
@@ -42,10 +47,13 @@ const TEMPLATE_VARS = (
   </span>
 );
 
-export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
+export function GeneralModule({ draft, meta, setConfig, call, toast }: ModuleFormProps) {
   const c = draft.config;
   // v3.22.0: local picker state for the auto-role list editor.
   const [autorolePick, setAutorolePick] = useState<string | null>(null);
+  // v3.24.0: Test Welcome/Goodbye buttons — POST welcome-test (parity with
+  // /test-welcome): diagnosis + send the REAL embed to the configured channel.
+  const [testing, setTesting] = useState<string | null>(null);
   const autoroleIds = c.autorole?.roleIds ?? [];
   // v3.23.0: the "join roles removed on another role" toggle —
   // replacement for the removed Unverified marker concept.
@@ -158,6 +166,42 @@ export function GeneralModule({ draft, meta, setConfig }: ModuleFormProps) {
           </Field>
         ))}
       </Section>
+
+      {/* v3.24.0: Test Welcome/Goodbye — /test-welcome parity from the web. */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
+          <FlaskConical className="h-4 w-4 text-emerald-400" aria-hidden="true" /> Test Automated Messages
+        </h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Send the REAL welcome/goodbye embed (the same builder as the genuine join event) to the configured channel — using your own data as "the new member". Save first if you just changed the channel/message.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {["welcome", "goodbye"].map((tipe) => (
+            <Button
+              key={tipe}
+              size="sm"
+              variant="outline"
+              disabled={testing !== null || !call}
+              onClick={async () => {
+                if (!call) return;
+                setTesting(tipe);
+                try {
+                  const res = (await call("welcome-test", "POST", { type: tipe })) as { lines?: string[] };
+                  toast(`${tipe} test sent — check the channel. ${res?.lines?.[0] ?? ""}`);
+                } catch (e) {
+                  toast(e instanceof Error ? e.message : `Failed to test ${tipe}.`, "err");
+                } finally {
+                  setTesting(null);
+                }
+              }}
+              className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              {testing === tipe ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />}
+              Test {tipe === "welcome" ? "Welcome" : "Goodbye"}
+            </Button>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -361,11 +405,15 @@ const ACTION_OPTS = [
   { value: "kick", label: "Kick" },
 ];
 
-export function AutoModModule({ draft, setAutomod }: ModuleFormProps) {
+export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
   const a = draft.automod;
   const [wordInput, setWordInput] = useState("");
   const [wordAction, setWordAction] = useState("delete_only");
   const [exemptInput, setExemptInput] = useState("");
+  // v3.24.0: link whitelist via picker (channel/role dropdowns) — previously
+  // you had to paste IDs one per line into a TextArea.
+  const [linkChannelPick, setLinkChannelPick] = useState<string | null>(null);
+  const [linkRolePick, setLinkRolePick] = useState<string | null>(null);
 
   function addWord() {
     const w = wordInput.trim().toLowerCase();
@@ -412,22 +460,73 @@ export function AutoModModule({ draft, setAutomod }: ModuleFormProps) {
             desc="Except for the whitelisted channels & roles below."
           />
         </div>
-        <Field label="Link-Allowed Channels" hint="Channels listed here may contain links.">
-          <TextArea
-            value={a.linkAllowedChannels.join("\n")}
-            onChange={(v) => setAutomod({ linkAllowedChannels: v.split("\n").map((s) => s.trim()).filter(Boolean) })}
-            rows={3}
-            placeholder="One channel ID per line"
-          />
-        </Field>
-        <Field label="Link-Allowed Roles">
-          <TextArea
-            value={a.linkAllowedRoles.join("\n")}
-            onChange={(v) => setAutomod({ linkAllowedRoles: v.split("\n").map((s) => s.trim()).filter(Boolean) })}
-            rows={3}
-            placeholder="One role ID per line"
-          />
-        </Field>
+        {/* v3.24.0: picker + chips (parity with add-link-whitelist) — no ID typing. */}
+        <div className="md:col-span-2 space-y-2">
+          <Field label="Link-Allowed Channels" hint="Channels listed here may contain links.">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <ChannelSelect
+                value={linkChannelPick}
+                onChange={(v) => {
+                  if (!v || a.linkAllowedChannels.includes(v)) return;
+                  setAutomod({ linkAllowedChannels: [...a.linkAllowedChannels, v] });
+                  setLinkChannelPick(null);
+                }}
+                channels={meta.channels}
+                placeholder="Add a link-allowed channel…"
+              />
+            </div>
+          </Field>
+          {a.linkAllowedChannels.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {a.linkAllowedChannels.map((id) => (
+                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                  <span>#{channelLabel(meta.channels, id)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAutomod({ linkAllowedChannels: a.linkAllowedChannels.filter((x) => x !== id) })}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                    title="Remove the channel from the whitelist"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="md:col-span-2 space-y-2">
+          <Field label="Link-Allowed Roles" hint="Members holding these roles may post links anywhere.">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <RoleSelect
+                value={linkRolePick}
+                onChange={(v) => {
+                  if (!v || a.linkAllowedRoles.includes(v)) return;
+                  setAutomod({ linkAllowedRoles: [...a.linkAllowedRoles, v] });
+                  setLinkRolePick(null);
+                }}
+                roles={meta.roles}
+                placeholder="Add a link-allowed role…"
+              />
+            </div>
+          </Field>
+          {a.linkAllowedRoles.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {a.linkAllowedRoles.map((id) => (
+                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                  <span>@{roleLabel(meta.roles, id)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAutomod({ linkAllowedRoles: a.linkAllowedRoles.filter((x) => x !== id) })}
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                    title="Remove the role from the whitelist"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </Section>
 
       <Section title="Word Blocking" desc="Whole-word matching by default — “scam” does not match “scammer”.">
@@ -611,6 +710,30 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
           </Button>
         </div>
       </section>
+
+      {/* v3.24.0: leveling leaderboard — the same data as /leaderboard-level. */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-zinc-100">Leveling Leaderboard</h3>
+        <p className="mt-1 text-xs text-zinc-500">Top 10 members by total XP.</p>
+        <div className="mt-4 divide-y divide-zinc-800/60">
+          {(draft.levelTop ?? []).length === 0 ? (
+            <p className="rounded-xl border border-dashed border-zinc-800 p-5 text-center text-xs text-zinc-500">
+              No XP data yet — enable leveling and let members chat.
+            </p>
+          ) : (
+            (draft.levelTop ?? []).map((u, i) => (
+              <div key={u.userId} className="flex items-center gap-3 py-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${i === 0 ? "bg-amber-400/15 text-amber-300" : i < 3 ? "bg-zinc-700/40 text-zinc-300" : "bg-zinc-800/40 text-zinc-500"}`}>
+                  {i + 1}
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-zinc-300">{u.userId}</span>
+                <span className="shrink-0"><Pill tone="amber">Lv {u.level}</Pill></span>
+                <span className="w-24 shrink-0 text-right text-[13px] font-medium tabular-nums text-zinc-100">{u.totalXp.toLocaleString("en-US")} XP</span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -619,8 +742,10 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
  * MODULE: Middleman (Escrow)
  * ============================================================ */
 
-export function MidmanModule({ draft, setConfig }: ModuleFormProps) {
+export function MidmanModule({ draft, meta, setConfig }: ModuleFormProps) {
   const m = draft.config.midman;
+  // v3.24.0: active deals list — /midman-deals parity (read-only payload).
+  const deals = draft.midmanDeals ?? [];
   return (
     <div className="space-y-5">
       <Section
@@ -655,6 +780,34 @@ export function MidmanModule({ draft, setConfig }: ModuleFormProps) {
           </p>
         </div>
       </Section>
+
+      {/* v3.24.0: Active deals — the same data as /midman-deals. */}
+      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-zinc-100">Active Deals ({deals.length})</h3>
+        <p className="mt-1 text-xs text-zinc-500">Unfinished middleman deals — the buyer's total = price + fee.</p>
+        <div className="mt-4 space-y-2">
+          {deals.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+              No active middleman deals on this server.
+            </p>
+          ) : (
+            deals.map((d) => (
+              <div key={d.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[13px] font-medium text-zinc-100">#{channelLabel(meta.channels, d.channelId)}</p>
+                  <Pill tone="green">{d.stateLabel}</Pill>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">
+                  <span className="font-mono">{d.buyerId}</span> ⇄ <span className="font-mono">{d.sellerId}</span> · {d.item}
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  Buyer pays <b>{d.buyerPays.toLocaleString("en-US")}</b> · seller receives {d.sellerGets.toLocaleString("en-US")} · fee {d.fee.toLocaleString("en-US")}
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }

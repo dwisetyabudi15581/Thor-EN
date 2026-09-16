@@ -22,7 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect,
-  RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
+  RoleSelect, MentionSelect, ColorInput, Pill, channelLabel, roleLabel,
 } from "../fields";
 import type { CustomCommand, DashboardPayload, GuildMeta } from "@/lib/bot-api";
 import type { ModuleActionProps } from "./module-actions";
@@ -501,13 +501,19 @@ export function PollModule({ draft, meta, call, refresh, toast }: ModuleActionPr
 export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
   const [channelId, setChannelId] = useState<string | null>(null);
   const [draftEmbed, setDraftEmbed] = useState<EmbedDraft>({ ...EMPTY_EMBED, fields: [] });
+  // v3.24.0: optional mention via dropdown (no role ID typing) — merged into
+  // the outer text on send, exactly like /send-message behaves.
+  const [mention, setMention] = useState("");
   const [busy, setBusy] = useState(false);
   const [lastUrl, setLastUrl] = useState<string | null>(null);
+
+  // Final outer text = mention + newline + the user's text.
+  const finalContent = mention ? `${mention}\n${draftEmbed.content}` : draftEmbed.content;
 
   async function send() {
     setBusy(true);
     try {
-      const api = embedDraftToApi(draftEmbed);
+      const api = embedDraftToApi({ ...draftEmbed, content: finalContent });
       const res = (await call("embed", "POST", { channelId, ...api })) as { url?: string };
       setLastUrl(res?.url ?? null);
       toast("Embed sent to the channel.");
@@ -527,10 +533,13 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
         <Field label="Target Channel">
           <ChannelSelect value={channelId} onChange={setChannelId} channels={meta.channels} />
         </Field>
+        <Field label="Mention (optional)" hint="Pick a role / everyone — no ID typing. Merged into the outer text on send.">
+          <MentionSelect value={mention} onChange={setMention} roles={meta.roles} />
+        </Field>
         <div className="flex items-end gap-2">
           <Button
             onClick={send}
-            disabled={busy || !channelId || (!draftEmbed.content.trim() && isEmbedDraftEmpty(draftEmbed))}
+            disabled={busy || !channelId || (!finalContent.trim() && isEmbedDraftEmpty(draftEmbed))}
             className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
@@ -538,7 +547,10 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
           </Button>
           <Button
             variant="outline"
-            onClick={() => setDraftEmbed({ ...EMPTY_EMBED, fields: [] })}
+            onClick={() => {
+              setDraftEmbed({ ...EMPTY_EMBED, fields: [] });
+              setMention("");
+            }}
             disabled={busy}
             className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
           >
@@ -551,9 +563,9 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
 
       <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
         <h3 className="text-sm font-semibold text-zinc-100">Preview (Discord look)</h3>
-        <p className="mt-1 text-xs text-zinc-500">An approximation of the message in Discord — markdown formatting (bold/italic) is rendered by Discord on send.</p>
+        <p className="mt-1 text-xs text-zinc-500">An approximation of the message in Discord — the chosen mention appears in the outer text; markdown formatting (bold/italic) is rendered by Discord on send.</p>
         <div className="mt-4">
-          <EmbedLivePreview draft={draftEmbed} />
+          <EmbedLivePreview draft={{ ...draftEmbed, content: finalContent }} />
         </div>
         {lastUrl ? (
           <a href={lastUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-300 hover:underline">

@@ -79,13 +79,24 @@ const { normalizeEmbedDef, buildEmbedFromDef, isEmbedEmpty } = require('./embedP
 // The SAME builder + storage as the slash commands (full two-way parity:
 // a panel installed from the web = a panel installed from /setup-ticket-panel).
 const panelManager = require('../data/panelManager');
+// v3.24.0: full Dyno-style parity — VIEW data that used to be Discord-only
+// (/stats /leaderboard /boosters /afk-list /midman-deals /leaderboard-level)
+// now ships with the dashboard payload.
+const statsManager = require('../data/statsManager');
+const afkManager = require('../data/afkManager');
+const boostManager = require('../data/boostManager');
+const midmanManager = require('../data/midmanManager');
+const levelManager = require('../data/levelManager');
+// v3.24.0: /test-welcome from the web — the SAME builder as the real event.
+const { buildWelcomeEmbed, buildGoodbyeEmbed } = require('../bot/memberHandler');
 const { buildTicketPanel } = require('../commands/panels');
 const {
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    ChannelType
+    ChannelType,
+    PermissionFlagsBits
 } = require('discord.js');
 
 // Version straight from package.json — never goes stale (v3.17.0).
@@ -584,7 +595,59 @@ function createDashHandler({ client, token, log = () => {} }) {
                     categoryIds: Array.isArray(p.categoryIds) ? p.categoryIds : [],
                     useDropdown: !!p.useDropdown,
                     createdAt: p.createdAt || null
-                }))
+                })),
+            // v3.24.0: full Dyno-style parity — the web Statistics module now
+            // reads the SAME data as /stats, /leaderboard, /boosters,
+            // /afk-list, /midman-deals, /leaderboard-level. All read-only,
+            // slim shapes, best-effort tags from the user cache (no bulk
+            // fetch — the dashboard shows the ID when no tag is available).
+            stats: {
+                server: statsManager.getServerStats(guildId),
+                top: {
+                    messages: statsManager.getTopUsers(guildId, 'messages', 10),
+                    purchases: statsManager.getTopUsers(guildId, 'vipPurchases', 10),
+                    spends: statsManager.getTopUsers(guildId, 'totalSpent', 10),
+                    wins: statsManager.getTopUsers(guildId, 'giveawaysWon', 10)
+                }
+            },
+            levelTop: levelManager.getTopUsers(guildId, 10),
+            afk: afkManager.listGuildAFK(guildId).slice(0, 100),
+            midmanDeals: midmanManager
+                .getActiveDealsByGuild(guildId)
+                .slice(0, 25)
+                .map((d) => {
+                    const totals = midmanManager.calcTotals(d.priceNum, d.fee);
+                    return {
+                        id: d.id,
+                        channelId: d.channelId,
+                        state: d.state,
+                        stateLabel: midmanManager.STATES[d.state]?.label || d.state,
+                        buyerId: d.buyerId,
+                        sellerId: d.sellerId,
+                        item: String(d.item || '').slice(0, 60),
+                        buyerPays: totals.buyerPays,
+                        sellerGets: totals.sellerGets,
+                        fee: totals.midmanKeeps,
+                        createdAt: d.createdAt || null
+                    };
+                }),
+            boosters: {
+                live: (() => {
+                    const g = client.guilds.cache.get(guildId);
+                    // Guard: a partial/mock guild may lack members.cache.
+                    const members = [...(g?.members?.cache?.values() || [])];
+                    return members
+                        .filter((m) => m.premiumSinceTimestamp)
+                        .sort((a, b) => a.premiumSinceTimestamp - b.premiumSinceTimestamp)
+                        .slice(0, 50)
+                        .map((m) => ({
+                            userId: m.id,
+                            tag: m.user?.tag || null,
+                            since: m.premiumSinceTimestamp
+                        }));
+                })(),
+                recent: boostManager.getRecentEvents(guildId, 10)
+            }
         };
     }
 
@@ -881,6 +944,84 @@ function createDashHandler({ client, token, log = () => {} }) {
                     const ok = tempVoiceManager.removeGuild(guildId);
                     if (!ok) return sendJson(res, 404, { error: 'Temp voice setup not found' });
                     return sendJson(res, 200, { ok: true, note: 'Config detached; physical channels are not deleted — remove them manually if needed.' });
+                }
+
+                // ---- v3.24.0: Test welcome/goodbye (parity with /test-welcome) ----
+                // Diagnosis + sends the REAL embed (the same builder as the
+                // genuine join event) to the configured channel. The member
+                // playing "the new member" is the dashboard user (the actor).
+                if (method === 'POST' && rest[0] === 'welcome-test' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req);
+                    const tipe = body?.type === 'goodbye' ? 'goodbye' : body?.type === 'welcome' ? 'welcome' : null;
+                    if (!tipe) return sendJson(res, 400, { error: 'type must be welcome | goodbye' });
+                    const actorId = String(body?.actor?.id || '');
+                    if (!SNOWFLAKE_RE.test(actorId)) return sendJson(res, 400, { error: 'Invalid actor.id' });
+
+                    const config = getConfig(guildId);
+                    const configuredId = config.channels[tipe];
+                    const lines = [];
+                    let channel = null;
+                    if (!configuredId) {
+                        lines.push(`❌ ${tipe} channel: not set yet — configure it in the General module.`);
+                    } else {
+                        channel = g.channels.cache.get(configuredId) || null;
+                        if (!channel) {
+                            lines.push(`❌ ${tipe} channel: not found (ID ${configuredId}) — deleted? Set it again in the General module.`);
+                        } else {
+                            lines.push(`✅ ${tipe} channel: #${channel.name}`);
+                            const perms = channel.permissionsFor?.(g.members?.me ?? null);
+                            const canSend = perms?.has?.(PermissionFlagsBits.SendMessages) ?? false;
+                            const canEmbed = perms?.has?.(PermissionFlagsBits.EmbedLinks) ?? false;
+                            lines.push(`${canSend ? '✅' : '❌'} Send Messages · ${canEmbed ? '✅' : '❌'} Embed Links (bot permissions)`);
+                        }
+                    }
+
+                    // The actor's member when possible; otherwise a synthetic
+                    // member (the builder only needs user.id/tag/avatar +
+                    // guild.name/icon/count). The displayAvatarURL check also
+                    // guards against partial/mock members.
+                    let member = null;
+                    try { member = await g.members.fetch(actorId).catch(() => null); } catch { /* mock/test */ }
+                    if (!member || typeof member.user?.displayAvatarURL !== 'function') {
+                        member = {
+                            user: {
+                                id: actorId,
+                                tag: String(body?.actor?.tag || `user-${actorId}`),
+                                displayAvatarURL: () => 'https://cdn.discordapp.com/embed/avatars/0.png'
+                            },
+                            guild: {
+                                name: g.name,
+                                iconURL: () => null,
+                                memberCount: typeof g.memberCount === 'number' ? g.memberCount : 0
+                            }
+                        };
+                    }
+
+                    if (!channel) {
+                        return sendJson(res, 422, { ok: false, lines, error: `The ${tipe} channel is not ready — fix it first.` });
+                    }
+
+                    try {
+                        const embed =
+                            tipe === 'welcome' ? buildWelcomeEmbed(member, config) : buildGoodbyeEmbed(member, config);
+                        await channel.send({ embeds: [embed] });
+                        log(`[dash] welcome-test (${tipe}) sent by ${body?.actor?.tag || actorId}`);
+                        return sendJson(res, 200, { ok: true, lines, sent: true, channelId: channel.id });
+                    } catch (err) {
+                        lines.push(`⚠️ Failed to send to the channel: ${err.message}`);
+                        return sendJson(res, 502, { ok: false, lines, error: `The bot cannot send to the ${tipe} channel: ${err.message}` });
+                    }
+                }
+
+                // ---- v3.24.0: Clear a member's AFK status (parity with /afk-clear) ----
+                if (method === 'DELETE' && rest[0] === 'afk' && rest.length === 2) {
+                    const userId = rest[1];
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId' });
+                    const ok = afkManager.clearAFK(guildId, userId);
+                    if (!ok) return sendJson(res, 404, { error: 'That member is not currently AFK' });
+                    log(`[dash] afk ${userId} cleared in ${guildId}`);
+                    return sendJson(res, 200, { ok: true });
                 }
 
                 // ========================================================

@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.23.1** · 93 slash commands (+ unlimited custom commands from the web) · 736 unit tests · discord.js v14 · Node.js 20+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked** · **+ web dashboard INSIDE THIS REPO**
+> **v3.24.0** · 93 slash commands (+ unlimited custom commands from the web) · 740 unit tests · discord.js v14 · Node.js 20+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked** · **+ web dashboard INSIDE THIS REPO (22 modules, full parity with Discord)**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -104,7 +104,7 @@ Thor/
 │   └── infra/                    # safeWrite, safeReply, userLock, permissions, auditLog
 ├── data/                         # Runtime JSON files (gitignored)
 ├── docs/                         # ADMIN_GUIDE + document index
-├── tests/unit/                   # 736 unit tests (node:test)
+├── tests/unit/                   # 740 unit tests (node:test)
 ├── dashboard/                    # 🌐 Next.js web dashboard (v3.20.0 — one repo)
 ├── setup.sh · start.sh · dev.sh  # Install & run the bot + web together
 ├── ecosystem.config.cjs          # pm2: thor-bot + thor-dash 24/7
@@ -177,7 +177,7 @@ The complete guide — including product examples, custom categories, and daily 
 | ------------------ | -------------------------------------------------- |
 | `npm start`        | Run the bot                                        |
 | `npm run dev`      | Run with nodemon (auto-restart)                    |
-| `npm test`         | Run all unit tests (736 tests)                     |
+| `npm test`         | Run all unit tests (740 tests)                     |
 | `npm run lint`     | ESLint check                                       |
 | `npm run format`   | Prettier format all files                          |
 | `./setup.sh`       | Install bot + dashboard + prepare both .env files  |
