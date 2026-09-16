@@ -92,7 +92,7 @@ const client = new Client({
 const { attachToClient } = require('./src/services/schedulerTasks');
 attachToClient(client);
 
-// === DASH API SERVER (v3.17.0) — for the Dyno-style web dashboard ===
+// === DASH API SERVER (v3.17.0) — for the web dashboard ===
 // A small HTTP API (default 127.0.0.1) — read/written by the Next.js dashboard.
 // It does not run without DASH_API_TOKEN (safe by default). The bot does NOT
 // need to be ready for the server to start — the guild endpoints only become

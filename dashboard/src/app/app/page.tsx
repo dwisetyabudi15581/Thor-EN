@@ -1,6 +1,6 @@
 "use client";
 
-// /app — Server Picker (Dyno-style): lists Discord guilds where the user is an
+// /app — Server Picker : lists Discord guilds where the user is an
 // admin (owner / ManageGuild), distinguishing servers that already have the bot
 // (manageable right away) from those that don't (invite button). This is the
 // dashboard's main gateway.
@@ -51,6 +51,9 @@ export default function ServerPickerPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [query, setQuery] = useState("");
+  // v3.24.1 FIX (5.3): a failed fetch used to leave loading=true forever (the
+  // "Loading your servers…" spinner with no recovery) + an unhandled rejection.
+  const [netError, setNetError] = useState<string | null>(null);
 
   const loadGuilds = useCallback(async () => {
     const res = await fetch(`/api/guilds?_=${Date.now()}`, { cache: "no-store" });
@@ -63,15 +66,23 @@ export default function ServerPickerPage() {
 
   useEffect(() => {
     void (async () => {
-      const meRes = await fetch(`/api/me?_=${Date.now()}`, { cache: "no-store" });
-      const meData = (await meRes.json()) as MeResponse;
-      setMe(meData);
-      if (!meData.user) {
-        router.replace("/");
-        return;
+      // v3.24.1 FIX (5.3): wrap the boot chain — one failed fetch used to leave
+      // the page on the spinner forever.
+      try {
+        setNetError(null);
+        const meRes = await fetch(`/api/me?_=${Date.now()}`, { cache: "no-store" });
+        const meData = (await meRes.json()) as MeResponse;
+        setMe(meData);
+        if (!meData.user) {
+          router.replace("/");
+          return;
+        }
+        await loadGuilds();
+        setLoading(false);
+      } catch {
+        setLoading(false);
+        setNetError("Could not reach the dashboard server. Check your connection and retry.");
       }
-      await loadGuilds();
-      setLoading(false);
     })();
   }, [loadGuilds, router]);
 
@@ -79,13 +90,22 @@ export default function ServerPickerPage() {
     setRefreshing(true);
     try {
       await loadGuilds();
+    } catch {
+      // v3.24.1 FIX (5.3): surface the failure instead of an unhandled rejection.
+      setNetError("Could not reach the dashboard server. Check your connection and retry.");
     } finally {
       setRefreshing(false);
     }
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    // v3.24.1 FIX (5.3): offline logout no longer leaves an unhandled rejection
+    // behind — the redirect happens regardless.
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* proceed to the redirect anyway — the cookie is client-side too */
+    }
     router.replace("/");
   }
 
@@ -106,6 +126,22 @@ export default function ServerPickerPage() {
           <Loader2 className="h-6 w-6 text-amber-400 animate-spin" aria-hidden="true" />
         </div>
         <p className="text-sm text-zinc-400">Loading your servers…</p>
+      </div>
+    );
+  }
+
+  // v3.24.1 FIX (5.3): retry UI instead of a dead spinner when the boot fetch failed.
+  if (netError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4 px-6 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 border border-red-500/25">
+          <WifiOff className="h-6 w-6 text-red-400" aria-hidden="true" />
+        </div>
+        <p className="text-sm text-zinc-300">{netError}</p>
+        <Button variant="outline" className="border-zinc-700 bg-transparent hover:bg-zinc-800" onClick={() => window.location.reload()}>
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          Retry
+        </Button>
       </div>
     );
   }

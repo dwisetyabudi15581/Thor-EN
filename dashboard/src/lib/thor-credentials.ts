@@ -23,7 +23,7 @@ export const SANDBOX_DEFAULTS = {
   DISCORD_CLIENT_SECRET: "",
   ADMIN_DISCORD_IDS: "",
   PUBLIC_ORIGIN: "",
-  // Thor bot DASH API (Dyno-style dashboard) — a small HTTP server inside
+  // Thor bot DASH API (web dashboard) — a small HTTP server inside
   // the bot process. DASH_API_TOKEN must MATCH the one in the Thor bot's
   // .env.
   DASH_API_URL: "",

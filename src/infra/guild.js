@@ -28,11 +28,11 @@
  *      This is the mode normal deployments use: switching servers = edit
  *      the single GUILD_ID line in .env, done.
  *
- *   2. GUILD_ID EMPTY → PUBLIC MODE (Dyno-style):
+ *   2. GUILD_ID EMPTY → PUBLIC MODE :
  *      - Slash commands are registered GLOBALLY: they appear
  *        automatically in EVERY server that invites the bot (~1 hour
  *        propagation) — the same behavior as big public bots like
- *        Dyno/MEE6; they never enter a guild id manually either.
+ *        the big public bots; they never enter a guild id manually either.
  *      - All events are processed; configs are isolated per-server
  *        automatically (data/config/<guildId>.json — the v3.10.0
  *        architecture).

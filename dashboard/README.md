@@ -1,4 +1,4 @@
-# Thor Dashboard — Manage Your Discord Bot from the Web (Dyno-style)
+# Thor Dashboard — Manage Your Discord Bot from the Web 
 
 > This folder is part of the **Thor** repository (bot + dashboard in ONE repo).
 > The full deployment guide lives in [../DEPLOY.md](../DEPLOY.md) (repo root).
@@ -34,7 +34,7 @@ Browser ──> Next.js Dashboard (Discord OAuth2 login)
 - **Server picker** — the list of servers you manage + bot status (active/not yet)
 - **20 configuration modules** (v3.21.0): **Quick Start** (a 6-step server
   setup checklist — roles via pick/ID, products, panel installs, log channel;
-  applied by the bot to the server instantly), Command Manager (Dyno-style —
+  applied by the bot to the server instantly), Command Manager ( —
   enable/disable each slash command per server), **Custom Command** (build your
   own slash command on the web → automatically registered on Discord),
   **Embed Builder** (full builder + a Discord-style live preview), Backup,

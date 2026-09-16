@@ -16,8 +16,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Thor Dashboard — Control Your Discord Bot from the Web",
   description:
-    "A Discord bot that's free for every server: moderation, tickets, a shop, leveling, automod. Configure it via slash commands or the Dyno-style web dashboard — one data source, two ways to control it.",
-  keywords: ["Discord bot", "dashboard", "Thor", "free", "moderation", "Dyno alternative"],
+    "A Discord bot that's free for every server: moderation, tickets, a shop, leveling, automod. Configure it via slash commands or the web dashboard — one data source, two ways to control it.",
+  keywords: ["Discord bot", "dashboard", "Thor", "free", "moderation"],
   authors: [{ name: "dwisetyabudi15581" }],
   openGraph: {
     title: "Thor Dashboard",

@@ -96,7 +96,7 @@ async function onEvent(oldMember, newMember) {
             //     otherwise granting @Member at join would immediately strip
             //     the role itself and the toggle would be useless.
             // Toggle OFF (default) → nothing is stripped: auto-roles are
-            // permanent, Dyno-style.
+            // permanent, .
             const config = getConfig(newMember.guild.id);
             const joinIds = joinRoleIds(config);
             if (

@@ -1,6 +1,6 @@
 "use client";
 
-// Reusable form controls for the dashboard modules (Dyno-style).
+// Reusable form controls for the dashboard modules .
 // All fields are dark-editorial (zinc + amber accent) and are reused by
 // module-forms.tsx so the 12 modules never build UI from scratch.
 
@@ -258,7 +258,7 @@ export function Pill({ children, tone = "zinc" }: { children: ReactNode; tone?: 
     red: "border-red-400/30 bg-red-400/10 text-red-300",
   } as const;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${tones[tone]}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium ${tones[tone]}`}>
       {children}
     </span>
   );

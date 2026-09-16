@@ -1,5 +1,5 @@
 // The user's guild list via Discord OAuth (the `guilds` scope) — for the
-// Dyno-style Server Picker page. Guilds are fetched LIVE from Discord (never
+// Server Picker page. Guilds are fetched LIVE from Discord (never
 // copied into the DB) so servers the user just created/left are always
 // accurate.
 //
@@ -7,7 +7,7 @@
 //   1. GET /users/@me/guilds with the user's access token (stored at login).
 //   2. Expired token → one automatic refresh (refresh_token grant).
 //   3. Filter manageable guilds: owner OR the MANAGE_GUILD permission
-//      (0x20) — the same standard used by Dyno and other dashboards.
+//      (0x20) — the same standard used by all major dashboards.
 //   4. Intersect with the bot's guild list (DASH API) → mark which ones
 //      already have the bot (manageable now) vs not (invite button).
 

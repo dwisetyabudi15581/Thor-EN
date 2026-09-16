@@ -1,7 +1,7 @@
 /**
  * Dashboard API Server (v3.17.0) — a small HTTP API for the WEB DASHBOARD.
  *
- * Concept (Dyno-style): every bot setting can be controlled through TWO
+ * Concept : every bot setting can be controlled through TWO
  * channels — slash commands directly in Discord, OR the web dashboard.
  * Both write to the same data source (data/config/<guildId>.json etc.),
  * so the state can never diverge.
@@ -57,7 +57,7 @@ const tempVoiceManager = require('../data/tempVoiceManager');
 const announcements = require('../data/scheduledAnnouncements');
 const serverstatsManager = require('../data/serverstatsManager');
 const { buildPanelEmbed, buildPanelComponents } = require('../ui/selfRolePanelBuilder');
-const { normalizeNewlines } = require('./text');
+const { normalizeNewlines, isValidEmoji } = require('./text');
 // v3.19.0: new modules for the Command Manager + web Giveaway / Poll /
 // Embed / Backup / Moderation / Keys modules.
 const giveawayManager = require('../data/giveawayManager');
@@ -79,7 +79,7 @@ const { normalizeEmbedDef, buildEmbedFromDef, isEmbedEmpty } = require('./embedP
 // The SAME builder + storage as the slash commands (full two-way parity:
 // a panel installed from the web = a panel installed from /setup-ticket-panel).
 const panelManager = require('../data/panelManager');
-// v3.24.0: full Dyno-style parity — VIEW data that used to be Discord-only
+// v3.24.0: full feature parity — VIEW data that used to be Discord-only
 // (/stats /leaderboard /boosters /afk-list /midman-deals /leaderboard-level)
 // now ships with the dashboard payload.
 const statsManager = require('../data/statsManager');
@@ -357,6 +357,21 @@ function applyUpdates(config, updates) {
                 else config.claimGiveawayDismissed = true;
                 if (ids.has('midman')) delete config.midmanCategoryDismissed;
                 else config.midmanCategoryDismissed = true;
+                // v3.24.2 PARITY FIX: /remove-category (Discord) remaps products
+                // orphaned by a deleted category to 'transaction' so they never
+                // silently vanish from every panel dropdown. The web path used to
+                // skip this — deleting a category from the web left its products
+                // as orphans. Now both paths behave the same: any product whose
+                // category no longer exists falls back to 'transaction' (or the
+                // first remaining category if 'transaction' itself was deleted).
+                if (Array.isArray(config.products) && v.value.length > 0) {
+                    const fallback = ids.has('transaction') ? 'transaction' : String(v.value[0].id);
+                    config.products = config.products.map((p) =>
+                        p && typeof p.category === 'string' && !ids.has(p.category)
+                            ? { ...p, category: fallback }
+                            : p
+                    );
+                }
             }
         } else if (config[v.section] && typeof config[v.section] === 'object') {
             config[v.section][v.key] = v.value;
@@ -457,14 +472,24 @@ function createDashHandler({ client, token, log = () => {} }) {
         res.end(body);
     }
 
-    function readBody(req) {
+    function readBody(req, res) {
         return new Promise((resolve, reject) => {
             const chunks = [];
             let size = 0;
             req.on('data', (c) => {
                 size += c.length;
                 if (size > MAX_BODY_BYTES) {
+                    // v3.24.1 FIX (L2): reply 413 BEFORE destroying the socket — the
+                    // old code destroyed the connection first, so the 500 sent by the
+                    // caller's catch block never reached the client (socket hang up).
                     reject(new Error('Body too large'));
+                    if (res && !res.headersSent) {
+                        try {
+                            res.writeHead(413, { 'content-type': 'application/json' });
+                            res.end(JSON.stringify({ error: 'Body too large' }));
+                            return;
+                        } catch (_) { /* already gone */ }
+                    }
                     req.destroy();
                     return;
                 }
@@ -596,7 +621,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                     useDropdown: !!p.useDropdown,
                     createdAt: p.createdAt || null
                 })),
-            // v3.24.0: full Dyno-style parity — the web Statistics module now
+            // v3.24.0: full feature parity — the web Statistics module now
             // reads the SAME data as /stats, /leaderboard, /boosters,
             // /afk-list, /midman-deals, /leaderboard-level. All read-only,
             // slim shapes, best-effort tags from the user cache (no bulk
@@ -665,7 +690,16 @@ function createDashHandler({ client, token, log = () => {} }) {
     }
 
     return async function handler(req, res) {
-        const url = new URL(req.url, 'http://localhost');
+        // v3.24.1 FIX (M1): URL parsing moved INSIDE try/catch — a malformed
+        // request target (e.g. absolute-form URL with an out-of-range port)
+        // used to throw before the auth check, producing an unhandled
+        // rejection and a hung socket (no response until requestTimeout).
+        let url;
+        try {
+            url = new URL(req.url, 'http://localhost');
+        } catch {
+            return sendJson(res, 400, { error: 'Invalid request target' });
+        }
         const parts = url.pathname.split('/').filter(Boolean); // ["guilds", id, ...]
         const method = req.method;
 
@@ -711,7 +745,7 @@ function createDashHandler({ client, token, log = () => {} }) {
 
                 // ---- PUT /guilds/:id/config ----
                 if (method === 'PUT' && rest[0] === 'config') {
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const updates = body?.updates;
                     if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
                         return sendJson(res, 400, { error: 'Body must be { updates: { dotPath: value } }' });
@@ -741,22 +775,26 @@ function createDashHandler({ client, token, log = () => {} }) {
 
                 // ---- PUT /guilds/:id/automod ----
                 if (method === 'PUT' && rest[0] === 'automod') {
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     if (!body || typeof body !== 'object' || Array.isArray(body)) {
                         return sendJson(res, 400, { error: 'Body must be an automod object' });
                     }
+                    // v3.24.1 FIX (L1): capture the actor BEFORE deleting it from the
+                    // body — the old code read `out.__actor` which never existed, so the
+                    // audit trail always logged "unknown" for automod changes.
+                    const automodActor = body?.actor?.tag || body?.actor?.id || 'unknown';
                     delete body.actor; // actor is not an automod field
                     const { out, errs } = validateAutomodPatch(body);
                     if (errs.length > 0) return sendJson(res, 422, { error: 'Validation failed', details: errs });
                     const merged = automodManager.setGuildConfig(guildId, out);
-                    log(`[dash] automod ${guildId} updated by ${out.__actor || 'unknown'}`);
+                    log(`[dash] automod ${guildId} updated by ${automodActor}`);
                     return sendJson(res, 200, { ok: true, automod: merged });
                 }
 
                 // ---- Responders ----
                 if (rest[0] === 'responders') {
                     if (method === 'POST' && rest.length === 1) {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const trigger = String(body?.trigger || '').trim();
                         const reply = String(body?.reply || '').trim();
                         if (!isStr(trigger, 50)) return sendJson(res, 400, { error: 'Trigger must be 1-50 characters' });
@@ -792,7 +830,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // ---- Announce (scheduled) ----
                 if (rest[0] === 'announce') {
                     if (method === 'POST' && rest.length === 1) {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const channelId = String(body?.channelId || '');
                         if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
                         if (!isStr(String(body?.title || ''), 256)) return sendJson(res, 400, { error: 'Title must be 1-256 characters' });
@@ -829,6 +867,12 @@ function createDashHandler({ client, token, log = () => {} }) {
                         return sendJson(res, 201, { ok: true, announcement: entry });
                     }
                     if (method === 'DELETE' && rest.length === 2) {
+                        // v3.24.1 SECURITY FIX (H1): the announcement ID must belong to
+                        // THIS guild — otherwise an admin of guild A could delete an
+                        // announcement of guild B by ID (cross-guild IDOR).
+                        const ann = announcements.get(rest[1]);
+                        if (!ann) return sendJson(res, 404, { error: 'Announcement not found' });
+                        if (ann.guildId !== guildId) return sendJson(res, 404, { error: 'Announcement not found' });
                         const ok = announcements.remove(rest[1]);
                         if (!ok) return sendJson(res, 404, { error: 'Announcement not found' });
                         return sendJson(res, 200, { ok: true });
@@ -838,7 +882,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // ---- Self-role panels ----
                 if (rest[0] === 'selfroles') {
                     if (method === 'POST' && rest.length === 1) {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const channelId = String(body?.channelId || '');
                         if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
                         const type = body?.type === 'select' ? 'select' : 'button';
@@ -890,8 +934,16 @@ function createDashHandler({ client, token, log = () => {} }) {
                     }
 
                     if (method === 'POST' && rest.length === 3 && rest[2] === 'roles') {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         if (!SNOWFLAKE_RE.test(String(body?.roleId || ''))) return sendJson(res, 400, { error: 'Invalid roleId' });
+                        // v3.24.1 SECURITY FIX (H1): the panel must belong to THIS guild —
+                        // otherwise an admin of guild A could add roles to guild B's panel
+                        // by panel ID (cross-guild IDOR → privilege escalation via a
+                        // self-role click in guild B).
+                        const targetPanel = selfRoleManager.getPanel(rest[1]);
+                        if (!targetPanel || targetPanel.guildId !== guildId) {
+                            return sendJson(res, 404, { error: 'Panel not found' });
+                        }
                         const added = selfRoleManager.addRoleToPanel(rest[1], {
                             roleId: String(body.roleId),
                             label: String(body?.label || 'Role').slice(0, 80),
@@ -907,6 +959,11 @@ function createDashHandler({ client, token, log = () => {} }) {
                     if (method === 'DELETE' && rest.length === 3 && rest[2] === 'roles') {
                         const roleId = url.searchParams.get('roleId');
                         if (!roleId) return sendJson(res, 400, { error: 'The roleId parameter is required' });
+                        // v3.24.1 SECURITY FIX (H1): the panel must belong to THIS guild (cross-guild IDOR).
+                        const rolesPanel = selfRoleManager.getPanel(rest[1]);
+                        if (!rolesPanel || rolesPanel.guildId !== guildId) {
+                            return sendJson(res, 404, { error: 'Panel not found' });
+                        }
                         const removed = selfRoleManager.removeRoleFromPanel(rest[1], roleId);
                         if (!removed.ok) return sendJson(res, 404, { error: removed.error });
                         await reRenderPanel(rest[1]);
@@ -916,6 +973,8 @@ function createDashHandler({ client, token, log = () => {} }) {
                     if (method === 'DELETE' && rest.length === 2) {
                         const panel = selfRoleManager.getPanel(rest[1]);
                         if (!panel) return sendJson(res, 404, { error: 'Panel not found' });
+                        // v3.24.1 SECURITY FIX (H1): the panel must belong to THIS guild (cross-guild IDOR).
+                        if (panel.guildId !== guildId) return sendJson(res, 404, { error: 'Panel not found' });
                         // Delete the message best-effort (the panel entry is
                         // cleaned up regardless).
                         if (panel.messageId && panel.channelId) {
@@ -952,7 +1011,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // playing "the new member" is the dashboard user (the actor).
                 if (method === 'POST' && rest[0] === 'welcome-test' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const tipe = body?.type === 'goodbye' ? 'goodbye' : body?.type === 'welcome' ? 'welcome' : null;
                     if (!tipe) return sendJson(res, 400, { error: 'type must be welcome | goodbye' });
                     const actorId = String(body?.actor?.id || '');
@@ -1032,7 +1091,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // Same rules as /commands toggle (normalizeDisabledList is
                 // shared — one source of truth across both interfaces).
                 if (method === 'PUT' && rest[0] === 'commands' && rest.length === 1) {
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     // v3.20.0: this guild's custom command names are allowed
                     // in the disabled list too (same rules as /commands toggle).
                     const customNames = customCommandManager.getGuildCommands(guildId).map((c) => c.name);
@@ -1055,7 +1114,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // up as a REAL slash command on the server within seconds.
                 if (method === 'POST' && rest[0] === 'custom-commands' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const builtinNames = getCommands().map((c) => c.name);
                     const result = customCommandManager.upsertCommand(guildId, body, builtinNames, {
                         id: String(body?.actor?.id || 'web'),
@@ -1092,7 +1151,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // ---- Giveaway: create from the web (parity with /giveaway create) ----
                 if (method === 'POST' && rest[0] === 'giveaway' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const channelId = String(body?.channelId || '');
                     const prize = String(body?.prize || '').trim();
                     const winners = Number(body?.winners ?? 1);
@@ -1166,7 +1225,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // ---- Poll: create from the web (parity with /poll create via modal) ----
                 if (method === 'POST' && rest[0] === 'poll' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const channelId = String(body?.channelId || '');
                     const question = String(body?.question || '').trim();
                     const multiple = !!body?.multiple;
@@ -1182,6 +1241,12 @@ function createDashHandler({ client, token, log = () => {} }) {
                         const label = String(o?.label || '').trim();
                         const emoji = o?.emoji ? String(o.emoji).slice(0, 64) : `${i + 1}️⃣`;
                         if (!isStr(label, 80)) return sendJson(res, 400, { error: `Option #${i + 1}: label must be 1-80 characters` });
+                        // v3.24.1 FIX (L3): validate the emoji up front — an invalid
+                        // emoji used to fail only at send time (Discord 50035), which
+                        // surfaced as a misleading 502 "check the bot permissions".
+                        if (!isValidEmoji(emoji)) {
+                            return sendJson(res, 400, { error: `Option #${i + 1}: invalid emoji (use a standard Unicode emoji or a custom emoji like :name:12345)` });
+                        }
                         options.push({ label, emoji });
                     }
 
@@ -1262,7 +1327,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // and third-party clients don't break.
                 if (method === 'POST' && rest[0] === 'embed' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const channelId = String(body?.channelId || '');
                     if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
 
@@ -1308,7 +1373,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // ---- Backup: create now + restore (parity with /backup-now, /restore-backup) ----
                 if (rest[0] === 'backups') {
                     if (method === 'POST' && rest.length === 1) {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const result = backupManager.createBackup();
                         if (!result.ok) {
                             return sendJson(res, 500, {
@@ -1319,7 +1384,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                         return sendJson(res, 201, { ok: true, backupName: result.backupName, filesCopied: result.filesCopied });
                     }
                     if (method === 'POST' && rest.length === 3 && rest[2] === 'restore') {
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const result = await backupManager.restoreBackup(rest[1]);
                         if (!result.ok) {
                             return sendJson(res, 422, { error: `Restore failed: ${result.errors.join('; ') || 'backup not found / invalid name format'}` });
@@ -1333,7 +1398,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 if (rest[0] === 'keys') {
                     if (method === 'POST' && rest.length === 1) {
                         if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                        const body = await readBody(req);
+                        const body = await readBody(req, res);
                         const userId = String(body?.userId || '');
                         const value = String(body?.value || '');
                         if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId (Discord ID)' });
@@ -1439,7 +1504,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                 // Same builder (buildTicketPanel) → web panel = Discord panel, one storage.
                 if (method === 'POST' && rest[0] === 'panels' && rest.length === 1) {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
-                    const body = await readBody(req);
+                    const body = await readBody(req, res);
                     const config = getConfig(guildId);
 
                     if (!config.roles.admin) {

@@ -43,7 +43,7 @@ const DEFAULTS = {
         // v3.9.11 Phase 1: ticket header is configurable (previously hardcoded "PRICE LIST KEY")
         ticketPriceHeader: '💰 PRICE LIST 💰'
     },
-    // v3.23.0: auto-role on join (Dyno-style). The admin's chosen roles are
+    // v3.23.0: auto-role on join. The admin's chosen roles are
     // granted automatically to every new member. The removeOnNewRole toggle
     // (default OFF): while ON, EVERY join role is stripped automatically the
     // moment the member receives any OTHER role (see

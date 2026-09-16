@@ -1,6 +1,6 @@
 // Guild access verification for every /api/guilds/** route.
 //
-// Rule (Dyno standard): a user may only manage servers where they are the
+// Rule (industry standard): a user may only manage servers where they are the
 // owner OR hold the MANAGE_GUILD permission on Discord — verified LIVE
 // against the Discord API via the user's OAuth token, not just a claim in
 // the request.

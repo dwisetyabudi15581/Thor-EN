@@ -84,6 +84,13 @@ function create(data) {
         recurring: data.recurring || null,
         createdAt: Date.now()
     };
+    // v3.24.1 FIX (monthly drift): remember the intended day-of-month so short
+    // months clamp (Jan 31 → Feb 28) and then RESTORE (→ Mar 31) instead of
+    // setMonth overflow (Jan 31 → Mar 3 forever).
+    if (entry.recurring === 'monthly') {
+        const day = new Date(data.sendAt).getDate();
+        if (Number.isFinite(day)) entry.monthlyDay = day;
+    }
     list.push(entry);
     save(list);
     return entry;
@@ -117,12 +124,12 @@ function markSent(id) {
     // the future. But cap it at 365 iterations max (defense-in-depth in case
     // computeNextRecurring has a bug and returns a stale timestamp).
     if (entry.recurring) {
-        let nextSendAt = computeNextRecurring(entry.sendAt, entry.recurring);
+        let nextSendAt = computeNextRecurring(entry.sendAt, entry.recurring, entry.monthlyDay);
         const now = Date.now();
         let iter = 0;
         const MAX_ITER = 366; // 1 year cycle maximum
         while (nextSendAt && nextSendAt <= now && iter < MAX_ITER) {
-            nextSendAt = computeNextRecurring(nextSendAt, entry.recurring);
+            nextSendAt = computeNextRecurring(nextSendAt, entry.recurring, entry.monthlyDay);
             iter++;
         }
         if (nextSendAt) {
@@ -156,9 +163,11 @@ function remove(id) {
  * Compute next recurring timestamp.
  * @param {number} fromTs - reference timestamp
  * @param {string} type - 'daily' | 'weekly' | 'monthly'
+ * @param {number} [origDay] - original day-of-month for monthly recurrence
+ *   (v3.24.1: prevents setMonth overflow — see below)
  * @returns {number|null} next timestamp, or null if invalid
  */
-function computeNextRecurring(fromTs, type) {
+function computeNextRecurring(fromTs, type, origDay) {
     const d = new Date(fromTs);
     switch (type) {
         case 'daily':
@@ -167,9 +176,28 @@ function computeNextRecurring(fromTs, type) {
         case 'weekly':
             d.setDate(d.getDate() + 7);
             return d.getTime();
-        case 'monthly':
-            d.setMonth(d.getMonth() + 1);
-            return d.getTime();
+        case 'monthly': {
+            // v3.24.1 FIX: `setMonth(+1)` overflows on long months — Jan 31
+            // became Mar 3 and NEVER returned to the month-end. Build the next
+            // date from components instead (setDate-then-setMonth also rolls
+            // over: Feb 28 + setDate(31) → Mar 3). The intended day (the
+            // entry's monthlyDay, or the current date for legacy entries) is
+            // clamped to the last day of shorter months only:
+            // Jan 31 → Feb 28 → Mar 31 → Apr 30 → May 31 …
+            const day = Number.isInteger(origDay) && origDay >= 1 && origDay <= 31 ? origDay : d.getDate();
+            const targetMonth = d.getMonth() + 1; // may be 12 → January next year via monthIndex 12
+            const lastDayOfTarget = new Date(d.getFullYear(), targetMonth + 1, 0).getDate();
+            const clampedDay = Math.min(day, lastDayOfTarget);
+            return new Date(
+                d.getFullYear(),
+                targetMonth,
+                clampedDay,
+                d.getHours(),
+                d.getMinutes(),
+                d.getSeconds(),
+                d.getMilliseconds()
+            ).getTime();
+        }
         default:
             return null;
     }
@@ -199,19 +227,19 @@ function parseTime(input) {
     const MAX_RELATIVE_DAYS = 365;
     const MAX_ABSOLUTE_FUTURE_MS = 5 * 365 * 24 * 60 * 60 * 1000; // 5 years
 
-    // Relative: 30m, 2h, 1d, 1h30m
-    const relMatch = trimmed.match(/^(\d+)([mhd])$/);
-    if (relMatch) {
-        const num = parseInt(relMatch[1]);
-        const unit = relMatch[2];
-        // v3.9.1: range check — a number that's too large is invalid.
-        if (num <= 0 || num > 1000000) return null;
+    // Relative: 30m, 2h, 1d — and combined: 1h30m, 1d12h, 2d5h30m (v3.24.1 FIX:
+    // "1h30m" was documented but the old single-unit regex rejected it)
+    const relMatch = trimmed.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?$/);
+    if (relMatch && (relMatch[1] || relMatch[2] || relMatch[3])) {
+        const days = relMatch[1] ? parseInt(relMatch[1], 10) : 0;
+        const hours = relMatch[2] ? parseInt(relMatch[2], 10) : 0;
+        const mins = relMatch[3] ? parseInt(relMatch[3], 10) : 0;
 
-        let deltaMs;
-        if (unit === 'm') deltaMs = num * 60000;
-        else if (unit === 'h') deltaMs = num * 3600000;
-        else if (unit === 'd') deltaMs = num * 86400000;
-        else return null;
+        // v3.9.1: range check — a number that's too large is invalid.
+        if (days > 1000000 || hours > 1000000 || mins > 1000000) return null;
+
+        const deltaMs = mins * 60000 + hours * 3600000 + days * 86400000;
+        if (deltaMs <= 0) return null;
 
         // Check the upper bound (max 365 days)
         if (deltaMs > MAX_RELATIVE_DAYS * 86400000) return null;

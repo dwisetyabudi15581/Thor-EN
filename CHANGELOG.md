@@ -4,11 +4,75 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.24.2] — 2026-09-17
+
+### Fixed & Improved — 🎨 DASHBOARD UX PASS: TICKET CATEGORIES REWORK + BRAND CLEANUP
+
+Owner's request: *"fix all bugs; make the web dashboard more user friendly; remove every word related to a certain third-party bot brand (no brand sponsorship); make the 'built-in' label one line; and make the bot's default categories (middleman etc.) deletable from the web."*
+
+**Ticket Categories & Products (dashboard):**
+
+- 🟡 **Orphaned products when a category is deleted from the web (parity bug):** `/remove-category` (Discord) remaps products of the deleted category to `transaction`, but the web path never did — deleting a category from the web left its products invisible in every panel dropdown. The DASH API config validator now applies the exact same rule (fallback: `transaction`, or the first remaining category if `transaction` itself was deleted), and the dashboard draft applies it too so what you see is what gets saved.
+- 🟢 **"Built-in" badge is now a single line** (`whitespace-nowrap` + `shrink-0` on the Pill component — it used to wrap to "built-"/"in" in narrow columns).
+- 🟢 **Category cards reworked for clarity:** every input now has a label (Emoji / Label / ID / Button color) instead of five unlabeled fields; the decorative drag-grip (which implied drag-and-drop that never existed) is replaced by real Move up / Move down buttons that change the panel button order.
+- 🟢 **Deleting a built-in category (transaction / help / report / claim giveaway / midman) now asks for confirmation** and explains that it stays deleted — this capability existed at the API level (the dismissed flags are synced so `getConfig()` never resurrects the category) but the UI never communicated it.
+- 🟢 **New "Restore" menu** in the Ticket Categories header: re-add any deleted built-in category exactly as it shipped (same id / emoji / style) in one click, instead of rebuilding it by hand.
+- 🟢 **Product cards also got labels + a delete confirmation**, and the key/delivery toggle explains what it does on hover.
+
+**Dashboard (general UX):**
+
+- 🟢 **Unsaved-changes guard:** closing or reloading the tab with a dirty draft now shows the browser's "Leave site?" confirmation instead of silently throwing the changes away.
+
+**Brand cleanup:**
+
+- 🟢 **Every reference to the old third-party bot brand removed** (user-facing strings first: landing page, module descriptions, autorole/embed/command-manager hints, SEO title/keywords, the `/commands` slash-command description, `/set-autorole list` output, `/help` catalog — then comments, docs, package.json descriptions, and test titles). Markdown anchors that contained the old word were updated so the ADMIN_GUIDE table of contents still links correctly.
+
+**Tests:** 3 new regression tests (769 total, all passing) — web deletion of `claim_giveaway`/`midman` sets the dismissed flags and the categories stay deleted on a cold re-read; re-adding clears the flag; orphaned products fall back to `transaction` (including when `transaction` itself is deleted).
+
+## [3.24.1] — 2026-09-17
+
+### Fixed — 🔍 FULL-CODEBASE DEBUGGING PASS (766 tests, +26 regression tests)
+
+Owner's request: *"please read and debug all my code on GitHub."* A complete review of the bot (`index.js`, `src/**`), the dashboard (`dashboard/src/**`), and the tests — every finding below was verified against the live code before fixing. All 740 existing tests keep passing; 26 new regression tests lock the fixes in.
+
+**Security:**
+
+- 🔴 **DASH API cross-guild IDOR (H1):** the self-role panel + scheduled-announcement endpoints resolved objects **by ID only** — an admin of guild A could add a privileged role to guild B's panel (the panel ID is printed in the panel message footer) and then claim it via the panel click in guild B. Every endpoint (`POST/DELETE /selfroles/:panelId/roles`, `DELETE /selfroles/:panelId`, `DELETE /announce/:annId`) now verifies the object's `guildId` matches the URL guild → 404 otherwise.
+- 🔴 **Dashboard: forgeable session tokens when `SESSION_SECRET` is empty (1.1):** an empty HMAC key is deterministic and publicly computable — a forged `{uid, exp, p:{isAdmin:true}}` token gave full account takeover while OAuth was configured but the secret was not. `sign()` now refuses (fail-fast, loud error with the fix command) when OAuth is ready and the secret is empty; existing tokens fail closed (logged out); the OAuth callback surfaces `konfigurasi_tidak_aman` instead of a 500.
+- 🟠 **Dashboard: OAuth tokens leaking into stdout (7.1):** Prisma `log: ['query']` printed SQL with bound parameters — including the User row's live Discord `accessToken`/`refreshToken` — on every login/refresh. Query logging is now development-only.
+- 🟡 **DASH API: unauthenticated URL-parse crash (M1):** a malformed absolute-form request target made `new URL()` throw BEFORE the auth check → unhandled rejection + a hung socket until the 300 s request timeout. Now a clean 400 (verified with a raw-socket probe).
+- 🟡 **Dashboard: OAuth state cookie now `Secure` in production (1.3)**, consistent with the session cookie.
+
+**Bot correctness:**
+
+- 🟠 **Self-role exclusive select bypassed the prerequisite (H-1):** the exclusive branch of `handleSelfRoleSelect` enforced neither the panel-membership check nor `requiresRoleId` — a member could pick a conditional role from an exclusive dropdown without meeting its prerequisite (and a forged value could grant any role ID). Both guards now match the button path.
+- 🟡 **Spam threshold off-by-one (6a):** `checkSpam` compared `> threshold` — with the documented default 5, the SIXTH message was flagged. Now trips exactly at N messages in the window, matching the option description; the codified-bug test was updated.
+- 🟡 **Monthly recurrence drift (4a):** `setMonth(+1)` overflowed — an announcement scheduled Jan 31 ran Mar 3, Apr 3, May 3… forever, never returning to the month-end. Entries now carry `monthlyDay`; the next date is built from components and clamps only in short months (Jan 31 → Feb 28 → Mar 31; Dec 31 → Jan 31 next year). Legacy entries clamp from the current date.
+- 🟡 **`parseTime` rejected documented combined units (4b):** `1h30m` (documented since v3.9.1) failed the single-unit regex. Combined `Nd Nh Nm` now works (`1d12h`, `2d5h30m`), single units unchanged, `0h0m` → invalid.
+- 🟡 **`/setup-selfrole` zombie panel (M-1):** `createPanel()` persisted BEFORE the embed build — a title > 256 chars (Discord accepts up to 6000 in options) made `buildPanelEmbed` throw → permanent zombie entry. The build is now inside the rollback try/catch + the registry options carry `max_length` (256/4000), and `buildPanelEmbed` clamps a very long panel description that used to make the truncation math go negative.
+- 🟡 **List commands dead at legitimate data volumes (M-2):** `/list-products` (~15-18 full products), `/list-responder` (~32), `/selfrole-list` (~5 populated panels) exceeded the 4096 embed description limit → `setDescription` threw → the command was dead until data was removed. New shared helper `joinCappedLines` caps the list with a "+N more" suffix (same pattern as the earlier `/config-show` fix).
+- 🟡 **DASH API automod audit trail always logged "unknown" (L1):** the actor was deleted from the body before the log line read it from a field that never existed. Captured up front now.
+- 🟡 **Ticket close: unguarded `interaction.channel.id` after `deferUpdate` (L-1):** a channel deleted by another admin during the await crashed the close flow; now guarded with an explicit "channel no longer exists" reply.
+- 🟢 **Midman `cancel` is now announced in the deal channel (L-2)** — it was the only transition without a public notice in the transcript.
+- 🟢 **Poll emoji from the web validated up front (L3)** with `isValidEmoji` → a clear 400 instead of a misleading 502 "check bot permissions" at send time; keycap sequences (`1️⃣`, the default) are now correctly recognized as valid emoji.
+- 🟢 **Oversized DASH API bodies now get a real 413 (L2)** instead of a destroyed socket ("socket hang up" on the client).
+- 🟢 **Surrogate-pair-safe truncation (L4/L5):** server-log `snip` + embed field slicing, audit-log details, and the temp-voice channel name all route through `truncateUtf8Safe` — an emoji at the cut boundary no longer kills the whole log entry or the room creation.
+- 🟢 **Self-role select menu capped at 25 options (builder)** — matching the button path (legacy/edited data with >25 roles no longer breaks the panel render).
+
+**Dashboard correctness:**
+
+- 🟠 **Auto-Role editor corrupted its own draft (5.1):** `setConfig("autorole", array)` replaced the draft's `{roleIds, removeOnNewRole}` OBJECT with a plain array → the chips list instantly reset, the toggle displayed wrong, and a second Add silently dropped the first role. New dedicated `setAutoroleRoleIds` setter writes `autorole.roleIds` to the draft while queuing the whole-array wire update the bot expects.
+- 🟡 **Demo mode was unreachable (5.4):** `onLoginDemo` was declared in the landing props but never rendered — while OAuth was unconfigured, the only login button redirected to Discord with an empty `client_id` (broken error page). The hero now swaps to "Explore in Demo Mode" when OAuth isn't ready (+ a "Try Demo" secondary button when it is), and `/api/auth/discord` redirects back with a clear error banner instead of leaving Discord.
+- 🟡 **Dead spinners on failed boot fetches (5.3):** `/` and `/app` left the user on "Preparing the dashboard…"/"Loading your servers…" forever when `/api/me` or `/api/guilds` failed (plus unhandled rejections). Both pages now show an error state with a Retry button; offline logout still redirects.
+- 🟢 **`UserDelegate.findUnique` type accepts `select`** — fixes the TS2353 in `discord-guilds.ts` (the runtime always supported it).
+- 🟢 **Removed the dead `tailwind.config.ts`** (Tailwind v3 leftover importing the uninstalled `tailwindcss-animate` — the project is on Tailwind v4 via CSS; the file caused the only two `tsc` errors).
+- 🟢 **Unused `saveConfig` import removed from `panels.js`.**
+
 ## [3.24.0] — 2026-09-16
 
-### Added — 📊 FULL DYNO-STYLE DASHBOARD PARITY: PICKER-BASED MENTIONS + STATISTICS & AFK MODULES + ALL VIEW DATA ON THE WEB
+### Added — 📊 FULL DASHBOARD PARITY: PICKER-BASED MENTIONS + STATISTICS & AFK MODULES + ALL VIEW DATA ON THE WEB
 
-Owner's request: *"add an optional select-role mention to the announcement and embed builder so I don't have to type role IDs. Also badwords aren't in the dashboard — check every command so we can manage everything from the dashboard, like Dyno."* Audit of the 92 slash commands: **every setting (config) was already 100% manageable from the web** — including badwords (AutoMod module → the "Word Blocking" section, present for a long time; the page used to crash due to the v3.23.1 bug, which made it look missing). What was missing were the VIEW/operational features. This release closes all of those gaps + replaces every "paste the ID manually" input with a dropdown picker.
+Owner's request: *"add an optional select-role mention to the announcement and embed builder so I don't have to type role IDs. Also badwords aren't in the dashboard — check every command so we can manage everything from the dashboard, like the big bots."* Audit of the 92 slash commands: **every setting (config) was already 100% manageable from the web** — including badwords (AutoMod module → the "Word Blocking" section, present for a long time; the page used to crash due to the v3.23.1 bug, which made it look missing). What was missing were the VIEW/operational features. This release closes all of those gaps + replaces every "paste the ID manually" input with a dropdown picker.
 
 - 🟠 **`MentionSelect` (NEW):** a mention dropdown — No mention / @everyone / @here / the server's role list — used by the **Announcements** module (replacing the manual `<@&id>` text input) and the **Embed Builder** (the mention is merged into the outer text on send + appears in the preview). Deleted roles stay visible as an explicit option so the old state doesn't silently disappear.
 - 🟠 **STATISTICS MODULE (NEW, Server group):** server aggregates (tracked members, total messages, purchases, revenue, giveaways won) + a **4-metric leaderboard** (messages / purchases / spending / giveaway wins) + the **booster list** (active + recent activity) — exactly the same data as `/stats`, `/leaderboard`, `/boosters`.
@@ -36,7 +100,7 @@ Owner's report: the dashboard's **Overview and AutoMod** pages showed *"This pag
 
 Owner's request: *"don't set an unverified role — just use auto-role on join, plus a toggle for the role to disappear when there's a new role."* Two separate settings (the `/set-autorole` list + the `/set-role unverified` marker) are now ONE: a "new-member marker" role simply goes into the auto-role list, and the toggle decides whether join roles are temporary or permanent.
 
-- 🟠 **`/set-autorole action:toggle` (NEW, + `enabled` option):** turns **"remove join roles when the member gets another role"** on/off. While ON: EVERY join role the member holds is stripped automatically the moment they receive ANOTHER role — self-role panels, level-up rewards, VIP purchases, boosts, manual admin grants, even other bots (silent + the standard ROLE_UPDATE server log). While OFF (default): join roles are permanent, Dyno-style. Without the `enabled` option → the value is flipped (on↔off in one keystroke). `action:list` now shows the toggle state.
+- 🟠 **`/set-autorole action:toggle` (NEW, + `enabled` option):** turns **"remove join roles when the member gets another role"** on/off. While ON: EVERY join role the member holds is stripped automatically the moment they receive ANOTHER role — self-role panels, level-up rewards, VIP purchases, boosts, manual admin grants, even other bots (silent + the standard ROLE_UPDATE server log). While OFF (default): join roles are permanent, . Without the `enabled` option → the value is flipped (on↔off in one keystroke). `action:list` now shows the toggle state.
 - 🟠 **THE UNVERIFIED ROLE CONCEPT IS REMOVED EVERYWHERE:** the `unverified`/`verified` choices in `/set-role` & `/remove-role` are gone; `roles.unverified` is cleaned automatically from old configs on load (the v1 `unverifiedRoleId` is no longer mapped either); the v3.22.0 universal-marker rule is replaced by the toggle rule above; `joinRoleIds()` = purely `autorole.roleIds`; `/config-show` no longer shows an Unverified line. **Migration for live servers:** put your old marker role (e.g. @Unverified) into `/set-autorole action:add`, then run `action:toggle` — the old behavior is preserved exactly.
 - 🟡 **DASH API:** `PUT /guilds/:id/config` accepts the new path **`autorole.removeOnNewRole`** (boolean; 422 when not a boolean); whole-array `autorole` sets now MERGE (not replace) — both paths can arrive in one PUT without losing the toggle; `roles.unverified`/`roles.verified` are rejected with a **422 pointing to the replacement** (stale dashboards no longer save values that get silently cleaned).
 - 🟢 **Dashboard:** General module — the Auto-Role on Join editor gains the **"Remove join roles when the member gets another role"** toggle and loses the Unverified role field; Quick Start Step 2 = "Auto-Role on Join" (role form + toggle applied instantly); the module overview & landing feature cards updated; the dev mock API follows.
@@ -50,7 +114,7 @@ Owner's request: *"don't set an unverified role — just use auto-role on join, 
 The three "ways to get a role" (verification, self-role, join auto-role) were systemically the same feature implemented three times. They are now ONE system: **every role grant flows through the Role Engine, and verification is simply "receiving your first role" — from any source.**
 
 - 🟠 **UNIVERSAL UNVERIFIED RULE:** a member holding the **Unverified marker role** (`/set-role unverified`) is automatically unmarked the moment they receive **any other role** — a self-role panel click, a level-up reward, a VIP purchase, a boost, an admin granting it manually, or even another bot. Silent removal + the standard ROLE_UPDATE server log (admin's choice). Roles the system itself grants at join are exempt, so `@Member + @Unverified` at join doesn't "verify" everyone instantly.
-- 🟠 **`/set-autorole` (NEW, Dyno-style):** manage the roles granted automatically to every new member (`action:add / remove / list`, max 10, same validation as `/set-role`). The Unverified marker is granted on join on top of this list.
+- 🟠 **`/set-autorole` (NEW, ):** manage the roles granted automatically to every new member (`action:add / remove / list`, max 10, same validation as `/set-role`). The Unverified marker is granted on join on top of this list.
 - 🟠 **`src/services/roleEngine.js` (NEW):** the single gateway for every role grant/revoke — @everyone / managed / hierarchy checks, idempotency, batch-with-per-role-retry, structured results, actionable failure logs. Migrated call sites: join auto-role, self-role buttons & selects, level-up rewards. (Booster/VIP/product flows keep their hardened custom logic by design.)
 - 🟠 **THE DEDICATED VERIFICATION FEATURE WAS REMOVED** (admin's decision — "verified is just another role on a self-role panel"): `/setup-verify`, `/set-verify-button`, the `btn_verify` handler (now a deprecation stub that guides admins to `/setup-selfrole` + `/selfrole-add`), `POST /guilds/:id/verify-panel` on the DASH API, and the `verifyButton`/`verifyTitle`/`verifyBody` config (auto-cleaned from old configs on load; `roles.unverified` stays as the marker). **Migration for existing servers:** create a self-role panel and add your Verified role to it — 2 commands, detailed in the stub reply and in `/help`.
 - 🟢 **Dashboard web parity:** Quick Start step 2 is now the Unverified marker, step 5 links to the Self Roles module (replaces "Install Verification"); the General module gained an **Auto-Role on Join** list editor and lost the verify-button section; `PUT /guilds/:id/config` accepts `autorole` as a whole array; the landing feature card was updated.
@@ -98,7 +162,7 @@ Exactly the concept the user asked for: "on the web there's a quick start slash 
 
 ### Added — 🪄 CUSTOM COMMANDS FROM THE WEB + FULL EMBED BUILDER (BUILD ON THE WEB, DELIVERED TO THE SERVER)
 
-Dyno-style: admins can now CREATE content on the web dashboard and the bot delivers it to the server — custom commands become REAL slash commands, embeds are built in full with a Discord-style live preview.
+: admins can now CREATE content on the web dashboard and the bot delivers it to the server — custom commands become REAL slash commands, embeds are built in full with a Discord-style live preview.
 
 - 🟢 **Custom Commands (new dashboard module, 18 → 19)**: build your own slash command on the web — name, description, text + embed reply, ephemeral option. Once saved, the command is **automatically registered on Discord** (per-guild registration via `guild.commands.set`, appears within ± 1 minute) and every member can use it. Max 20 per server; names must not collide with built-ins; all validation centralized in `customCommandManager`.
 - 🟢 **Automatic two-way sync**: web create/update/delete → Discord registration refreshed instantly (`customCommandSync.js`); startup syncs too (anti-drift after a backup restore). Single-server mode: customs merge with built-ins on the primary guild; public mode: customs register per-guild (built-ins stay global).
@@ -114,11 +178,11 @@ Dyno-style: admins can now CREATE content on the web dashboard and the bot deliv
 
 ## [3.19.0] — 2026-09-15
 
-### Added — 🧩 DYNO-STYLE COMMAND MANAGER + 18 DASHBOARD MODULES (WEB = DISCORD, PICK EITHER)
+### Added — 🧩 COMMAND MANAGER + 18 DASHBOARD MODULES (WEB = DISCORD, PICK EITHER)
 
 Every slash command can now be managed from the web OR Discord — both write to the same config. Plus 7 new dashboard modules.
 
-- 🟢 **Command Manager (Dyno-style)**: enable/disable **each slash command per server**. From the web: a new module with search + per-domain groups + bulk group actions + "Enable All". From Discord: the new **`/commands list|toggle|enable-all`** command. Disabled commands are rejected by the router with a clear ephemeral message.
+- 🟢 **Command Manager**: enable/disable **each slash command per server**. From the web: a new module with search + per-domain groups + bulk group actions + "Enable All". From Discord: the new **`/commands list|toggle|enable-all`** command. Disabled commands are rejected by the router with a clear ephemeral message.
 - 🟢 **Anti-lockout by design**: `/commands` is disable-proof (guarded in the handler, router, and DASH API validator — one shared `normalizeDisabledList` rule). The web dashboard can always re-enable things — admins can never lock themselves out of either interface.
 - 🟢 **7 new dashboard modules** (11 → 18): **Backup** (create now + restore + two-step confirmation), **Moderation** (warn + moderator action history, read-only), **VIP Keys** (grant product keys — role + auto-expiry scheduling, parity with `/set-key`), **Giveaway** (create from the web, embed + Join/Leave buttons identical to the Discord version), **Embed** (send embeds + live preview), **Poll** (2-10 options + multi-vote), and the Command Manager itself.
 - 🟢 **New DASH API**: `PUT /guilds/:id/commands`, `POST /guilds/:id/giveaway`, `POST /guilds/:id/poll`, `POST /guilds/:id/embed`, `POST /guilds/:id/backups` (+ `/:name/restore`), `POST/DELETE /guilds/:id/keys` — all strictly validated (product whitelist, snowflakes, character limits) with the actor recorded.
@@ -138,9 +202,9 @@ Every slash command can now be managed from the web OR Discord — both write to
 
 ### Added — 🌐 WEB DASHBOARD MOVED INTO THE BOT REPO (ONE REPO, ONE SETUP)
 
-Monorepo: the Dyno-style web dashboard now lives in this repository's `dashboard/` folder — no more separate repo. Clone once → `./setup.sh` → `./start.sh` → the bot and the dashboard run together.
+Monorepo: the web dashboard now lives in this repository's `dashboard/` folder — no more separate repo. Clone once → `./setup.sh` → `./start.sh` → the bot and the dashboard run together.
 
-- 🟢 **`dashboard/` — Next.js 16 + TypeScript + Tailwind 4 + Prisma SQLite** (Discord OAuth2 login, server picker, 11 configuration modules: Overview, General, Tickets & Products, AutoMod, Leveling, Midman, Responders, Self-Roles, Announcements, Temp Voice, Server Stats; direct CRUD + a Dyno-style draft SaveBar). Fully translated UI, comments, and docs.
+- 🟢 **`dashboard/` — Next.js 16 + TypeScript + Tailwind 4 + Prisma SQLite** (Discord OAuth2 login, server picker, 11 configuration modules: Overview, General, Tickets & Products, AutoMod, Leveling, Midman, Responders, Self-Roles, Announcements, Temp Voice, Server Stats; direct CRUD + a draft SaveBar). Fully translated UI, comments, and docs.
 - 🟢 **Dashboard dependencies slimmed drastically:** 60+ → 12 runtime packages (fresh install: 419 packages, ~46 seconds); 44 unused boilerplate UI components removed (only accordion/badge/button/toast/toaster remain); the sandbox-only `/api/me2` workaround removed → plain `/api/me`; sandbox credential fallbacks emptied (safe for a public repo).
 - 🟢 **Root convenience scripts:** `setup.sh` (install bot + web + prepare both `.env` files), `start.sh` (production: both in one run, Ctrl+C stops both), `dev.sh` (nodemon + next dev), `ecosystem.config.cjs` (pm2 `thor-bot` + `thor-dash` 24/7), plus npm scripts `dash:install/dev/build/start/mock`.
 - 🟢 **DEPLOY.md rewritten as the ONE-repo guide** (VPS + pm2 + Caddy + OAuth + end-to-end verification + troubleshooting); README updated (v3.18.0 badge, folder structure, script table, monorepo dashboard section, fixed the clone URL to this repo).
@@ -199,13 +263,13 @@ Completing the public v3.12.0 mode: admins sell keys WITHOUT being online 24/7 w
 
 ## [3.12.0] — 2026-09-12
 
-### Changed — 🎯 ONE GUILD ID + PHASE 3: PUBLIC MODE (Dyno-style)
+### Changed — 🎯 ONE GUILD ID + PHASE 3: PUBLIC MODE 
 
-- 🟢 **`.env` now has exactly ONE server variable: `GUILD_ID`** (admin request: no more confusion). The v3.11.0 `ALLOWED_GUILD_IDS` allowlist is REMOVED — a multi-ID list only made switching servers confusing. Switching servers = edit the single `GUILD_ID` line in `.env`, done. Two modes: **set = single-server mode** (instant commands, events from other servers ignored) · **empty = public Dyno/MEE6-style mode** (global commands — they appear automatically in every server that invites the bot within ~1 hour, with no manual guild id anywhere).
+- 🟢 **`.env` now has exactly ONE server variable: `GUILD_ID`** (admin request: no more confusion). The v3.11.0 `ALLOWED_GUILD_IDS` allowlist is REMOVED — a multi-ID list only made switching servers confusing. Switching servers = edit the single `GUILD_ID` line in `.env`, done. Two modes: **set = single-server mode** (instant commands, events from other servers ignored) · **empty = public mode** (global commands — they appear automatically in every server that invites the bot within ~1 hour, with no manual guild id anywhere).
 - 🟢 **`src/infra/guild.js` simplified:** `getAllowedGuildIds()` (the list) is replaced by `getPrimaryGuildId()` (the trimmed GUILD_ID, or null = public). `isGuildAllowed()` remains the guard for ALL 11 event handlers (the guard code is unchanged — only its source is now single). The foreign-guild join/leave skip logs now mention the `GUILD_ID .env` (still visible, the v3.9.48 pattern).
-- 🟢 **Command registration (ready.js):** GUILD_ID set → instant registration to that guild (an uncached guild → a "double-check the ID" warning + global fallback, no crash); GUILD_ID empty → GLOBAL commands — exactly how big public bots work (Dyno/MEE6): Discord propagates the commands to every server within ~1 hour, no manual guild id.
+- 🟢 **Command registration (ready.js):** GUILD_ID set → instant registration to that guild (an uncached guild → a "double-check the ID" warning + global fallback, no crash); GUILD_ID empty → GLOBAL commands — exactly how the big public bots work: Discord propagates the commands to every server within ~1 hour, no manual guild id.
 - 🟢 **The legacy config claim gate (configManager):** GUILD_ID set → only that guild may claim the old `config.json`; empty → the first caller (the v3.10.0 behavior is kept).
-- 🟢 **PHASE 3 docs (ADMIN_GUIDE):** a new section **"Public Mode (Dyno-style) + Developer Portal"** — how public bots work (global commands + per-server configs captured automatically from event IDs), the Developer Portal steps (Public Bot ON, the OAuth2 URL Generator with the `bot` + `applications.commands` scopes), Discord verification rules (mandatory past 100 servers), and a security checklist before going public.
+- 🟢 **PHASE 3 docs (ADMIN_GUIDE):** a new section **"Public Mode  + Developer Portal"** — how public bots work (global commands + per-server configs captured automatically from event IDs), the Developer Portal steps (Public Bot ON, the OAuth2 URL Generator with the `bot` + `applications.commands` scopes), Discord verification rules (mandatory past 100 servers), and a security checklist before going public.
 - 🟡 **Test suite:** `guildGuard.test.js` rewritten for the v3.12.0 contract (18 tests, previously 15) — including **3 ANTI-CONFUSION PINS**: (1) `ALLOWED_GUILD_IDS`/`getAllowedGuildIds` must never reappear in `src/`, (2) `.env.example` has exactly one `GUILD_ID` variable + documents public mode, (3) the `guild.js` export contract is exactly 3 functions. Total **616**.
 - 🟡 `serverLog.test.js`: the static guard contract v3.11.0 → v3.12.0 (still `isGuildAllowed`, now sourced from the single GUILD_ID).
 

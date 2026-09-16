@@ -1,7 +1,7 @@
 /**
  * Custom Command Manager — admin-made slash commands, created from the WEB (v3.20.0).
  *
- * Dyno's "Custom Commands" model: an admin builds their own command on the
+ * The "custom commands" model: an admin builds their own command on the
  * web dashboard (name, description, text/embed reply), and the bot registers
  * it as a REAL per-server slash command -> members just use /name.
  * Edits/deletes from the web re-sync registration automatically

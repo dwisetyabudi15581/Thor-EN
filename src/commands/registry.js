@@ -39,7 +39,7 @@ function getCommands() {
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === SET AUTOROLE (v3.23.0 — Dyno-style auto-role on join + toggle) ===
+        // === SET AUTOROLE (v3.23.0 —  auto-role on join + toggle) ===
         // The Unverified marker concept was REMOVED (v3.23.0): a "marker"
         // role now just goes into the auto-role list + the removeOnNewRole
         // toggle — join roles disappear automatically once the member
@@ -738,8 +738,11 @@ function getCommands() {
             description: 'Create a new self-role panel (members can take/drop roles themselves)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
-                { type: 3, name: 'title', description: 'Panel title (e.g. Pick a Notif Role)', required: true },
-                { type: 3, name: 'description', description: 'Panel description (supports \\n newline)', required: true },
+                // v3.24.1 FIX (M-1): max_length added — a >256-char title used to be
+                // accepted by Discord, then made the embed build throw AFTER the
+                // panel was persisted (zombie entry).
+                { type: 3, name: 'title', description: 'Panel title (e.g. Pick a Notif Role)', required: true, max_length: 256 },
+                { type: 3, name: 'description', description: 'Panel description (supports \\n newline)', required: true, max_length: 4000 },
                 {
                     type: 3,
                     name: 'type',
@@ -1637,13 +1640,13 @@ function getCommands() {
             name: 'leaderboard-level',
             description: 'Top 10 members with the highest level (public)'
         },
-        // v3.19.0: Command Manager (Dyno-style) — enable/disable commands
+        // v3.19.0: Command Manager — enable/disable commands
         // per server from Discord or the web dashboard. This command itself
         // can never be disabled (guarded in the handler + DASH API validator)
         // so admins can never lock themselves out of the Discord side.
         {
             name: 'commands',
-            description: 'Manage which bot commands are enabled on this server (Dyno-style)',
+            description: 'Manage which bot commands are enabled on this server',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {

@@ -431,6 +431,108 @@ test('dash: PUT config ticketCategories whole array validated', async () => {
     assert.strictEqual(bad.status, 422);
 });
 
+// v3.24.2: deleting the auto-migrated categories (claim_giveaway / midman)
+// from the WEB must persist — the dismissed flags are synced by the config
+// validator so getConfig() does not "resurrect" them on the next read.
+test('dash: PUT config without midman/claim_giveaway — dismissed flags set, categories stay deleted', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'buy', label: 'Buy', emoji: '🛒', style: 'Success', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    // The saved result is EXACTLY what the admin sees — no resurrection.
+    assert.strictEqual(data.config.ticketCategories.length, 1, 'no claim_giveaway/midman re-added in the response');
+    assert.strictEqual(data.config.ticketCategories[0].id, 'buy');
+    assert.strictEqual(data.config.claimGiveawayDismissed, true, 'claimGiveawayDismissed flag set by the web save');
+    assert.strictEqual(data.config.midmanCategoryDismissed, true, 'midmanCategoryDismissed flag set by the web save');
+
+    // Cold re-read (what the next dashboard refresh / every message sees)
+    const { getConfig } = require('../../src/data/configManager');
+    const cfg = getConfig(GUILD_ID);
+    assert.strictEqual(cfg.ticketCategories.length, 1, 'getConfig does NOT resurrect the deleted categories');
+    assert.ok(cfg.ticketCategories.some((c) => c.id === 'buy'));
+
+    // Re-adding midman from the web CLEARS the flag again (symmetric behavior)
+    const back = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'buy', label: 'Buy', emoji: '🛒', style: 'Success', requiresKey: false },
+                    { id: 'midman', label: 'Midman / Escrow', emoji: '🤝', style: 'Success', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(back.status, 200);
+    const backData = await back.json();
+    assert.strictEqual(backData.config.midmanCategoryDismissed, undefined, 'flag cleared when the category is re-added');
+    assert.strictEqual(backData.config.claimGiveawayDismissed, true, 'claim flag untouched (category still absent)');
+    assert.strictEqual(backData.config.ticketCategories.length, 2);
+});
+
+// v3.24.2 PARITY: /remove-category (Discord) remaps products orphaned by a
+// deleted category to 'transaction'. The web path must do the same — before
+// this fix, deleting a category from the web left its products as orphans
+// (not shown in any panel dropdown).
+test('dash: PUT config deleting a category — orphaned products fall back to transaction', async () => {
+    // Seed: two products, one on a custom category that is about to be deleted
+    const seed = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                products: [
+                    { label: 'VIP Key', value: 'vip', price: '10.000', category: 'akun_ml', requiresKey: true },
+                    { label: 'Jasa Install', value: 'jasa', price: '5.000', category: 'transaction', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(seed.status, 200);
+
+    // Delete 'akun_ml' by saving the category list without it
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'transaction', label: 'Buy Key / Transaction', emoji: '🔑', style: 'Primary', requiresKey: true },
+                    { id: 'help', label: 'Help', emoji: '📞', style: 'Secondary', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    const vip = data.config.products.find((p) => p.value === 'vip');
+    assert.ok(vip, 'the VIP product still exists');
+    assert.strictEqual(vip.category, 'transaction', 'orphaned product remapped to transaction (web ↔ Discord parity)');
+    const jasa = data.config.products.find((p) => p.value === 'jasa');
+    assert.strictEqual(jasa.category, 'transaction', 'products already on transaction are untouched');
+});
+
+// ...and when 'transaction' ITSELF is deleted, orphans fall back to the first
+// remaining category instead of pointing at a deleted id.
+test('dash: PUT config deleting transaction itself — orphans fall back to the first remaining category', async () => {
+    const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
+        body: {
+            updates: {
+                ticketCategories: [
+                    { id: 'help', label: 'Help', emoji: '📞', style: 'Secondary', requiresKey: false },
+                    { id: 'buy', label: 'Buy', emoji: '🛒', style: 'Success', requiresKey: false }
+                ]
+            }
+        }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    const vip = data.config.products.find((p) => p.value === 'vip');
+    assert.strictEqual(vip.category, 'help', 'fallback = first category in the saved list when transaction is gone');
+});
+
 test('dash: PUT config null channel — clears the value', async () => {
     const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {
         body: { updates: { 'channels.welcome': null } }
@@ -625,7 +727,7 @@ test('dash: dashboard payload includes commands (list + disabled + protected)', 
     assert.strictEqual(data.commands.list.length, 92, 'all commands from the registry');
     assert.ok(Array.isArray(data.commands.disabled), 'disabled is always an array');
     assert.ok(data.commands.protected.includes('commands'), '/commands is disable-proof');
-    // Every command has a valid domain (for Dyno-style UI grouping)
+    // Every command has a valid domain (for UI grouping)
     const domains = new Set(data.commands.list.map((c) => c.domain));
     assert.ok(domains.has('config') && domains.has('moderation') && domains.has('leveling'));
 });

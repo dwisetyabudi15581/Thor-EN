@@ -2,7 +2,7 @@
  * Domain: commands
  * Slash command: /commands (subcommands: list, toggle, enable-all)
  *
- * v3.19.0 — Dyno-style Command Manager:
+ * v3.19.0 —  Command Manager:
  *   Admins can enable/disable the bot's commands per server, either from
  *   Discord (this command) or from the web dashboard (Command Manager
  *   module). Both interfaces write to the same config field:

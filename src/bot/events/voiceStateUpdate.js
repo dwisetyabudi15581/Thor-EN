@@ -25,6 +25,7 @@
 
 const { Events, PermissionFlagsBits, ChannelType } = require('discord.js');
 const tempVoiceManager = require('../../data/tempVoiceManager');
+const { truncateUtf8Safe } = require('../../infra/text');
 // v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
 
@@ -256,7 +257,10 @@ async function handleCreateTempVoice(newState) {
 
         const channelName = `🔊 ${member.user.username}'s Room`;
         const newChannel = await guild.channels.create({
-            name: channelName.slice(0, 100),
+            // v3.24.1 FIX (L5): code-point-aware truncation — a plain slice() could
+            // cut an emoji in the username mid surrogate pair → invalid channel
+            // name → the create rejects and the member gets no room.
+            name: truncateUtf8Safe(channelName, 100),
             type: ChannelType.GuildVoice,
             parent: config.categoryId,
             bitrate: 64000,

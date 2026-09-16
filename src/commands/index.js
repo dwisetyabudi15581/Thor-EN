@@ -76,7 +76,7 @@ const midmanHandler = require('./midman');
 const moderationHandler = require('./moderation');
 // v3.9.51: live server stats counter channels (/serverstats setup|remove|refresh)
 const serverstatsHandler = require('./serverstats');
-// v3.19.0: Command Manager, Dyno-style (/commands list|toggle|enable-all)
+// v3.19.0: Command Manager (/commands list|toggle|enable-all)
 const commandsHandler = require('./commands');
 // v3.20.0: admin-made custom commands (created from the web dashboard) —
 // dynamic per-guild, so they can't be statically mapped in COMMAND_TO_DOMAIN.
@@ -273,7 +273,7 @@ const COMMAND_TO_DOMAIN = {
     rank: 'leveling',
     'leaderboard-level': 'leveling',
 
-    // v3.19.0: Dyno-style command manager
+    // v3.19.0:  command manager
     commands: 'commands'
 };
 
@@ -305,7 +305,7 @@ async function routeCommand(interaction) {
     const allowedModerator =
         modPerm && interaction.member?.permissions?.has(modPerm);
     // v3.20.0: custom commands are PUBLIC by default (server info made by
-    // an admin for everyone to use — exactly Dyno's Custom Commands model).
+    // an admin for everyone to use — exactly custom commands model).
     // Cheap lookup: read-through cache in customCommandManager.
     const isCustomCommand =
         !!interaction.guildId &&
@@ -323,7 +323,7 @@ async function routeCommand(interaction) {
         });
     }
 
-    // === v3.19.0: COMMAND MANAGER GATE (Dyno-style) ===
+    // === v3.19.0: COMMAND MANAGER GATE  ===
     // Commands disabled by an admin (via /commands or the web dashboard)
     // are rejected here with a clear ephemeral message. `/commands` itself
     // is exempt so admins can never lock themselves out of the Discord side

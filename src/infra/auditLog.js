@@ -22,6 +22,7 @@
  */
 
 const { EmbedBuilder } = require('discord.js');
+const { truncateUtf8Safe } = require('./text');
 
 const ACTION_LABELS = {
     // Products
@@ -168,7 +169,10 @@ async function logAudit(client, data) {
     // treated the operation as failed even though it had already succeeded.
     const detailsText =
         typeof data.details === 'string' && data.details.length > 1024
-            ? data.details.slice(0, 1010) + '…(truncated)'
+            // v3.24.1 FIX (L4): code-point-aware truncation — a plain slice() could
+            // cut an emoji mid surrogate pair → addFields throws → the audit entry
+            // is lost despite the v3.9.26 fix.
+            ? truncateUtf8Safe(data.details, 1010) + ' (truncated)'
             : data.details || '_(no details)_';
     const embed = new EmbedBuilder()
         .setTitle(`🔧 AUDIT: ${label}`.slice(0, 256))

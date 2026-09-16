@@ -574,14 +574,16 @@ module.exports = async function (interaction) {
         // If already isCompleted (via Deliver Order), skip — don't double up.
         const closeType = resolveTicketType(closeMeta);
         if (closeType.isTransaction && !closeType.requiresKey && !closeType.isCompleted) {
-            // v3.9.38 FIX (FIX 4): "✅ Order Successful" double-click race — 2 clicks
-            // (or 2 admins) before the first click's isCompleted patch runs →
-            // completeNonKeyOrder runs twice (recordPurchase 2x, auto-role 2x). Uses
-            // completionLocks (FIX 2): check-and-acquire the channel lock before the
-            // side effects, release in finally. The first click wins; a second click
-            // that happens to arrive AFTER the release is still safe — the meta is
-            // re-read under the lock so the first click's isCompleted is visible.
-            const closeChId = interaction.channel.id;
+            // v3.24.1 FIX (L-1): guard the channel access — if another admin deleted
+            // the ticket channel during the deferUpdate await, interaction.channel
+            // becomes null and the unguarded .id deref crashed the close flow.
+            const closeChId = interaction.channel?.id;
+            if (!closeChId) {
+                await interaction
+                    .followUp({ content: 'ℹ️ The ticket channel no longer exists — nothing to close.', flags: MessageFlags.Ephemeral })
+                    .catch(() => {});
+                return;
+            }
             if (completionLocks.has(closeChId)) {
                 await interaction
                     .followUp({ content: '⏳ The ticket is being processed by another admin.', flags: MessageFlags.Ephemeral })

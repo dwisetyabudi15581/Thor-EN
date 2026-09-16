@@ -296,7 +296,7 @@ test('PIN v3.12.0: ALLOWED_GUILD_IDS must not appear anywhere in src/', () => {
 test('PIN v3.12.0: .env.example only has GUILD_ID + documents public mode', () => {
     const env = fs.readFileSync(path.join(__dirname, '..', '..', '.env.example'), 'utf8');
     assert.ok(env.includes('GUILD_ID='), 'the GUILD_ID variable exists');
-    assert.ok(/public mode/i.test(env), 'public mode (Dyno-style) is documented');
+    assert.ok(/public mode/i.test(env), 'public mode  is documented');
     assert.ok(!env.includes('ALLOWED_GUILD_IDS'), 'the env example does not mention the old allowlist');
     assert.strictEqual((env.match(/^GUILD_ID=/gm) || []).length, 1, 'exactly one active GUILD_ID variable');
 });

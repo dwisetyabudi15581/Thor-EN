@@ -1,4 +1,4 @@
-// GET /api/guilds — the list of servers the user can manage (Dyno-style).
+// GET /api/guilds — the list of servers the user can manage .
 //
 // Merges THREE sources:
 //   1. Discord API (user token) — guilds + ManageGuild/owner permission.

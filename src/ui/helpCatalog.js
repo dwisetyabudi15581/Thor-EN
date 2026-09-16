@@ -505,7 +505,7 @@ const HELP_CATEGORIES = [
             '• `/backup-now` — back up now (auto every 24h, max 7)',
             '• `/backup-list` `/restore-backup` — view & restore',
             '• `/reset-config` — ⚠️ DELETES ALL configuration (2-step confirm)',
-            '• `/commands` — 🆕 enable/disable commands (Dyno)'
+            '• `/commands` — 🆕 enable/disable commands'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [

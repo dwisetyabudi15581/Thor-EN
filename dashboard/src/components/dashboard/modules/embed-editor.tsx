@@ -164,7 +164,7 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
 
       <Section
         title="Embed — Fields"
-        desc="A field = a small box with a name + value inside the embed. 'Inline' shows 3 fields per row (Dyno-style). Max 25 fields."
+        desc="A field = a small box with a name + value inside the embed. 'Inline' shows 3 fields per row. Max 25 fields."
       >
         <div className="space-y-3 md:col-span-2">
           {value.fields.length === 0 ? (

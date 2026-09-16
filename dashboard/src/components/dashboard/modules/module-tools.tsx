@@ -1,11 +1,11 @@
 "use client";
 
-// Dashboard tool modules (v3.19.0) — Command Manager (Dyno-style) + new
+// Dashboard tool modules (v3.19.0) — Command Manager + new
 // modules: Giveaway, Poll, Embed, Backup, Moderation (warn/modlog), Keys (VIP).
 // v3.20.0 — FULL Embed Builder (parity with /embed-builder: author, fields,
 // image, thumbnail, timestamp + a Discord-style live preview) + the Custom
 // Command module: build your own command on the web -> a REAL slash command
-// on the server (Dyno Custom Commands).
+// on the server (custom commands).
 //
 // All actions go straight through call() → web proxy → the bot's DASH API
 // (no SaveBar), following the ModuleActionProps contract from
@@ -32,7 +32,7 @@ import {
 } from "./embed-editor";
 
 /* ============================================================
- * Command domain labels (Dyno-style grouping)
+ * Command domain labels ( grouping)
  * ============================================================ */
 
 const DOMAIN_META: Array<{ key: string; label: string }> = [
@@ -84,7 +84,7 @@ function fmtDuration(ms: number) {
 }
 
 /* ============================================================
- * MODULE: Command Manager (Dyno-style)
+ * MODULE: Command Manager
  * ============================================================ */
 
 export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActionProps) {
@@ -153,7 +153,7 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
         title="Command Manager"
         desc={
           <>
-            Disable the commands you do not use on this server — exactly the Dyno philosophy. Disabled commands are
+            Disable the commands you do not use on this server — keep only what your community needs. Disabled commands are
             rejected by the bot with a clear message to members.{" "}
             <span className="text-zinc-400">Also manageable from Discord: </span>
             <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/commands toggle</code>
@@ -662,7 +662,7 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
         title="Custom Command"
         desc={
           <>
-            Build your own slash command for this server — <span className="text-zinc-300">exactly Dyno's Custom Commands feature</span>.
+            Build your own slash command for this server — <span className="text-zinc-300">no coding needed</span>.
             Once saved, the command is registered on Discord instantly (usually &lt; 1 minute) and every member can use it.
           </>
         }

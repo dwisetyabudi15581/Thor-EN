@@ -196,7 +196,11 @@ function checkSpam(guildId, userId, config) {
     timestamps.push(now);
     guildMap.set(userId, timestamps);
 
-    return timestamps.length > threshold;
+    // v3.24.1 FIX: `> threshold` made the counter trip at N+1 messages — with the
+    // default threshold 5 the SIXTH message was flagged, contradicting the
+    // documented contract ("Number of messages in the window that counts as
+    // spam"). `>=` fires exactly at N messages in the window.
+    return timestamps.length >= threshold;
 }
 
 /**

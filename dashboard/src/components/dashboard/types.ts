@@ -1,6 +1,6 @@
 // Shared types for the /api/me data used by dashboard components.
 // v3 (free bot): no more premium/redemptions/keys — the dashboard is purely
-// a server management tool (Dyno-style); the user identity is enough for
+// a server management tool ; the user identity is enough for
 // login + guards.
 
 export type UserInfo = {

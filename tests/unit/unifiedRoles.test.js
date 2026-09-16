@@ -238,7 +238,7 @@ test('toggle rule: ON — member holding a join role gains another role → join
     assert.deepStrictEqual(m._calls.remove, ['r_member'], 'the join role must be revoked');
 });
 
-test('toggle rule: OFF (default) — join roles are permanent Dyno-style, nothing revoked', async () => {
+test('toggle rule: OFF (default) — join roles are permanent , nothing revoked', async () => {
     writeConfig({ autorole: { roleIds: ['r_member'] } });
     const guild = makeGuild({ roles: [makeRole('r_member'), makeRole('r_gamer')] });
     const m = await runMemberUpdate({ guild, oldHas: ['r_member'], newHas: ['r_member', 'r_gamer'] });

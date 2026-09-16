@@ -1,6 +1,6 @@
 "use client";
 
-// GuildDashboard — main per-server dashboard shell (Dyno-style).
+// GuildDashboard — main per-server dashboard shell .
 // State architecture:
 //   payload  — fresh data from the bot (via /api/guilds/:id/dashboard)
 //   draft    — an editable copy (config + automod). Setters mark changes
@@ -38,7 +38,7 @@ import {
   RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule, ModuleOverview,
   type ModuleActionProps,
 } from "./modules/module-actions";
-// v3.19.0: new modules — Command Manager (Dyno-style) + Giveaway/Poll/Embed/
+// v3.19.0: new modules — Command Manager + Giveaway/Poll/Embed/
 // Backup/Moderation/Keys. All actions go straight through call() (Discord ↔ web parity).
 import {
   CommandManagerModule, GiveawayModule, PollModule, EmbedModule,
@@ -98,13 +98,13 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   tempvoice: { title: "Temporary Voice", desc: "Private voice channels per member." },
   midman: { title: "Middleman / Escrow", desc: "Fees and three-party deal categories." },
   serverstats: { title: "Server Stats", desc: "Live counters in channel names." },
-  commands: { title: "Command Manager", desc: "Enable/disable each slash command on this server — exactly like Dyno. Applies to Discord usage." },
+  commands: { title: "Command Manager", desc: "Enable/disable each slash command on this server. Applies to Discord usage." },
   backup: { title: "Backup", desc: "Create a backup now and restore previous slots." },
   moderation: { title: "Moderation", desc: "Warn history and moderator actions (timeout/kick/ban)." },
   keys: { title: "VIP Keys", desc: "Grant product keys to members — role + auto-expiry included." },
   giveaway: { title: "Giveaway", desc: "Start a giveaway with Join/Leave buttons straight from the web." },
   embed: { title: "Embed Builder", desc: "Build a complete embed (author, fields, images, footer) with a Discord-style live preview, then send it to any channel." },
-  custom: { title: "Custom Command", desc: "Build your own slash command from the web — automatically registered on Discord and usable by every member (Dyno Custom Commands)." },
+  custom: { title: "Custom Command", desc: "Build your own slash command from the web — automatically registered on Discord and usable by every member." },
   poll: { title: "Poll", desc: "Create a poll with interactive vote buttons." },
   // v3.24.0
   stats: { title: "Statistics", desc: "Server aggregates, a 4-metric leaderboard (messages, purchases, spending, giveaways), and the booster list — the same data as /stats, /leaderboard, /boosters." },
@@ -251,6 +251,23 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     setAutomodPatch((p) => ({ ...p, ...patch }));
   }, []);
 
+  // v3.24.1 FIX (5.1): the Auto-Role editor needs a draft-path / wire-path split.
+  // The draft stores autorole = { roleIds: string[], removeOnNewRole: boolean },
+  // but the bot's wire update is { autorole: roleIds[] } (a whole array — see
+  // dashServer's SECTION_VALIDATORS). The old call setConfig("autorole", array)
+  // replaced the DRAFT OBJECT with a plain array → roleIds became undefined →
+  // the chips list instantly reset, removeOnNewRole displayed OFF, and a second
+  // Add silently dropped the first role from the pending update.
+  const setAutoroleRoleIds = useCallback((roleIds: string[]) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const next: DashboardPayload = structuredClone(d);
+      setPath(next.config as unknown as Record<string, unknown>, "autorole.roleIds", roleIds);
+      return next;
+    });
+    setConfigUpdates((u) => ({ ...u, autorole: roleIds }));
+  }, []);
+
   // ---- Direct actions (CRUD) ----
   const call = useCallback(
     async (action: string, method: "POST" | "PUT" | "DELETE", body?: unknown) => {
@@ -275,6 +292,20 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
   // ---- Save ----
   const dirtyCount = Object.keys(configUpdates).length + (Object.keys(automodPatch).length > 0 ? 1 : 0);
+
+  // User-friendly safety net: with unsaved changes, closing / reloading the
+  // tab shows the browser's "leave site?" confirmation instead of silently
+  // throwing away the draft (the SaveBar is easy to miss when rushing).
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Legacy requirement for Chrome/Edge/Firefox to actually show the dialog
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirtyCount]);
 
   async function save() {
     setSaving(true);
@@ -303,8 +334,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   }
 
   const formProps: ModuleFormProps | null = useMemo(
-    () => (draft && meta ? { draft, meta, setConfig, setAutomod, toast: showToast, call, refresh } : null),
-    [draft, meta, setConfig, setAutomod, showToast, call, refresh]
+    () => (draft && meta ? { draft, meta, setConfig, setAutomod, setAutoroleRoleIds, toast: showToast, call, refresh } : null),
+    [draft, meta, setConfig, setAutomod, setAutoroleRoleIds, showToast, call, refresh]
   );
   const actionProps: ModuleActionProps | null = useMemo(
     () => (draft && meta ? { draft, meta, call, refresh, toast: showToast } : null),

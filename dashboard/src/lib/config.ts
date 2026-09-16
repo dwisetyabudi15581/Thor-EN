@@ -30,7 +30,7 @@ export const cfg = {
     "https://discord.com/oauth2/authorize?client_id=1548297613969985546&permissions=1099800112150&integration_type=0&scope=bot+applications.commands",
 
   // v3.16.0: DASH API — a small HTTP server inside the bot process
-  // (Dyno-style dashboard). All server config reads/writes are routed
+  // (web dashboard). All server config reads/writes are routed
   // through it; the token must MATCH the DASH_API_TOKEN in the Thor bot's
   // .env.
   dashApiUrl: envOr("DASH_API_URL", SANDBOX_DEFAULTS.DASH_API_URL).replace(/\/$/, ""),

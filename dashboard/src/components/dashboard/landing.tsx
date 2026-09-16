@@ -1,6 +1,6 @@
 "use client";
 
-// Public landing page for Thor Dashboard — showcase of the FREE bot + Dyno-style web control.
+// Public landing page for Thor Dashboard — showcase of the FREE bot +  web control.
 // v2 (overhaul): the premium subscription model was DROPPED — every bot feature
 // is free for everyone. The new value proposition: "two ways to control" (slash
 // commands in Discord OR the web dashboard) + all modules fully open.
@@ -158,6 +158,12 @@ function ServerStatus({ serverTime }: { serverTime?: string }) {
 // Login status banner carried by the callback route via ?error=<reason>.
 const AUTH_ERRORS: Record<string, { title: string; hint?: string }> = {
   oauth_belum_disiapkan: { title: "Discord login is not set up on the server yet." },
+  // v3.24.1 (1.1): SESSION_SECRET empty while OAuth is configured — the login
+  // is refused server-side with this explanation.
+  konfigurasi_tidak_aman: {
+    title: "Login refused: SESSION_SECRET is not configured.",
+    hint: "The server has Discord OAuth credentials but no session secret — session tokens would be forgeable, so login is disabled until the operator sets SESSION_SECRET in dashboard/.env.",
+  },
   login_dibatalkan: { title: "Login canceled." },
   sesi_kedaluwarsa: {
     title: "Login session expired — please log in again.",
@@ -200,7 +206,13 @@ function AuthErrorBanner() {
 
 /* ---------------- Hero ---------------- */
 
-function Hero({ config, busy, onLoginDiscord }: LandingProps) {
+function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
+  // v3.24.1 FIX (5.4): demo mode is reachable again — `onLoginDemo` was declared
+  // in the props but NEVER rendered, so while OAuth was unconfigured the ONLY
+  // login button redirected to Discord with an empty client_id (broken error
+  // page). When OAuth is not ready the primary action becomes the demo login.
+  const oauthReady = config.authReady;
+  const primaryLogin = oauthReady ? onLoginDiscord : () => onLoginDemo("admin");
   return (
     <section className="relative overflow-hidden">
       <div className="mx-auto max-w-6xl px-6 pt-14 pb-16 md:pt-20 md:pb-24">
@@ -225,13 +237,24 @@ function Hero({ config, busy, onLoginDiscord }: LandingProps) {
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Button
                 size="lg"
-                onClick={onLoginDiscord}
+                onClick={primaryLogin}
                 disabled={busy}
                 className="bg-amber-400 text-zinc-950 hover:bg-amber-300 h-11 px-6 font-semibold"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                Open Dashboard
+                {oauthReady ? "Open Dashboard" : "Explore in Demo Mode"}
               </Button>
+              {oauthReady && config.demoMode ? (
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => onLoginDemo("admin")}
+                  disabled={busy}
+                  className="h-11 px-6 border-zinc-700 bg-transparent hover:bg-zinc-800/60 hover:text-zinc-100"
+                >
+                  Try Demo
+                </Button>
+              ) : null}
               <a href={config.inviteUrl} target="_blank" rel="noreferrer">
                 <Button
                   size="lg"
@@ -244,8 +267,9 @@ function Hero({ config, busy, onLoginDiscord }: LandingProps) {
               </a>
             </div>
             <p className="mt-4 text-xs text-zinc-500 leading-relaxed">
-              Secure login via Discord OAuth — the bot only reads your server list and
-              identity, with no dangerous permissions.
+              {oauthReady
+                ? "Secure login via Discord OAuth — the bot only reads your server list and identity, with no dangerous permissions."
+                : "Discord login is not configured on this server yet — exploring in demo mode with sample data. Set DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET in dashboard/.env to enable real login."}
             </p>
           </div>
 
@@ -391,7 +415,7 @@ const MODULES = [
   { icon: Activity, name: "Server Stats", desc: "Live member/boost/role counters in channel names." },
   { icon: Gift, name: "Auto-Role", desc: "Roles granted automatically on member join + a toggle to remove them once the member gets another role." },
   { icon: Globe, name: "Backup", desc: "Server structure snapshots, restore in emergencies." },
-  { icon: Terminal, name: "Command Manager", desc: "Enable/disable each slash command per server — Dyno-style." },
+  { icon: Terminal, name: "Command Manager", desc: "Enable/disable each slash command per server." },
   { icon: Gift, name: "Giveaway", desc: "Start giveaways with Join/Leave buttons from the web." },
   { icon: KeyRound, name: "VIP Keys", desc: "Grant product keys — role + auto-expiry included." },
   { icon: SquarePen, name: "Embed Builder", desc: "Build complete embeds with a Discord-style live preview, send them to any channel." },

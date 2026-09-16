@@ -1,7 +1,7 @@
 "use client";
 
 // Dashboard form modules: panels that edit the BOT CONFIG (changes are collected
-// as a draft and then saved all at once via the SaveBar — Dyno-style pattern).
+// as a draft and then saved all at once via the SaveBar — draft pattern).
 //
 // Contract with guild-dashboard.tsx:
 //   draft     — editable copy of the payload (config/automod mutated via setters)
@@ -11,7 +11,7 @@
 //   toast     — small notifications
 
 import { useState } from "react";
-import { Plus, Trash2, GripVertical, Info, FlaskConical, Loader2 } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, ChevronDown, Info, FlaskConical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
@@ -23,6 +23,10 @@ export type ModuleFormProps = {
   meta: GuildMeta;
   setConfig: (dotPath: string, value: unknown) => void;
   setAutomod: (patch: Partial<AutoModConfig>) => void;
+  // v3.24.1 FIX (5.1): dedicated setter for the auto-role join list — writes
+  // autorole.roleIds into the DRAFT but queues the whole-array `autorole`
+  // update for the bot wire (see guild-dashboard.tsx for the split reasoning).
+  setAutoroleRoleIds: (roleIds: string[]) => void;
   toast: (msg: string, tone?: "ok" | "err") => void;
   // v3.24.0: direct actions for forms that need a dedicated endpoint (e.g. the
   // "Test Welcome" button in the General module → POST welcome-test).
@@ -47,7 +51,7 @@ const TEMPLATE_VARS = (
   </span>
 );
 
-export function GeneralModule({ draft, meta, setConfig, call, toast }: ModuleFormProps) {
+export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call, toast }: ModuleFormProps) {
   const c = draft.config;
   // v3.22.0: local picker state for the auto-role list editor.
   const [autorolePick, setAutorolePick] = useState<string | null>(null);
@@ -59,13 +63,16 @@ export function GeneralModule({ draft, meta, setConfig, call, toast }: ModuleFor
   // replacement for the removed Unverified marker concept.
   const removeOnNewRole = c.autorole?.removeOnNewRole ?? false;
 
+  // v3.24.1 FIX (5.1): route Add/Remove through setAutoroleRoleIds (draft keeps
+  // the { roleIds, removeOnNewRole } object; the wire update stays a whole
+  // array). The old setConfig("autorole", array) corrupted the draft.
   const addAutorole = () => {
     if (!autorolePick || autoroleIds.includes(autorolePick)) return;
-    setConfig("autorole", [...autoroleIds, autorolePick]);
+    setAutoroleRoleIds([...autoroleIds, autorolePick]);
     setAutorolePick(null);
   };
   const removeAutorole = (id: string) => {
-    setConfig("autorole", autoroleIds.filter((r) => r !== id));
+    setAutoroleRoleIds(autoroleIds.filter((r) => r !== id));
   };
 
   return (
@@ -111,7 +118,7 @@ export function GeneralModule({ draft, meta, setConfig, call, toast }: ModuleFor
             checked={removeOnNewRole}
             onChange={(v) => setConfig("autorole.removeOnNewRole", v)}
             label="Remove join roles when the member gets another role"
-            desc="While ON: EVERY role in the list above is stripped automatically once the member receives any other role (self-role panels, level rewards, admin grants, other bots…). Perfect for a new-member marker role. While OFF: join roles are permanent, Dyno-style."
+            desc="While ON: EVERY role in the list above is stripped automatically once the member receives any other role (self-role panels, level rewards, admin grants, other bots…). Perfect for a new-member marker role. While OFF: join roles are permanent."
           />
         </div>
       </Section>
@@ -217,10 +224,24 @@ const STYLE_OPTS = [
   { value: "Danger", label: "Red" },
 ];
 
+// The bot's factory ticket categories (mirrors DEFAULTS.ticketCategories in
+// src/data/configManager.js). Used by the "Restore" menu so an admin who
+// deleted a built-in category from the web can bring it back exactly as it
+// was (same id / emoji / style) instead of rebuilding it by hand.
+const DEFAULT_CATEGORIES: TicketCategory[] = [
+  { id: "transaction", label: "Buy Key / Transaction", emoji: "🔑", style: "Primary", requiresKey: true, isDefault: true },
+  { id: "help", label: "Help", emoji: "📞", style: "Secondary", requiresKey: false, isDefault: true },
+  { id: "report", label: "Report", emoji: "⚠️", style: "Danger", requiresKey: false, isDefault: true },
+  { id: "claim_giveaway", label: "Claim Giveaway", emoji: "🎁", style: "Success", requiresKey: false },
+  { id: "midman", label: "Midman / Escrow", emoji: "🤝", style: "Success", requiresKey: false },
+];
+
 export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps) {
   const c = draft.config;
   const cats = c.ticketCategories;
   const products = c.products;
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const missingDefaults = DEFAULT_CATEGORIES.filter((d) => !cats.some((cat) => cat.id === d.id));
 
   function updateCat(idx: number, patch: Partial<TicketCategory>) {
     const next = cats.map((cat, i) => (i === idx ? { ...cat, ...patch } : cat));
@@ -234,12 +255,52 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
     const id = `cat${Date.now().toString(36).slice(-4)}`;
     setConfig("ticketCategories", [...cats, { id, label: "New Category", emoji: "🎫", style: "Primary", requiresKey: false }]);
   }
+  function restoreDefault(def: TicketCategory) {
+    if (cats.length >= 25) {
+      toast("Maximum of 25 categories (Discord limit).", "err");
+      return;
+    }
+    setConfig("ticketCategories", [...cats, { ...def }]);
+    setRestoreOpen(false);
+    toast(`Restored "${def.label}" — press Save to apply.`);
+  }
+  function moveCat(idx: number, dir: -1 | 1) {
+    const to = idx + dir;
+    if (to < 0 || to >= cats.length) return;
+    const next = [...cats];
+    [next[idx], next[to]] = [next[to], next[idx]];
+    setConfig("ticketCategories", next);
+  }
   function removeCat(idx: number) {
     if (cats.length <= 1) {
       toast("At least 1 category is required.", "err");
       return;
     }
-    setConfig("ticketCategories", cats.filter((_, i) => i !== idx));
+    const cat = cats[idx];
+    // Built-in categories (transaction / help / report…) are protected on
+    // Discord via /remove-category, but the WEB allows deleting them — just
+    // confirm first so it can't happen by accident (they stay deleted and can
+    // be re-added manually anytime with the "+ Category" button).
+    if (cat.isDefault || cat.id === "claim_giveaway" || cat.id === "midman") {
+      const ok = window.confirm(
+        `Delete the "${cat.label}" category?\n\n` +
+          (cat.isDefault
+            ? "This is a built-in category — it will stay deleted until you re-add it (Restore menu).\n"
+            : "") +
+          "Products linked to it are moved to the transaction category.",
+      );
+      if (!ok) return;
+    }
+    const nextCats = cats.filter((_, i) => i !== idx);
+    // Parity with /remove-category: products of the deleted category are
+    // remapped (transaction, or the first remaining category if transaction
+    // itself is gone) so they never become orphans hidden from every panel.
+    // The bot applies the same rule on save — this keeps the draft identical
+    // to what will actually be stored.
+    const fallback = nextCats.some((c) => c.id === "transaction") ? "transaction" : (nextCats[0]?.id ?? "transaction");
+    const nextProducts = products.map((p) => (p.category === cat.id ? { ...p, category: fallback } : p));
+    setConfig("ticketCategories", nextCats);
+    setConfig("products", nextProducts);
   }
   function updateProduct(idx: number, patch: Partial<Product>) {
     const next = products.map((p, i) => (i === idx ? { ...p, ...patch } : p));
@@ -288,26 +349,94 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-zinc-100">Ticket Categories</h3>
-            <p className="mt-1 text-xs text-zinc-500">Each category becomes a button on the panel — members click to open a ticket.</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Each category becomes a button on the panel — members click to open a ticket. Built-in categories can be
+              deleted here too (they stay deleted); re-add one anytime with the button on the right.
+            </p>
           </div>
-          <Button size="sm" variant="outline" onClick={addCat} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
-            <Plus className="h-4 w-4" aria-hidden="true" /> Category
-          </Button>
+          <div className="flex items-center gap-2">
+            {missingDefaults.length > 0 && (
+              <div className="relative">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setRestoreOpen((o) => !o)}
+                  className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+                  title="Bring back a deleted built-in category"
+                >
+                  Restore <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+                {restoreOpen && (
+                  <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl">
+                    <p className="border-b border-zinc-800 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Built-in categories not in use
+                    </p>
+                    {missingDefaults.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => restoreDefault(d)}
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                      >
+                        <span aria-hidden="true">{d.emoji}</span> {d.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <Button size="sm" variant="outline" onClick={addCat} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+              <Plus className="h-4 w-4" aria-hidden="true" /> Category
+            </Button>
+          </div>
         </div>
         <div className="mt-5 space-y-3">
           {cats.map((cat, idx) => (
-            <div key={`${cat.id}-${idx}`} className="grid gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[70px_1fr_1fr_140px_auto]">
-              <div className="flex items-center gap-2">
-                <GripVertical className="h-4 w-4 text-zinc-700" aria-hidden="true" />
-                <TextInput value={cat.emoji} onChange={(v) => updateCat(idx, { emoji: v })} placeholder="🎫" />
+            <div key={`${cat.id}-${idx}`} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+              <div className="grid gap-3 sm:grid-cols-[76px_1fr_1fr_140px]">
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Emoji</p>
+                  <TextInput value={cat.emoji} onChange={(v) => updateCat(idx, { emoji: v })} placeholder="🎫" />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Label — button text members see</p>
+                  <TextInput value={cat.label} onChange={(v) => updateCat(idx, { label: v })} placeholder="Category label" />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <span className="truncate">ID — links products</span>
+                    {cat.isDefault ? <Pill tone="amber">built-in</Pill> : null}
+                  </p>
+                  <TextInput value={cat.id} onChange={(v) => updateCat(idx, { id: v.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} placeholder="id-slug" />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Button color</p>
+                  <Select value={cat.style} onChange={(v) => updateCat(idx, { style: v })} options={STYLE_OPTS} />
+                </div>
               </div>
-              <TextInput value={cat.label} onChange={(v) => updateCat(idx, { label: v })} placeholder="Category label" />
-              <div className="flex items-center gap-2">
-                <TextInput value={cat.id} onChange={(v) => updateCat(idx, { id: v.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} placeholder="id-slug" />
-                {cat.isDefault ? <Pill tone="amber">built-in</Pill> : null}
-              </div>
-              <Select value={cat.style} onChange={(v) => updateCat(idx, { style: v })} options={STYLE_OPTS} />
-              <div className="flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800/60 pt-3">
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => moveCat(idx, -1)}
+                    disabled={idx === 0}
+                    className="h-8 w-8 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                    title="Move up (changes the button order on the panel)"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => moveCat(idx, 1)}
+                    disabled={idx === cats.length - 1}
+                    className="h-8 w-8 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                    title="Move down (changes the button order on the panel)"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </div>
                 <button
                   type="button"
                   onClick={() => updateCat(idx, { requiresKey: !cat.requiresKey })}
@@ -320,12 +449,13 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
                 >
                   needs key
                 </button>
+                <span className="flex-1" />
                 <Button
                   size="icon"
                   variant="ghost"
                   onClick={() => removeCat(idx)}
                   className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
-                  title="Delete category"
+                  title={cat.isDefault ? "Delete this built-in category (stays deleted)" : "Delete category"}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
                 </Button>
@@ -353,38 +483,59 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
             </p>
           ) : null}
           {products.map((p, idx) => (
-            <div key={`${p.value}-${idx}`} className="grid gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 sm:grid-cols-[1fr_110px_1fr_140px_auto]">
-              <TextInput value={p.label} onChange={(v) => updateProduct(idx, { label: v })} placeholder="Product name" />
-              <TextInput value={p.price} onChange={(v) => updateProduct(idx, { price: v })} placeholder="10,000 IDR" />
-              <div className="flex items-center gap-2">
-                <Select
-                  value={p.category}
-                  onChange={(v) => updateProduct(idx, { category: v })}
-                  options={cats.map((cat) => ({ value: cat.id, label: cat.label }))}
-                />
+            <div key={`${p.value}-${idx}`} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr_110px_1fr_150px]">
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Product name</p>
+                  <TextInput value={p.label} onChange={(v) => updateProduct(idx, { label: v })} placeholder="Product name" />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Price</p>
+                  <TextInput value={p.price} onChange={(v) => updateProduct(idx, { price: v })} placeholder="10,000 IDR" />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Ticket category</p>
+                  <Select
+                    value={p.category}
+                    onChange={(v) => updateProduct(idx, { category: v })}
+                    options={cats.map((cat) => ({ value: cat.id, label: cat.label }))}
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Delivery</p>
+                  <button
+                    type="button"
+                    onClick={() => updateProduct(idx, { requiresKey: !p.requiresKey })}
+                    title={
+                      p.requiresKey
+                        ? "Key-based: a VIP key is generated and the product's role is granted automatically on purchase"
+                        : "Manual delivery: the details are sent by staff inside the ticket"
+                    }
+                    className={`h-9 w-full rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
+                      p.requiresKey
+                        ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                        : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {p.requiresKey ? "send key" : "manual delivery"}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateProduct(idx, { requiresKey: !p.requiresKey })}
-                  className={`h-9 w-full rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
-                    p.requiresKey
-                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
-                  }`}
+              <div className="mt-3 flex items-center justify-end border-t border-zinc-800/60 pt-3">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => {
+                    if (window.confirm(`Delete the product "${p.label}"? This cannot be undone after saving.`)) {
+                      setConfig("products", products.filter((_, i) => i !== idx));
+                    }
+                  }}
+                  className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                  title="Delete product"
                 >
-                  {p.requiresKey ? "send key" : "manual delivery"}
-                </button>
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </Button>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setConfig("products", products.filter((_, i) => i !== idx))}
-                className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
-                title="Delete product"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
             </div>
           ))}
         </div>

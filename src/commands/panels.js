@@ -20,7 +20,6 @@ const {
     MessageFlags,
     StringSelectMenuBuilder,
     getConfig,
-    saveConfig,
     resolveGuildId,
     logAudit,
     safeEditReply

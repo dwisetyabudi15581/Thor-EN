@@ -15,7 +15,7 @@ model User {
   globalName  String?
   avatar      String?
   isAdmin     Boolean  @default(false)
-  // v2 (Dyno-style dashboard): the user's OAuth token (identify+guilds
+  // v2 (web dashboard): the user's OAuth token (identify+guilds
   // scope) — used by /api/guilds for the server list + ManageGuild check.
   accessToken  String?
   refreshToken String?

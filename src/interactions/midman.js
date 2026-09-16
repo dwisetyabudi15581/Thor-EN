@@ -1089,6 +1089,14 @@ async function handleEvent(interaction, event) {
                         'All deal processes are **frozen** until an admin resolves it (release / refund). Do not send goods/funds anymore.'
                 );
             }
+            // v3.24.1 FIX (L-2): `cancel` was the ONLY transition without a channel
+            // announcement — every other event is captured in the transcript, but a
+            // cancellation left no public trace (only deal.history + the board).
+            if (event === 'cancel') {
+                await channel.send(
+                    `❌ Deal **cancelled** by **${interaction.user.tag}** (${mm.STATES[deal.state]?.label || 'deal'} — ${deal.item}, ${mm.formatMoney(deal.priceNum)}).`
+                );
+            }
         } catch (announceErr) {
             console.warn('⚠️ Failed to send the deal announcement:', announceErr.message);
         }

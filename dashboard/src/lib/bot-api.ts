@@ -1,5 +1,5 @@
 // DASH API client — the bridge between the Next.js dashboard and the Thor
-// bot (v3.16.0, Dyno-style).
+// bot (v3.16.0, ).
 //
 // The bot runs a small HTTP API (src/infra/dashServer.js, default
 // 127.0.0.1:8788). The dashboard NEVER writes bot files directly — every
@@ -346,7 +346,7 @@ export type DashboardPayload = {
   customCommands: CustomCommand[];
   // v3.21.0: installed ticket panels — status of the "install ticket panel" step.
   panels: TicketPanelInfo[];
-  // v3.24.0: full Dyno-style parity — VIEW data that used to be Discord-only
+  // v3.24.0: full feature parity — VIEW data that used to be Discord-only
   // now ships with the payload (read-only; write actions go through their
   // own endpoints). All fields are defensively normalized in GuildDashboard
   // so an older bot (without these fields) never crashes the web UI.

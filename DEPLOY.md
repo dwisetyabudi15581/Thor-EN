@@ -2,7 +2,7 @@
 
 Since v3.18.0, the bot and the web dashboard live in **one repository** —
 clone once, run `./setup.sh` once, and you're done. The bot is 100% free
-(single-server mode or public Dyno-style mode).
+(single-server mode or public mode).
 
 Target production architecture (everything on **one VPS**):
 
@@ -76,7 +76,7 @@ openssl rand -hex 32   # save the output — it's used in TWO places
 
 ```ini
 DISCORD_TOKEN=bot_token_from_the_developer_portal
-GUILD_ID=                          # EMPTY = public Dyno-style mode
+GUILD_ID=                          # EMPTY = public mode
 
 DASH_API_HOST=127.0.0.1
 DASH_API_PORT=8788

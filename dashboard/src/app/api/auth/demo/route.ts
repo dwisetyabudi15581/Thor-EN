@@ -31,7 +31,17 @@ export async function POST(req: Request) {
     update: { isAdmin: spec.isAdmin },
   });
 
-  const cookie = sessionCookie(createSessionToken(user));
+  // v3.24.1 SECURITY FIX (1.1): with DEMO_MODE=true forced while OAuth is
+  // configured, an empty SESSION_SECRET makes createSessionToken throw —
+  // surface a clear 500 message instead of an unhandled crash.
+  let token: string;
+  try {
+    token = createSessionToken(user);
+  } catch (err) {
+    console.error("[demo] refusing to create a session token:", (err as Error).message);
+    return jsonError("Session signing is misconfigured on this server (empty SESSION_SECRET).", 500);
+  }
+  const cookie = sessionCookie(token);
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
     headers: {

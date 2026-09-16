@@ -27,6 +27,7 @@
 
 const { EmbedBuilder } = require('discord.js');
 const { EMBED_LIMITS } = require('./constants');
+const { truncateUtf8Safe } = require('./text');
 
 // Consistent colors per event (easy to visually scan the log channel).
 const SERVER_LOG_EVENTS = {
@@ -54,7 +55,11 @@ function snip(text, max = 1000) {
     if (text === null || text === undefined) return '';
     let t = String(text).replace(/\s*\n\s*/g, ' ').trim();
     if (t.length === 0) return '_(empty)_';
-    if (t.length > max) t = t.slice(0, max - 1) + '…';
+    // v3.24.1 FIX (L4): code-point-aware truncation — a plain slice() could cut
+    // an emoji mid surrogate pair → channel.send throws → the log entry is
+    // silently lost (the catch swallows it). max-1 keeps the historical total
+    // length contract (content + ellipsis = max).
+    if (t.length > max) t = truncateUtf8Safe(t, max - 1);
     return t;
 }
 
@@ -98,11 +103,13 @@ async function logServerEvent(client, data) {
 
     try {
         // Limit guards: every field value ≤ 1024 + field names ≤ 256.
+        // v3.24.1 FIX (L4): code-point-aware truncation (see snip). Legacy data
+        // with an emoji at the cut boundary could kill the whole log entry.
         const fields = (Array.isArray(data.fields) ? data.fields : [])
             .filter(f => f && f.name && f.value !== undefined)
             .map(f => ({
-                name: String(f.name).slice(0, EMBED_LIMITS.FIELD_NAME - 1),
-                value: String(f.value).slice(0, EMBED_LIMITS.FIELD_VALUE - 1) || '_(empty)_',
+                name: truncateUtf8Safe(String(f.name), EMBED_LIMITS.FIELD_NAME - 1),
+                value: truncateUtf8Safe(String(f.value), EMBED_LIMITS.FIELD_VALUE - 1) || '_(empty)_',
                 inline: !!f.inline
             }))
             .slice(0, EMBED_LIMITS.FIELDS_COUNT);

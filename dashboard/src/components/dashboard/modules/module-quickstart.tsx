@@ -340,7 +340,7 @@ export function QuickStartModule({
             checked={c.autorole?.removeOnNewRole ?? false}
             onChange={() => toggleRemoveOnNewRole()}
             label="Remove join roles when the member gets another role"
-            desc="ON: every role in the list is stripped automatically once the member receives any other role — perfect for a new-member marker. OFF: join roles are permanent, Dyno-style."
+            desc="ON: every role in the list is stripped automatically once the member receives any other role — perfect for a new-member marker. OFF: join roles are permanent."
           />
         </div>
       </StepCard>

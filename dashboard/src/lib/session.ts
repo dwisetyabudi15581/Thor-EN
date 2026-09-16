@@ -9,7 +9,7 @@
 // self-healing seed for re-planting the user row (see api-auth.ts).
 
 import crypto from "crypto";
-import { cfg } from "./config";
+import { cfg, isDiscordOAuthReady } from "./config";
 
 const COOKIE_NAME = "thor_session";
 const SESSION_DAYS = 7;
@@ -41,6 +41,16 @@ export type SessionUser = {
 };
 
 function sign(data: string): string {
+  // v3.24.1 SECURITY FIX (1.1): fail fast on an empty SESSION_SECRET once real
+  // Discord OAuth credentials are configured. An empty HMAC key is deterministic
+  // and publicly computable — anyone could forge { uid, exp, p:{isAdmin:true} }
+  // and take over ANY account (the DB row is loaded by uid). Demo mode (OAuth
+  // unconfigured, no real credentials to protect) may keep using the empty secret.
+  if (!cfg.sessionSecret && isDiscordOAuthReady()) {
+    throw new Error(
+      "SESSION_SECRET is empty while Discord OAuth is configured — refusing to sign session tokens (they would be forgeable). Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" and set it in dashboard/.env"
+    );
+  }
   return crypto.createHmac("sha256", cfg.sessionSecret).update(data).digest("base64url");
 }
 
@@ -66,7 +76,14 @@ export function verifySessionToken(token: string | undefined): SessionPayload | 
   if (!token) return null;
   const [body, sig] = token.split(".");
   if (!body || !sig) return null;
-  const expected = sign(body);
+  let expected: string;
+  try {
+    expected = sign(body);
+  } catch {
+    // Empty secret + OAuth ready → fail CLOSED: every existing token is
+    // treated as invalid (a forgeable secret validates nothing).
+    return null;
+  }
   // constant-time comparison to prevent timing attacks
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);

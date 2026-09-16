@@ -52,7 +52,7 @@ module.exports = async function (interaction) {
     const guildId = resolveGuildId(interaction);
     const config = getConfig(guildId);
 
-    // === SET AUTOROLE (v3.23.0 — auto-role on join, Dyno-style + toggle) ===
+    // === SET AUTOROLE (v3.23.0 — auto-role on join,  + toggle) ===
     // One command, four actions: add / remove / list / toggle. The list is
     // granted automatically to every new member by memberHandler → the
     // Role Engine. The removeOnNewRole toggle (replacement for the removed
@@ -82,7 +82,7 @@ module.exports = async function (interaction) {
             const toggleState =
                 config.autorole?.removeOnNewRole === true
                     ? 'ON ✅ — join roles disappear automatically once the member gets another role'
-                    : 'OFF ⛔ — join roles are permanent (Dyno-style)';
+                    : 'OFF ⛔ — join roles are permanent';
             return safeEditReply(interaction, {
                 content:
                     `🎁 **AUTO-ROLE ON JOIN** (${current.length}/${MAX_AUTOROLE})\n${list}\n\n` +

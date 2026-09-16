@@ -31,7 +31,7 @@ type UserData = Partial<Omit<DbUser, 'id' | 'discordId'>> & { id?: string; disco
 type UserWhere = { id?: string; discordId?: string }
 
 type UserDelegate = {
-  findUnique(args: { where: UserWhere }): Promise<DbUser | null>
+  findUnique(args: { where: UserWhere; select?: Partial<Record<keyof DbUser, true>> }): Promise<DbUser | null>
   create(args: { data: UserData }): Promise<DbUser>
   update(args: { where: UserWhere; data: UserData }): Promise<DbUser>
   upsert(args: { where: { discordId: string }; create: UserData; update: UserData }): Promise<DbUser>
@@ -163,7 +163,11 @@ function createDb(): Db {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PrismaClient } = require('@prisma/client')
   const prisma = new PrismaClient({
-    log: ['query'],
+    // v3.24.1 SECURITY FIX (7.1): query logging printed SQL WITH BOUND
+    // PARAMETERS — including the User row's accessToken/refreshToken (live
+    // Discord OAuth tokens) — into stdout on every login/refresh. Query
+    // logging is now development-only; production logs errors only.
+    log: process.env.NODE_ENV === 'development' ? ['query'] : ['error'],
     datasources: { db: { url: resolvedUrl } },
   })
   // PrismaClient's `user` property is a super-set of UserDelegate — safe to cast

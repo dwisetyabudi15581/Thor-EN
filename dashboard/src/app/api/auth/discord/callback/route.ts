@@ -109,8 +109,17 @@ export async function GET(req: Request) {
   });
 
   // Profile-carrying token: the session stays valid across sandbox instances
-  // (see session.ts) — any instance can complete the callback
-  const cookie = sessionCookie(createSessionToken(user));
+  // (see session.ts) — any instance can complete the callback.
+  // v3.24.1 SECURITY FIX (1.1): createSessionToken throws when SESSION_SECRET is
+  // empty while OAuth is ready — surface it as a clear redirect instead of a 500.
+  let sessionToken: string;
+  try {
+    sessionToken = createSessionToken(user);
+  } catch (err) {
+    console.error("[oauth] refusing to create a session token:", (err as Error).message);
+    return fail(req, "konfigurasi_tidak_aman");
+  }
+  const cookie = sessionCookie(sessionToken);
   const res = new Response(null, { status: 302, headers: { Location: "/" } });
   res.headers.append(
     "set-cookie",

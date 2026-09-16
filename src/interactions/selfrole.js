@@ -170,10 +170,35 @@ async function handleSelfRoleSelect(interaction) {
     //   - If the user selects 0 roles (cleared selection):
     //     * Remove all panel roles the user has.
     if (panel.exclusive) {
+        // v3.24.1 SECURITY FIX (H-1): the exclusive branch previously skipped BOTH
+        // guards every sibling path enforces — (1) the selected value must actually
+        // be a member of this panel (anti forged/legacy value) and (2) the
+        // requiresRoleId prerequisite. A member could pick a conditional role from
+        // an exclusive dropdown without meeting its prerequisite.
         const targetRoleId =
             selectedIds.size > 0
                 ? interaction.values[0] // first selected role
                 : null;
+
+        if (targetRoleId && !panelRoleIds.includes(targetRoleId)) {
+            return interaction.reply({
+                content: '❌ That role is not registered on this self-role panel.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+        if (targetRoleId) {
+            const tConfig = panel.roles.find(r => r.roleId === targetRoleId);
+            if (tConfig?.requiresRoleId && !member.roles.cache.has(tConfig.requiresRoleId)) {
+                const reqRole = interaction.guild.roles.cache.get(tConfig.requiresRoleId);
+                const reqName = reqRole ? reqRole.name : `<@&${tConfig.requiresRoleId}>`;
+                return interaction.reply({
+                    content:
+                        `❌ You need the **${reqName}** role to claim this role.\n\n` +
+                        `💡 Get the ${reqName} role first via the matching self-role panel.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
 
         const toRemoveExclusive = panelRoleIds.filter(rid => rid !== targetRoleId && member.roles.cache.has(rid));
         const toAddExclusive = targetRoleId && !member.roles.cache.has(targetRoleId) ? [targetRoleId] : [];

@@ -8,6 +8,7 @@
  */
 
 const { MessageFlags, getConfig, saveConfig, resolveGuildId, Embeds, logAudit, safeEditReply, parsePriceNum } = require('./_shared');
+const { joinCappedLines } = require('../infra/text');
 
 /**
  * v3.9.49 (user report: "total revenue doesn't update"): validate a product
@@ -167,13 +168,18 @@ module.exports = async function (interaction) {
         if (config.products.length === 0) {
             return safeEditReply(interaction, { content: '📭 No products yet.' });
         }
-        const list = config.products
-            .map((p, i) => {
+        // v3.24.1 FIX (M-2): capped list — 25 fully-filled products ≈ 8,850 chars
+        // > the 4096 embed description limit → setDescription threw → the command
+        // was dead until products were removed. Same pattern as /config-show.
+        const list = joinCappedLines(
+            config.products,
+            (p, i) => {
                 let line = `\`${i + 1}.\` **${p.label}** — ${p.price}\n   └ value: \`${p.value}\``;
                 if (p.duration) line += ` | duration: ${p.duration}`;
                 return line;
-            })
-            .join('\n');
+            },
+            4000
+        );
         const embed = embeds.info('📋 PRODUCT LIST', list);
         return safeEditReply(interaction, { embeds: [embed] });
     }

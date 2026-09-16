@@ -1,5 +1,5 @@
 /**
- * Unit tests for the v3.19.0 Command Manager (Dyno-style).
+ * Unit tests for the v3.19.0 Command Manager.
  *
  * Verifies:
  *   - normalizeDisabledList: valid + dedupe, unknown command, protected

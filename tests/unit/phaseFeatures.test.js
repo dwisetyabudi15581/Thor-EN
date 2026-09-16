@@ -27,7 +27,7 @@ test('configManager: v3.23.0 — verifyButton & the unverified role REMOVED + au
     assert.ok(config.autorole, 'autorole should exist');
     assert.ok(Array.isArray(config.autorole.roleIds), 'autorole.roleIds should be an array');
     assert.strictEqual(config.autorole.roleIds.length, 0, 'autorole.roleIds defaults to empty');
-    assert.strictEqual(config.autorole.removeOnNewRole, false, 'autorole.removeOnNewRole defaults to false (permanent, Dyno-style)');
+    assert.strictEqual(config.autorole.removeOnNewRole, false, 'autorole.removeOnNewRole defaults to false (permanent, )');
 });
 
 test('configManager: v3.23.0 — legacy verify & unverified keys cleaned on load', () => {

@@ -1,6 +1,6 @@
 "use client";
 
-// /app/servers/[guildId] — per-server dashboard page (Dyno-style).
+// /app/servers/[guildId] — per-server dashboard page .
 // Access verification (login + ManageGuild) happens in the API route;
 // this page is just a thin shell for the GuildDashboard component.
 

@@ -1,6 +1,6 @@
 "use client";
 
-// v3.24.0 dashboard insight modules — full Dyno-style parity for the VIEW
+// v3.24.0 dashboard insight modules — full feature parity for the VIEW
 // commands that used to be Discord-only:
 //   StatsModule → /stats, /leaderboard (4 metrics), /boosters
 //   AfkModule  → /afk-list + /afk-clear (the clear action from the web)

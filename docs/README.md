@@ -8,7 +8,7 @@ The official documentation set for **Thor — All-in-One Discord Community Bot**
 | [ADMIN_GUIDE.md](./ADMIN_GUIDE.md) | Complete admin guide: server setup, product & VIP management, daily operations, moderation, backup & restore, troubleshooting, best practices |
 | [CHANGELOG.md](../CHANGELOG.md)    | Full history of every version (v3.9.0 – v3.20.0)                                                                                              |
 | [../DEPLOY.md](../DEPLOY.md)       | The ONE-repo deployment guide: VPS + pm2 + domain/HTTPS + OAuth + end-to-end verification                                                      |
-| [../dashboard/](../dashboard/)     | The Dyno-style web dashboard (Next.js) — docs & how to run it live in `dashboard/README.md`                                                    |
+| [../dashboard/](../dashboard/)     | The web dashboard (Next.js) — docs & how to run it live in `dashboard/README.md`                                                    |
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ The official documentation set for **Thor — All-in-One Discord Community Bot**
 
 - **93 slash commands** — every feature is configurable from Discord OR the web dashboard, no file editing
 - **670 unit tests** — `node:test`, sandboxed (safe to run on a live server)
-- **discord.js v14** · Node.js 18+ · single-server / public mode (Dyno-style) — one `GUILD_ID` variable
+- **discord.js v14** · Node.js 18+ · single-server / public mode  — one `GUILD_ID` variable
 - **CI/CD** — GitHub Actions runs lint + tests on every push (Node 18/20/22)
 
 ## Contributors / Developers

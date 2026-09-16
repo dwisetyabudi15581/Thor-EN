@@ -23,7 +23,7 @@ const responderManager = require('../data/responderManager');
 // v3.9.24: normalize literal \n → real newlines (command input on PC can't press Enter).
 // The /add-responder option description does claim "supports \n" — previously
 // that claim was FALSE (text stored raw, replies contained literal backslash-n).
-const { normalizeNewlines } = require('../infra/text');
+const { normalizeNewlines, joinCappedLines } = require('../infra/text');
 
 module.exports = async function (interaction) {
     // === ADD RESPONDER ===
@@ -99,14 +99,19 @@ module.exports = async function (interaction) {
             });
         }
 
-        const lines = responders
-            .map((r, i) => {
+        // v3.24.1 FIX (M-2): capped list — 50 responders (the manager cap) ≈ 6,500
+        // chars > the 4096 embed description limit → setDescription threw → the
+        // command was dead around ~32 responders.
+        const lines = joinCappedLines(
+            responders,
+            (r, i) => {
                 const replyPreview = r.reply.length > 60 ? r.reply.slice(0, 60) + '...' : r.reply;
                 // v3.9.47: show the match mode per entry
                 const mode = r.matchMode === 'exact' ? 'start' : 'contains';
                 return `\`${i + 1}.\` \`${r.trigger}\` → ${replyPreview} *(${mode} • used ${r.useCount}x)*`;
-            })
-            .join('\n');
+            },
+            4000
+        );
 
         const embed = new EmbedBuilder()
             .setTitle('💬 AUTO-RESPONDER LIST')

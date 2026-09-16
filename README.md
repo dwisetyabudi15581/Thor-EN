@@ -2,7 +2,7 @@
 
 A versatile Discord bot for any community — shop servers, gaming, content creators, and general communities alike. Everything is configured directly from Discord via slash commands, with no files to edit.
 
-> **v3.24.0** · 93 slash commands (+ unlimited custom commands from the web) · 740 unit tests · discord.js v14 · Node.js 20+ · single-server / public mode (Dyno-style) · **100% FREE — every feature unlocked** · **+ web dashboard INSIDE THIS REPO (22 modules, full parity with Discord)**
+> **v3.24.0** · 93 slash commands (+ unlimited custom commands from the web) · 740 unit tests · discord.js v14 · Node.js 20+ · single-server / public mode  · **100% FREE — every feature unlocked** · **+ web dashboard INSIDE THIS REPO (22 modules, full parity with Discord)**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** — setup, daily operations, troubleshooting
 > 📜 **[Changelog](./CHANGELOG.md)** — history of every version
@@ -11,12 +11,12 @@ A versatile Discord bot for any community — shop servers, gaming, content crea
 
 ## ✨ Key Features
 
-### 🌐 Web Dashboard (Dyno-style) — v3.21.0: Quick Start + Custom Commands + Embed Builder + 20 Modules
+### 🌐 Web Dashboard  — v3.21.0: Quick Start + Custom Commands + Embed Builder + 20 Modules
 
 - **The web dashboard now lives INSIDE THIS REPO** (the `dashboard/` folder — Next.js 16 + Prisma SQLite, slimmed to 12 runtime packages). Clone once → `./setup.sh` → `./start.sh` — the bot and the web run together, no separate repository.
 - **Two ways to configure the bot**: directly via **slash commands** in Discord, or via the **web dashboard** — both write to ONE shared data source (`data/config/<guildId>.json`), so they can never conflict.
-- **🧩 Command Manager, Dyno-style (v3.19.0)** — enable/disable **each slash command per server** from the web (search + groups + bulk actions) or from Discord (`/commands list|toggle|enable-all`). Disabled commands are rejected with a clear message; `/commands` itself is disable-proof so admins can never lock themselves out.
-- **🪄 Custom Commands, Dyno-style (v3.20.0)** — **build your own slash command on the web**: name, description, text + embed reply, ephemeral option. Once saved the command is **automatically registered on Discord** and every member can use it (max 20 per server). Temporarily disable via the Command Manager, delete anytime — automatic two-way sync.
+- **🧩 Command Manager (v3.19.0)** — enable/disable **each slash command per server** from the web (search + groups + bulk actions) or from Discord (`/commands list|toggle|enable-all`). Disabled commands are rejected with a clear message; `/commands` itself is disable-proof so admins can never lock themselves out.
+- **🪄 Custom Commands (v3.20.0)** — **build your own slash command on the web**: name, description, text + embed reply, ephemeral option. Once saved the command is **automatically registered on Discord** and every member can use it (max 20 per server). Temporarily disable via the Command Manager, delete anytime — automatic two-way sync.
 - **✏️ Full Embed Builder (v3.20.0)** — complete parity with `/embed-builder`: outer text, author, fields (inline/full + reorder), thumbnail, image, footer, timestamp — with a **Discord-style live preview** before sending to any channel.
 - **🚀 Quick Start from the web (v3.21.0)** — mirrors the 🚀 category in `/help`: a 6-step server setup checklist right in the dashboard (admin & verified roles — **pick from the list or paste the ID into a text field**, categories & products + quick product add, install ticket & verification panels to a channel, log channel). Every form is applied by the bot to the server instantly; X/6 progress bar; unconfigured servers auto-land on this module.
 - **20 dashboard modules** (v3.21.0, up from 11): + **Quick Start**, **Command Manager**, **Custom Command**, **Backup** (create/restore from the web), **Moderation** (warn + moderator action history), **VIP Keys** (grant product keys + auto-expiry), **Giveaway** (start from the web), **Embed** (full builder + preview), **Poll** (interactive polling).
@@ -140,14 +140,14 @@ cd Thor-EN
 ./setup.sh
 
 # 3. Fill in the environment
-nano .env             # DISCORD_TOKEN + GUILD_ID (empty = public Dyno-style mode) + DASH_API_TOKEN
+nano .env             # DISCORD_TOKEN + GUILD_ID (empty = public mode) + DASH_API_TOKEN
 nano dashboard/.env   # Discord OAuth + DASH_API_TOKEN (the SAME as the bot's .env)
 
 # 4. Run the bot + dashboard together
 ./start.sh            # or ./dev.sh for development
 ```
 
-Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID` is left empty, the bot runs in **public Dyno-style mode**: commands are registered globally and appear automatically in every server that invites the bot (~1 hour propagation) — no manual guild id anywhere. For development with auto-restart: `npm run dev`.
+Slash commands register instantly to the guild set in `GUILD_ID`. When `GUILD_ID` is left empty, the bot runs in **public mode**: commands are registered globally and appear automatically in every server that invites the bot (~1 hour propagation) — no manual guild id anywhere. For development with auto-restart: `npm run dev`.
 
 ### Initial Configuration (once the bot is online)
 
@@ -197,7 +197,7 @@ Tests use the `node:test` runner built into Node.js — no extra dependencies ne
 - **Corrupt file quarantine** — data files that fail to parse are renamed to `.corrupt-<ts>` and never silently overwritten.
 - **TOCTOU guard** — `userLock` prevents double-processing when a user double-clicks.
 - **Audit log** — keys are always masked; every admin action is recorded.
-- **Single-server / public mode — ONE `GUILD_ID` variable (v3.12.0)** — `GUILD_ID` set: instant commands + events from other servers ignored (insurance in case the bot is accidentally invited). `GUILD_ID` empty: **public Dyno-style mode** — global commands appear automatically in every server that invites the bot, and configs are isolated per-server (`data/config/<guildId>.json`) so server A's admin can never overwrite server B's settings. Guide to opening the bot to the public: [docs/ADMIN_GUIDE.md → Public Mode](./docs/ADMIN_GUIDE.md).
+- **Single-server / public mode — ONE `GUILD_ID` variable (v3.12.0)** — `GUILD_ID` set: instant commands + events from other servers ignored (insurance in case the bot is accidentally invited). `GUILD_ID` empty: **public mode** — global commands appear automatically in every server that invites the bot, and configs are isolated per-server (`data/config/<guildId>.json`) so server A's admin can never overwrite server B's settings. Guide to opening the bot to the public: [docs/ADMIN_GUIDE.md → Public Mode](./docs/ADMIN_GUIDE.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 // Thor Dashboard home page — one route, two faces:
 // - not logged in -> public landing (free-features + web dashboard showcase)
-// - logged in     -> immediately redirected to /app (Dyno-style server picker)
+// - logged in     -> immediately redirected to /app (server picker)
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +15,9 @@ export default function Page() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [booting, setBooting] = useState(true);
   const [busy, setBusy] = useState(false);
+  // v3.24.1 FIX (5.3): a failed /api/me fetch used to leave the page on
+  // "Preparing the dashboard…" forever (plus an unhandled rejection).
+  const [netError, setNetError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     // ?_= with a full timestamp forces stale proxy/old-tab caches to fetch a
@@ -24,10 +27,18 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    void refresh().finally(() => setBooting(false));
+    void (async () => {
+      try {
+        await refresh();
+      } catch {
+        setNetError("Could not reach the dashboard server. Check your connection and retry.");
+      } finally {
+        setBooting(false);
+      }
+    })();
   }, [refresh]);
 
-  // Already logged in -> move to the server dashboard (Dyno-style picker).
+  // Already logged in -> move to the server dashboard ( picker).
   useEffect(() => {
     if (me?.user) router.replace("/app");
   }, [me, router]);
@@ -54,6 +65,22 @@ export default function Page() {
           <span className="absolute inset-0 rounded-2xl border border-amber-400/40 animate-ping opacity-30" aria-hidden="true" />
         </div>
         <p className="text-sm text-zinc-400">Preparing the dashboard…</p>
+      </div>
+    );
+  }
+
+  // v3.24.1 FIX (5.3): retry UI instead of a dead spinner when the boot fetch failed.
+  if (netError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4 px-6 text-center">
+        <p className="text-sm text-zinc-300">{netError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-lg border border-zinc-700 bg-transparent px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          Retry
+        </button>
       </div>
     );
   }

@@ -27,7 +27,7 @@ const {
 } = require('./_shared');
 
 // v3.9.25: convert literal \n → real newlines (PC multi-line feature)
-const { normalizeNewlines } = require('../infra/text');
+const { normalizeNewlines, joinCappedLines } = require('../infra/text');
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -52,9 +52,27 @@ module.exports = async function (interaction) {
             exclusive
         });
 
-        // Render the initial embed + components (components empty since there are no roles yet)
-        const embed = buildPanelEmbed(panel, interaction.client);
-        const components = buildPanelComponents(panel);
+        // v3.24.1 FIX (M-1): the embed/components build was OUTSIDE the P0-5
+        // try/catch — a title > 256 chars (Discord allows slash option input up
+        // to 6000) made buildPanelEmbed throw AFTER the panel was persisted,
+        // leaving a permanent zombie entry. Roll back on ANY render failure too.
+        let embed;
+        let components;
+        try {
+            // Render the initial embed + components (components empty since there are no roles yet)
+            embed = buildPanelEmbed(panel, interaction.client);
+            components = buildPanelComponents(panel);
+        } catch (err) {
+            console.error('Failed to render the self-role panel:', err.message);
+            try {
+                deleteSelfRolePanel(panel.id);
+            } catch (_) {}
+            return safeEditReply(interaction, {
+                content:
+                    `❌ Failed to render the panel: ${err.message}\n` +
+                    `💡 Keep the title under **256 characters** and the description under **4000 characters**. Entry rolled back.`
+            });
+        }
 
         // Send the panel message
         // P0-5 FIX: roll back the panel entry if the message fails to send (previously a zombie entry).
@@ -232,8 +250,12 @@ module.exports = async function (interaction) {
             });
         }
 
-        const lines = panels
-            .map(p => {
+        // v3.24.1 FIX (M-2): capped list — ~900 chars per panel with 25 role
+        // mentions > the 4096 embed description limit at ~5 populated panels →
+        // setDescription threw → the command was dead.
+        const lines = joinCappedLines(
+            panels,
+            p => {
                 const typeStr = p.type === 'select' ? '📋 Select' : '🔘 Button';
                 const modeStr = p.exclusive ? '🔒 Exclusive' : '✅ Multi';
                 const rolesStr =
@@ -241,8 +263,10 @@ module.exports = async function (interaction) {
                         ? '_empty_'
                         : p.roles.map(r => `${r.emoji ? r.emoji + ' ' : ''}<@&${r.roleId}>`).join(', ');
                 return `• **${p.title}**\n  🆔 \`${p.id}\` | ${typeStr} | ${modeStr} | ${p.roles.length} role\n  📍 <#${p.channelId}> | [message](https://discord.com/channels/${p.guildId}/${p.channelId}/${p.messageId})\n  Role: ${rolesStr}`;
-            })
-            .join('\n\n');
+            },
+            4000,
+            '\n\n'
+        );
 
         const embed = new EmbedBuilder()
             .setTitle('🎭 SELF-ROLE PANEL LIST')

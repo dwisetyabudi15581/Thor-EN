@@ -158,11 +158,11 @@ test('automodManager: checkSpam detects spam pattern', () => {
     const config = { ...getDefaultConfig(), spamThreshold: 3, spamWindowMs: 10000, enabled: true };
     resetSpamTracker('test_guild_spam', 'test_user_spam');
 
-    // 3 messages within the window → spam (threshold 3, so the 4th message triggers)
-    // Actually checkSpam returns true when length > threshold
+    // v3.24.1 FIX: the counter trips exactly AT the threshold ("Number of messages
+    // in the window that counts as spam") — previously it fired at N+1 messages.
     assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 1 msg
     assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 2 msg
-    assert.ok(!checkSpam('test_guild_spam', 'test_user_spam', config)); // 3 msg (== threshold, not >)
+    assert.ok(checkSpam('test_guild_spam', 'test_user_spam', config)); // 3 msg (== threshold → spam)
     assert.ok(checkSpam('test_guild_spam', 'test_user_spam', config)); // 4 msg (> threshold)
 
     resetSpamTracker('test_guild_spam', 'test_user_spam');

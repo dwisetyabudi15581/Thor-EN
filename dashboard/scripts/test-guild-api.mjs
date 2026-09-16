@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * E2E test — the Dyno-style dashboard API routes (v2) against a local dev
+ * E2E test — the web dashboard API routes (v2) against a local dev
  * server.
  *
  * What is tested:

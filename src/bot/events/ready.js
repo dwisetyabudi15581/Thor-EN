@@ -35,7 +35,7 @@ const tempVoiceManager = require('../../data/tempVoiceManager');
 
 // v3.12.0: ONE GUILD ID. The guilds processed at startup + command
 // registration are decided by GUILD_ID in .env: set = that one server only
-// (instant); empty = public Dyno-style mode (global commands) — EVERY cached guild.
+// (instant); empty = public mode (global commands) — EVERY cached guild.
 const { getPrimaryGuildId } = require('../../infra/guild');
 
 /**
@@ -186,13 +186,13 @@ async function onReady(client) {
     // a successful restart. (The global wipe is still needed so old versions that
     // were once global don't get duplicated.)
 
-    // === 1. Register slash commands (v3.12.0: single guild / Dyno-style global) ===
+    // === 1. Register slash commands (v3.12.0: single guild /  global) ===
     let registeredToGuild = false;
     try {
         const primary = getPrimaryGuildId();
         if (!primary) {
             // GUILD_ID empty = PUBLIC MODE — exactly how big public bots work
-            // (Dyno/MEE6): commands are registered GLOBALLY once and appear
+            // (like the big public bots): commands are registered GLOBALLY once and appear
             // automatically in every server that invites the bot (~1 hour
             // propagation). No manual guild id anywhere.
             console.warn('ℹ️ GUILD_ID is empty in .env — PUBLIC MODE: slash commands are registered GLOBALLY.');
@@ -239,7 +239,7 @@ async function onReady(client) {
 
     // === 1c. v3.20.0: sync per-guild custom commands (created from the web) ===
     // Custom commands live in data/customCommands/<guildId>.json and are
-    // registered at GUILD level (per-server, exactly Dyno's model). Files
+    // registered at GUILD level (per-server, exactly model). Files
     // may change while the bot is down (backup restore / manual edits) →
     // the startup sync prevents drift: Discord's list is aligned with the
     // data files. Guilds without custom commands are skipped.

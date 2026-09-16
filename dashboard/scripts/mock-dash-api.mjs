@@ -163,7 +163,7 @@ const COMMAND_CATALOG = [
   ["rank", "View your level & XP", "leveling"],
   ["set-midman-fee", "Set the middleman fee", "midman"],
   ["midman-deals", "View active escrow deals", "midman"],
-  ["commands", "Manage enabled/disabled commands (Dyno-style)", "commands"],
+  ["commands", "Manage enabled/disabled commands", "commands"],
 ];
 
 function seedGuild({ id, name, icon, memberCount }) {

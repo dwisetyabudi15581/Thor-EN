@@ -50,12 +50,19 @@ function buildPanelEmbed(panel, client) {
     // Truncate to stay within the limit, with a "+N more" indicator.
     // v3.9.17 FIX: count the roles that are ACTUALLY displayed, not the total role count.
     // Previously, the message said "+25 more" even though maybe 15 were already displayed.
+    // v3.24.1 FIX: a very long panel DESCRIPTION used to make `remaining` go
+    // negative → truncated became '' → fullDesc stayed > 4096 → setDescription
+    // threw. Clamp the description budget up front so the header always fits.
     const MAX_DESC = 4000; // 96 char margin
-    const header = `${panel.description}\n\n${modeText}\n\n**Available roles:**\n`;
+    const DESC_BUDGET = 3200; // leaves >= 700 for modeText + roles + "+N more"
+    const panelDesc = panel.description.length > DESC_BUDGET
+        ? `${panel.description.slice(0, DESC_BUDGET)}…`
+        : panel.description;
+    const header = `${panelDesc}\n\n${modeText}\n\n**Available roles:**\n`;
     let fullDesc;
     if (header.length + rolesText.length > MAX_DESC) {
         const remaining = MAX_DESC - header.length - 50;
-        const truncated = rolesText.slice(0, Math.max(0, remaining));
+        const truncated = remaining > 0 ? rolesText.slice(0, remaining) : '';
         // Count how many roles actually got displayed (count bullet points)
         const displayedCount = (truncated.match(/^• /gm) || []).length;
         const hiddenCount = Math.max(0, panel.roles.length - displayedCount);
@@ -91,19 +98,21 @@ function buildPanelComponents(panel) {
     if (panel.roles.length === 0) return [];
 
     if (panel.type === 'select') {
+        // v3.24.1 FIX: cap the options at 25 (Discord's limit) — the button path
+        // already caps (MAX_BUTTONS), the select path didn't (legacy/edited data
+        // with more than 25 roles would throw when rendering the panel).
+        const opts = panel.roles.slice(0, 25).map(r => ({
+            label: r.label,
+            value: r.roleId,
+            ...(r.emoji ? { emoji: r.emoji } : {}),
+            ...(r.description ? { description: r.description } : {})
+        }));
         const select = new StringSelectMenuBuilder()
             .setCustomId(`sr_sel:${panel.id}`)
             .setPlaceholder('Select a role...')
             .setMinValues(0)
             .setMaxValues(panel.exclusive ? 1 : Math.min(panel.roles.length, 25))
-            .addOptions(
-                panel.roles.map(r => ({
-                    label: r.label,
-                    value: r.roleId,
-                    ...(r.emoji ? { emoji: r.emoji } : {}),
-                    ...(r.description ? { description: r.description } : {})
-                }))
-            );
+            .addOptions(opts);
         return [new ActionRowBuilder().addComponents(select)];
     }
 
