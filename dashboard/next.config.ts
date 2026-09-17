@@ -1,7 +1,18 @@
 import type { NextConfig } from "next";
-
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// v3.28.1: read once at build time. NEXT_PUBLIC_* values are INLINED into
+// the client bundle by the build, so the dashboard can display exactly which
+// version it was built from — the instant answer to "is my build stale?"
+// (the recurring "feature not showing" after `git pull` on Termux).
+const dashboardVersion: string = JSON.parse(
+  fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "package.json"),
+    "utf8",
+  ),
+).version;
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -20,6 +31,11 @@ const nextConfig: NextConfig = {
   // Disable the dev indicator button (the floating "N" circle) — on
   // sandboxes running `next dev`, this badge can cover content.
   devIndicators: false,
+  env: {
+    // Inlined at BUILD time (see comment at the top) — shown in the SideNav
+    // footer as "Dashboard vX.Y.Z" so a stale build is visible at a glance.
+    NEXT_PUBLIC_APP_VERSION: dashboardVersion,
+  },
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,

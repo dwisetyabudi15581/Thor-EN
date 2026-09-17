@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.28.1] — 2026-09-18
+
+### Added — 🏷️ DASHBOARD BUILD VERSION BADGE — "IS MY BUILD STALE?" ANSWERED AT A GLANCE
+
+Second occurrence of the same owner confusion (v3.27.0 "one-way toggle not showing", now v3.28.0 "Verification card not showing"): after `git pull` on Termux the dashboard can still serve an **older build** while the bot itself is already new — and until now there was no way to tell from inside the dashboard. This release makes the served build version **visible**.
+
+- 🟢 **`Dashboard vX.Y.Z` badge** at the bottom of the side navigation (desktop sidebar + mobile drawer, under "Refresh data"). The version string is **inlined at build time** (`next.config.ts` reads `dashboard/package.json` and injects it via the `env` key → `NEXT_PUBLIC_APP_VERSION`), so the badge always reflects the *bundle being served*, never the repo on disk. If the badge shows an older version than `package.json`, the dashboard build is stale → re-run `./start.sh` (auto-rebuilds on version change since v3.27.1) or force it: `rm -f dashboard/.build-version && ./start.sh`.
+- 🟢 No behavior changes anywhere else; bot code untouched (test suite unchanged at 826).
+
 ## [3.28.0] — 2026-09-18
 
 ### Added — ✅ THE VERIFICATION FEATURE IS BACK — `/setup-verify`, REBUILT ON THE ONE-WAY PANEL

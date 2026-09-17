@@ -22,6 +22,12 @@ export type SideNavModule = {
   group: string;
 };
 
+// v3.28.1: inlined at BUILD time via next.config env — this string reflects
+// the version of the BUNDLE being served, so a stale build (e.g. after a
+// `git pull` without a rebuild) is visible at a glance in the footer below.
+
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "";
+
 type SideNavProps = {
   modules: SideNavModule[];
   /** Currently open module id (drives the active highlight). */
@@ -199,6 +205,11 @@ export function SideNav({
           />
           {refreshing ? "Refreshing…" : "Refresh data"}
         </Button>
+        {APP_VERSION ? (
+          <p className="mt-2 select-none text-center text-[10px] leading-none text-zinc-600" title="Version of the dashboard build you are viewing">
+            Dashboard v{APP_VERSION}
+          </p>
+        ) : null}
       </div>
     </div>
   );
