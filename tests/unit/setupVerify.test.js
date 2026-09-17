@@ -364,6 +364,9 @@ test('dash API: POST verify-panel → 201, one-way panel + config saved', async 
     const { panel } = await res.json();
     assert.strictEqual(panel.once, true, 'the panel is one-way');
     assert.strictEqual(panel.type, 'button');
+    // v3.28.2: tagged for the CLASSIC render + old default title.
+    assert.strictEqual(panel.kind, 'verify', 'panel is tagged kind:verify');
+    assert.strictEqual(panel.title, '✅ SERVER VERIFICATION', 'old default title');
     assert.ok(panel.messageId, 'the message was sent');
     assert.strictEqual(panel.roles.length, 1);
     assert.strictEqual(panel.roles[0].roleId, ROLE_VERIFIED);
@@ -427,4 +430,91 @@ test('dash API: PUT config — roles.verified accepted again; unverified + verif
     });
     assert.strictEqual(managedKey.status, 422);
     assert.match(JSON.stringify(await managedKey.json()), /managed by \/setup-verify/i);
+});
+
+// ====================================================
+// === 9. v3.28.2 — CLASSIC LOOK (old /setup-verify embed) ===
+// ====================================================
+
+test('classic look: /setup-verify renders the OLD-STYLE embed (green, plain, bot-name footer)', async () => {
+    resetGuildConfig();
+    const ix = makeCommandInteraction({});
+    await selfroleCommand(ix);
+
+    assert.strictEqual(ix.sent.length, 1, 'the panel message was sent');
+    const embed = ix.sent[0].embeds[0];
+    const d = embed.data ?? embed;
+    assert.strictEqual(d.title, '✅ SERVER VERIFICATION', 'old default title (verifyTitle)');
+    assert.match(d.description, /Welcome to \*\*Verify Test Server\*\*!/, 'old default body (verifyBody)');
+    assert.match(d.description, /get verified and gain full access to all channels/);
+    assert.strictEqual(d.color, 0x2ecc71, 'the OLD green color');
+    assert.strictEqual(d.footer?.text, 'ThorTest', 'footer = the bot username (old style)');
+    // NO self-role panel furniture:
+    assert.doesNotMatch(d.description, /One-way mode/i, 'no mode line');
+    assert.doesNotMatch(d.description, /Available roles/i, 'no role list');
+    assert.doesNotMatch(String(d.footer?.text ?? ''), /Panel ID/i, 'no Panel ID in the footer');
+
+    // The panel is tagged so /selfrole-update + web edits KEEP the classic look.
+    const config = configManager.getConfig(GUILD_ID);
+    const panel = selfRoleManager.getPanel(config.roles.verifyPanelId);
+    assert.strictEqual(panel.kind, 'verify', 'panel tagged kind:verify');
+
+    selfRoleManager.deletePanel(panel.id);
+});
+
+test('classic look: builder — kind:verify renders plain; untagged one-way panels keep the full layout', () => {
+    const { buildPanelEmbed } = require('../../src/ui/selfRolePanelBuilder');
+    const client = { user: { username: 'ThorTest', displayAvatarURL: () => 'https://cdn.discordapp.com/embed/avatars/0.png' } };
+
+    const classic = buildPanelEmbed(
+        {
+            title: '✅ SERVER VERIFICATION',
+            description: 'Welcome!',
+            once: true,
+            exclusive: false,
+            kind: 'verify',
+            roles: [{ roleId: '1', label: 'Verify Me', emoji: '✅', description: '', style: 'Success', requiresRoleId: null }]
+        },
+        client
+    );
+    assert.strictEqual(classic.data.color, 0x2ecc71, 'green');
+    assert.strictEqual(classic.data.description, 'Welcome!', 'description untouched — no furniture');
+    assert.strictEqual(classic.data.footer.text, 'ThorTest', 'bot-name footer');
+
+    // Contrast: a one-way panel WITHOUT the tag keeps the informative layout
+    // (this is what /setup-selfrole once:true still produces).
+    const busy = buildPanelEmbed(
+        {
+            title: 'Panel',
+            description: 'Pick roles',
+            once: true,
+            exclusive: false,
+            roles: [{ roleId: '1', label: 'R', emoji: '', description: '', style: 'Secondary', requiresRoleId: null }]
+        },
+        client
+    );
+    assert.match(busy.data.description, /One-way mode/i, 'untagged one-way panels keep the mode line');
+    assert.match(String(busy.data.footer.text), /Panel ID/i, 'and the Panel ID footer');
+});
+
+test('classic look: createPanel stores kind only when set; setPanelKind migrates legacy panels', () => {
+    const legacy = selfRoleManager.createPanel({
+        guildId: GUILD_ID,
+        channelId: CHANNEL_ID,
+        title: 'Old v3.28.0 panel',
+        once: true
+    });
+    assert.strictEqual(legacy.kind, null, 'panels created without kind stay untagged');
+
+    selfRoleManager.setPanelKind(legacy.id, 'verify');
+    assert.strictEqual(selfRoleManager.getPanel(legacy.id).kind, 'verify', 'setPanelKind tags the panel');
+
+    selfRoleManager.setPanelKind(legacy.id, null);
+    assert.strictEqual(selfRoleManager.getPanel(legacy.id).kind, null, 'and can untag');
+
+    const fresh = selfRoleManager.createPanel({ guildId: GUILD_ID, channelId: CHANNEL_ID, kind: 'verify' });
+    assert.strictEqual(fresh.kind, 'verify', 'createPanel persists kind:verify');
+
+    selfRoleManager.deletePanel(legacy.id);
+    selfRoleManager.deletePanel(fresh.id);
 });

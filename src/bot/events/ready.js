@@ -332,6 +332,60 @@ async function onReady(client) {
         console.warn('⚠️ Failed to reconcile escrow deals:', err.message);
     }
 
+    // === 6c. Verify-look migration (v3.28.2) ===
+    // Panels installed by v3.28.0/3.28.1 render with the full self-role embed
+    // (mode line + role list + Panel ID footer). The owner asked for the OLD
+    // dedicated verification look: a plain green embed. Every panel that IS a
+    // guild's verification panel (config.roles.verifyPanelId) gets tagged
+    // kind:'verify' and its LIVE message re-rendered — existing installs
+    // switch to the classic look instantly, no delete + reinstall needed.
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        const configManager = require('../../data/configManager');
+        const selfRoleManager = require('../../data/selfRoleManager');
+        const { buildPanelEmbed, buildPanelComponents } = require('../../ui/selfRolePanelBuilder');
+        const cfgDir = path.join(__dirname, '..', '..', '..', 'data', 'config');
+        let tagged = 0;
+        let rerendered = 0;
+        for (const file of fs.existsSync(cfgDir) ? fs.readdirSync(cfgDir) : []) {
+            if (!file.endsWith('.json')) continue;
+            const guildId = file.slice(0, -5);
+            let panelId = null;
+            try {
+                panelId = configManager.getConfig(guildId)?.roles?.verifyPanelId || null;
+            } catch (_) {
+                continue;
+            }
+            if (!panelId) continue;
+            const panel = selfRoleManager.getPanel(panelId);
+            if (!panel || panel.guildId !== guildId || panel.kind === 'verify') continue;
+            selfRoleManager.setPanelKind(panelId, 'verify');
+            tagged++;
+            // Best-effort re-render of the LIVE message (channel/message may
+            // be long gone — the /setup-verify stale-link guard self-clears).
+            try {
+                const channel = await client.channels.fetch(panel.channelId);
+                const msg = await channel?.messages?.fetch(panel.messageId);
+                if (msg) {
+                    const fresh = selfRoleManager.getPanel(panelId);
+                    await msg.edit({
+                        embeds: [buildPanelEmbed(fresh, client)],
+                        components: buildPanelComponents(fresh)
+                    });
+                    rerendered++;
+                }
+            } catch (_) {
+                /* live message unreachable — data is still migrated */
+            }
+        }
+        if (tagged > 0 || rerendered > 0) {
+            console.log(`🎨 Verify-look migration: ${tagged} panel(s) switched to the classic embed (${rerendered} live message(s) re-rendered).`);
+        }
+    } catch (err) {
+        console.warn('⚠️ Verify-look migration skipped:', err.message);
+    }
+
     // === 7. Init statsManager with the default guild for legacy migration ===
     // v3.12.0: GUILD_ID (fallback: the first cached guild in public mode).
     const defaultStatsGuildId =

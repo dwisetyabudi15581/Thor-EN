@@ -49,10 +49,13 @@ module.exports = async function (interaction) {
         const guildId = interaction.guild.id;
         const role = interaction.options.getRole('role');
         const channel = interaction.options.getChannel('channel') || interaction.channel;
-        const title = interaction.options.getString('title') || '✅ Verification';
+        // v3.28.2: defaults = the OLD dedicated verification feature's exact
+        // text (verifyTitle / verifyBody from before the v3.22.0 removal), so a
+        // plain `/setup-verify role:@Verified` looks identical to the old days.
+        const title = interaction.options.getString('title') || '✅ SERVER VERIFICATION';
         const description =
             normalizeNewlines(interaction.options.getString('description')) ||
-            `Welcome to **${interaction.guild.name}**!\nClick the button below to verify yourself and get full access.`;
+            `Welcome to **${interaction.guild.name}**!\n\nClick the button below to get verified and gain full access to all channels.`;
         const label = interaction.options.getString('button_label') || 'Verify Me';
         const emoji = interaction.options.getString('button_emoji') || '✅';
         const style = interaction.options.getString('button_style') || 'Success';
@@ -105,7 +108,8 @@ module.exports = async function (interaction) {
 
         // Create the ONE-WAY panel (once:true — the whole point of the
         // v3.27.0 fix: repeat clicks can never strip the role) with the
-        // Verified role as its only button.
+        // Verified role as its only button. kind:'verify' (v3.28.2) renders
+        // the CLASSIC simple embed — like the old verification feature.
         const panel = createPanel({
             guildId,
             channelId: channel.id,
@@ -113,7 +117,8 @@ module.exports = async function (interaction) {
             description,
             type: 'button',
             exclusive: false,
-            once: true
+            once: true,
+            kind: 'verify'
         });
         const added = addRoleToPanel(panel.id, {
             roleId: role.id,
@@ -174,7 +179,8 @@ module.exports = async function (interaction) {
                 `✅ **Verification panel installed!**\n\n` +
                 `📍 Channel: ${channel}\n` +
                 `🎭 Verified role: ${role}\n` +
-                `🎟️ Mode: **One-way** — members can only GAIN the role; repeat clicks never remove it (safe for Discord newcomers).\n\n` +
+                `🎟️ Mode: **One-way** — members can only GAIN the role; repeat clicks never remove it (safe for Discord newcomers).\n` +
+                `🎨 Look: **classic embed** — clean & green, like the old verification panel.\n\n` +
                 `💡 **Tips:**\n` +
                 `• Want a "new member" role that disappears once verified? \`/set-autorole action:add role:@Member\` then \`/set-autorole action:toggle\`.\n` +
                 `• Tickets & escrow are now limited to verified members while the Verified role is set.\n` +

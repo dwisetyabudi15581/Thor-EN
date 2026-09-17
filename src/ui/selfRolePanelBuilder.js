@@ -28,6 +28,25 @@ const STYLE_MAP = {
 };
 
 function buildPanelEmbed(panel, client) {
+    // v3.28.2 — CLASSIC VERIFY LOOK (owner request): panels tagged
+    // kind:'verify' (created by /setup-verify or the web installer) render
+    // like the OLD dedicated verification feature: a plain green embed —
+    // just title + description, footer = the bot's name, no mode line, no
+    // "Available roles" list, no Panel ID in the footer. The button row is
+    // built normally (one-way click handling is unchanged).
+    if (panel.kind === 'verify') {
+        const desc = panel.description.length > 4000 ? `${panel.description.slice(0, 4000)}…` : panel.description;
+        return new EmbedBuilder()
+            .setTitle(panel.title)
+            .setDescription(desc)
+            .setColor(0x2ecc71)
+            .setFooter({
+                text: client?.user?.username || 'Thor',
+                iconURL: client?.user?.displayAvatarURL?.({ dynamic: true })
+            })
+            .setTimestamp();
+    }
+
     // v3.27.0: one-way (verification) panels get their own mode line — members
     // must KNOW that clicking again never removes the role.
     const modeText = panel.once

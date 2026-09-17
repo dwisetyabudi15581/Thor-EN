@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.28.2] — 2026-09-18
+
+### Changed — 🎨 VERIFICATION PANEL: THE CLASSIC LOOK IS BACK — PLAIN GREEN EMBED, LIKE THE OLD `/setup-verify`
+
+Owner's request: *"for the verification, please make it a regular embed like the old verification that was deleted."* The v3.28.0 re-add rendered the panel with the full self-role layout (purple, "One-way mode" line, "Available roles" list, `Panel ID` in the footer). The old dedicated feature (pre-v3.22.0) was much simpler — a plain green embed. Verify panels now render **exactly like the old one**.
+
+- 🟠 **Classic render** — panels tagged `kind: 'verify'` (created by `/setup-verify` or the web installer) render the OLD-style embed: title + description only, **green** (`0x2ecc71`), footer = the bot's name + avatar, timestamp. No mode line, no role list, no Panel ID in the footer. The button row is unchanged — one-way click handling is identical.
+- 🟠 **Old defaults restored** — `/setup-verify` without options now produces the exact old text: title **"✅ SERVER VERIFICATION"**, body *"Welcome to **{server}**! / Click the button below to get verified and gain full access to all channels."* (the pre-v3.22 `verifyTitle`/`verifyBody`). The DASH API installer (`POST /guilds/:id/verify-panel`) got the same defaults.
+- 🟠 **Startup migration (zero-effort switch)** — panels installed by v3.28.0/3.28.1 are auto-tagged on boot (every panel referenced by `config.roles.verifyPanelId`) **and their live Discord message is re-rendered**, so an already-installed verification panel switches to the classic look on the next restart — no delete + reinstall needed.
+- 🟢 Untagged one-way panels (`/setup-selfrole once:true`) keep the informative full layout — the classic render applies only to THE verification panel, and it survives `/selfrole-update` + web edits (the `kind` tag is never overwritten).
+- 🟢 Tests: **829 (from 826)** — classic render contract (green/plain/bot-name footer, no furniture), builder contrast (untagged keeps the layout), `kind` persistence + `setPanelKind` migration helper, DASH installer asserts the tag + old default title.
+
 ## [3.28.1] — 2026-09-18
 
 ### Added — 🏷️ DASHBOARD BUILD VERSION BADGE — "IS MY BUILD STALE?" ANSWERED AT A GLANCE

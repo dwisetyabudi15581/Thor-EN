@@ -18,6 +18,9 @@ const selfRolesPath = path.join(__dirname, '..', '..', 'data', 'selfRoles.json')
  *     "exclusive": false,         // true = only 1 role at a time
  *     "once": false,              // v3.27.0: true = one-way (verification) —
  *                                  // clicking only GIVES the role, never removes it
+ *     "kind": "verify",           // v3.28.2: present ONLY on THE verification
+ *                                  // panel — renders the classic simple embed
+ *                                  // (owner request: like the old /setup-verify)
  *     "roles": [
  *       {
  *         "roleId": "...",
@@ -83,6 +86,9 @@ function createPanel(data) {
         exclusive: !!data.exclusive,
         // v3.27.0: one-way (verification) mode — see the header comment.
         once: !!data.once,
+        // v3.28.2: 'verify' = THE verification panel (classic embed render).
+        // Only stored when set — legacy panels stay flag-free.
+        kind: data.kind === 'verify' ? 'verify' : null,
         roles: [],
         createdAt: now
     };
@@ -207,6 +213,21 @@ function updatePanel(panelId, updates) {
 }
 
 /**
+ * v3.28.2: tag/untag a panel as THE verification panel (kind:'verify').
+ * Used by the startup migration so panels installed by v3.28.0/3.28.1
+ * (before the classic render existed) switch to the old-style look
+ * without a delete + reinstall.
+ */
+function setPanelKind(panelId, kind) {
+    const list = loadPanels();
+    const panel = list.find(p => p.id === panelId);
+    if (!panel) return false;
+    panel.kind = kind === 'verify' ? 'verify' : null;
+    savePanels(list);
+    return true;
+}
+
+/**
  * Delete a panel.
  */
 function deletePanel(panelId) {
@@ -226,5 +247,6 @@ module.exports = {
     getPanelsByGuild,
     getPanelByMessage,
     updatePanel,
-    deletePanel
+    deletePanel,
+    setPanelKind
 };

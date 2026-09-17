@@ -341,7 +341,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
           <div>
             <h3 className="text-sm font-semibold text-zinc-100">✅ Verification</h3>
             <p className="mt-1 text-xs text-zinc-500">
-              A one-way button — members click to GAIN the Verified role. Repeat clicks never remove it (safe for Discord newcomers).
+              A clean classic embed — members click the button to GAIN the Verified role. Repeat clicks never remove it (safe for Discord newcomers).
             </p>
           </div>
           {verifyPanel ? <Pill tone="green">installed</Pill> : null}
@@ -369,6 +369,9 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
             <Field label="Button Label" hint="The text on the verify button.">
               <TextInput value={verifyLabel} onChange={setVerifyLabel} placeholder="Verify Me" />
             </Field>
+            <p className="md:col-span-3 text-[11px] text-zinc-600">
+              The panel renders as the classic verification embed — green, title + description, bot-name footer (just like the old one). Install form: <span className="text-zinc-500">/setup-verify</span> parity.
+            </p>
             <div className="md:col-span-3">
               <Button
                 onClick={installVerify}

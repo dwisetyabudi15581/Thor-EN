@@ -1149,15 +1149,18 @@ function createDashHandler({ client, token, log = () => {} }) {
                         setField(guildId, 'roles.verified', null);
                     }
 
-                    const title = String(body?.title || '✅ Verification').slice(0, 256);
+                    // v3.28.2: defaults = the OLD dedicated verification text
+                    // (parity with /setup-verify — classic green embed look).
+                    const title = String(body?.title || '✅ SERVER VERIFICATION').slice(0, 256);
                     const description = normalizeNewlines(
-                        String(body?.description || `Welcome to **${g.name}**!\nClick the button below to verify yourself and get full access.`)
+                        String(body?.description || `Welcome to **${g.name}**!\n\nClick the button below to get verified and gain full access to all channels.`)
                     ).slice(0, 4000);
                     const label = String(body?.label || 'Verify Me').slice(0, 80);
                     const emoji = body?.emoji ? String(body.emoji).slice(0, 64) : '✅';
                     const style = BUTTON_STYLES.includes(body?.style) ? body.style : 'Success';
 
                     // Create the ONE-WAY panel + its single role button.
+                    // kind:'verify' (v3.28.2) → classic simple embed render.
                     const panel = selfRoleManager.createPanel({
                         guildId,
                         channelId,
@@ -1165,7 +1168,8 @@ function createDashHandler({ client, token, log = () => {} }) {
                         description,
                         type: 'button',
                         exclusive: false,
-                        once: true
+                        once: true,
+                        kind: 'verify'
                     });
                     const added = selfRoleManager.addRoleToPanel(panel.id, {
                         roleId,
