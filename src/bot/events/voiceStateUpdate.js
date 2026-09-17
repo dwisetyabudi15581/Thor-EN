@@ -309,7 +309,26 @@ async function handleCreateTempVoice(newState) {
         await refreshGlobalControlPanel(newState.client, guild.id);
         console.log(`🎤 Temp voice created: ${newChannel.name} (${newChannel.id}) by ${member.user.tag}`);
     } catch (err) {
-        console.error('Error create temp voice:', err);
+        // v3.27.2: 50013 Missing Permissions used to dump a raw stack trace and leave
+        // the member sitting in the trigger channel with ZERO feedback (they'd wait
+        // forever for a room that never appears). Now: an actionable console hint +
+        // a best-effort warning in the trigger channel's text chat.
+        if (err?.code === 50013) {
+            console.error(
+                '❌ Temp voice: room creation blocked — the bot lacks Discord permissions.\n' +
+                    '   Owner fix: Server Settings → Roles → [bot role] → enable "Manage Channels" + "Manage Roles",\n' +
+                    '   then drag the bot role ABOVE the roles of members who use temp voice\n' +
+                    '   (channel overwrites for a member require the bot to outrank that member).'
+            );
+            try {
+                await newState.channel?.send(
+                    `⚠️ <@${member.id}> I couldn't create your voice room — the server admin needs to grant me ` +
+                        '**Manage Channels** + **Manage Roles** permissions first.'
+                );
+            } catch (_) {}
+        } else {
+            console.error('Error create temp voice:', err);
+        }
     } finally {
         // v3.9.17: make sure the lock is released even on error.
         tempVoiceCreateLocks.delete(lockKey);

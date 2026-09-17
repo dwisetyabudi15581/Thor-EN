@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.27.2] — 2026-09-17
+
+### Fixed — 🎤 TEMP VOICE: ROOM CREATION FAILURE NO LONGER SILENT (50013 MISSING PERMISSIONS)
+
+Owner's report: `Error create temp voice: DiscordAPIError[50013]: Missing Permissions` when a member joined the trigger channel — the room never appeared. Root cause is **server-side permission configuration** (see the fix steps below), but the bot's behavior made it worse: the member sat in the trigger channel with **zero feedback**, and the console dumped a raw stack trace.
+
+- 🟠 **Actionable console hint** — when `channels.create` rejects with Discord's `50013 Missing Permissions`, the log now explains exactly what the server owner must do: grant the bot role **Manage Channels** + **Manage Roles** and drag it **above** the roles of members who use temp voice (channel overwrites for a member require the bot to outrank that member). Other errors keep the legacy raw log.
+- 🟡 **Member gets a visible warning** — a best-effort message is sent to the trigger channel's text chat: *"⚠️ @member I couldn't create your voice room — the server admin needs to grant me **Manage Channels** + **Manage Roles** permissions first."* No more silent failure for confused members.
+- 🟢 **Tests** — new `tests/unit/tempVoicePerms.test.js` (3 tests: friendly log content + member mention in the warning, per-user create lock released after failure so retry works, non-50013 errors unchanged). Suite: **817 tests, all passing**.
+
+**How to actually fix the 50013 on your server (no reinstall needed):**
+1. Discord → **Server Settings → Roles** → the bot's role → enable **Manage Channels** + **Manage Roles** (and keep **Move Members** on).
+2. Drag the bot's role to near the **TOP** of the role list — at minimum above every role held by members who will create voice rooms. This step matters: the new room's permission overwrites are set for the *joining member*, and Discord only allows a bot to write overwrites for members it outranks.
+3. Wait a moment (role changes apply live) — join the trigger channel again.
+
 ## [3.27.1] — 2026-09-17
 
 ### Fixed — 🔁 START.SH NOW AUTO-REBUILDS THE DASHBOARD AFTER `git pull` (STALE-BUILD TRAP)
