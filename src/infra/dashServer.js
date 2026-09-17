@@ -44,7 +44,7 @@
  *   POST   /guilds/:id/giveaway/end             → end + announce winners (v3.26.0 — /giveaway end parity)
  *   POST   /guilds/:id/giveaway/reroll          → reroll a winner (v3.26.0 — /giveaway reroll parity)
  *   POST   /guilds/:id/poll/close               → close + final results (v3.26.0 — /poll close parity)
- *   POST   /guilds/:id/verify-panel             → REMOVED v3.22.0 (verification is now a self-role panel)
+ *   POST   /guilds/:id/verify-panel             → install THE verification panel (v3.28.0 — /setup-verify parity: one-way + Verified role)
  *   DELETE /guilds/:id/tempvoice                → detach the temp voice setup (config only)
  *
  * Actor audit: every write operation receives `actor: { id, tag }` (the
@@ -56,7 +56,7 @@ const http = require('http');
 const crypto = require('crypto');
 
 // Data layer — the SAME single source of truth as the slash commands.
-const { getConfig, saveConfig, DEFAULTS } = require('../data/configManager');
+const { getConfig, saveConfig, setField, DEFAULTS } = require('../data/configManager');
 const automodManager = require('../data/automodManager');
 const responderManager = require('../data/responderManager');
 const selfRoleManager = require('../data/selfRoleManager');
@@ -157,11 +157,17 @@ function isStr(v, max) {
  */
 const SECTION_VALIDATORS = {
     roles: (key, value) => {
-        // v3.23.0: the verify/unverified role concepts were REMOVED — reject
-        // with a message pointing to the replacement (old dashboard builds
-        // may still send these keys from stale state).
-        if (key === 'verified' || key === 'unverified') {
-            return { ok: false, error: `roles.${key} was removed in v3.23.0 — join roles are now managed via autorole (list + removeOnNewRole toggle)` };
+        // v3.23.0: the unverified marker concept was REMOVED — reject with a
+        // message pointing to the replacement (autorole + removeOnNewRole).
+        if (key === 'unverified') {
+            return { ok: false, error: 'roles.unverified was removed in v3.23.0 — join roles are now managed via autorole (list + removeOnNewRole toggle)' };
+        }
+        // v3.28.0: roles.verified is back (set by /setup-verify and the
+        // verify-panel endpoint). The panel link (verifyPanelId) stays
+        // managed-only: pointing it at an arbitrary panel by hand could
+        // desync the verified-role lifecycle.
+        if (key === 'verifyPanelId') {
+            return { ok: false, error: 'roles.verifyPanelId is managed by /setup-verify (or POST verify-panel) — install or delete the verification panel there' };
         }
         if (!/^[a-z][a-zA-Z0-9_-]{0,39}$/.test(key)) return { ok: false, error: `Invalid role key name: ${key}` };
         if (!isSnowflakeOrNull(value)) return { ok: false, error: `roles.${key} must be a Discord ID or null` };
@@ -1086,8 +1092,119 @@ function createDashHandler({ client, token, log = () => {} }) {
                             }
                         }
                         selfRoleManager.deletePanel(rest[1]);
-                        return sendJson(res, 200, { ok: true });
+                        // v3.28.0: deleting THE verification panel also clears
+                        // the Verified role (parity with /selfrole-delete) —
+                        // otherwise the ticket/escrow verified-only gate would
+                        // keep filtering members against a role nobody can
+                        // obtain anymore.
+                        const cfg = getConfig(guildId);
+                        let verifyCleared = false;
+                        if (cfg?.roles?.verifyPanelId === rest[1]) {
+                            setField(guildId, 'roles.verifyPanelId', null);
+                            setField(guildId, 'roles.verified', null);
+                            verifyCleared = true;
+                        }
+                        return sendJson(res, 200, {
+                            ok: true,
+                            ...(verifyCleared ? { note: 'This was the verification panel — the Verified role was cleared. Reinstall it with POST verify-panel.' } : {})
+                        });
                     }
+                }
+
+                // ---- v3.28.0: Verification wizard (parity with /setup-verify) ----
+                // Creates THE one-way verification panel: one button = the
+                // Verified role. Also remembers the role (config.roles.verified
+                // — gates tickets/escrow) + the panel link (verifyPanelId).
+                if (method === 'POST' && rest[0] === 'verify-panel' && rest.length === 1) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const body = await readBody(req, res);
+                    const roleId = String(body?.roleId || '');
+                    const channelId = String(body?.channelId || '');
+                    if (!SNOWFLAKE_RE.test(roleId)) return sendJson(res, 400, { error: 'Invalid roleId' });
+                    if (!SNOWFLAKE_RE.test(channelId)) return sendJson(res, 400, { error: 'Invalid channelId' });
+
+                    // The role must exist in THIS guild (the web sends ids from
+                    // meta.roles — this also blocks cross-guild ids).
+                    const role = g.roles?.cache?.get(roleId);
+                    if (!role) return sendJson(res, 400, { error: 'Role not found in this server' });
+                    if (role.id === guildId) return sendJson(res, 400, { error: '@everyone cannot be used — pick a regular role' });
+                    if (role.managed) return sendJson(res, 400, { error: 'This role is managed by another integration — it cannot be assigned' });
+                    const botMember = g.members?.me;
+                    const botHighest = botMember?.roles?.highest?.position ?? 0;
+                    if ((role.position ?? 0) >= botHighest) {
+                        return sendJson(res, 400, { error: 'This role is positioned ABOVE the bot — move the bot role up or pick another role' });
+                    }
+
+                    // One verification panel per guild.
+                    const cfg = getConfig(guildId);
+                    const existingId = cfg?.roles?.verifyPanelId;
+                    if (existingId) {
+                        const existingPanel = selfRoleManager.getPanel(existingId);
+                        if (existingPanel && existingPanel.guildId === guildId) {
+                            return sendJson(res, 409, {
+                                error: 'A verification panel is already installed — edit it (PUT selfroles/' + existingId + '), or DELETE it first (that also clears the Verified role)'
+                            });
+                        }
+                        setField(guildId, 'roles.verifyPanelId', null);
+                        setField(guildId, 'roles.verified', null);
+                    }
+
+                    const title = String(body?.title || '✅ Verification').slice(0, 256);
+                    const description = normalizeNewlines(
+                        String(body?.description || `Welcome to **${g.name}**!\nClick the button below to verify yourself and get full access.`)
+                    ).slice(0, 4000);
+                    const label = String(body?.label || 'Verify Me').slice(0, 80);
+                    const emoji = body?.emoji ? String(body.emoji).slice(0, 64) : '✅';
+                    const style = BUTTON_STYLES.includes(body?.style) ? body.style : 'Success';
+
+                    // Create the ONE-WAY panel + its single role button.
+                    const panel = selfRoleManager.createPanel({
+                        guildId,
+                        channelId,
+                        title,
+                        description,
+                        type: 'button',
+                        exclusive: false,
+                        once: true
+                    });
+                    const added = selfRoleManager.addRoleToPanel(panel.id, {
+                        roleId,
+                        label,
+                        emoji,
+                        style
+                    });
+                    if (!added.ok) {
+                        selfRoleManager.deletePanel(panel.id);
+                        return sendJson(res, 400, { error: added.error });
+                    }
+
+                    // Send the panel message (P0-5 rollback on failure).
+                    try {
+                        const channel = await client.channels.fetch(channelId);
+                        const fresh = selfRoleManager.getPanel(panel.id);
+                        const panelMsg = await channel.send({
+                            embeds: [buildPanelEmbed(fresh, client)],
+                            components: buildPanelComponents(fresh)
+                        });
+                        selfRoleManager.setMessageId(panel.id, panelMsg.id);
+                    } catch (err) {
+                        selfRoleManager.deletePanel(panel.id);
+                        return sendJson(res, 502, { error: `Failed to send the panel to the channel: ${err.message}` });
+                    }
+
+                    // Remember the Verified role + the panel link.
+                    setField(guildId, 'roles.verified', roleId);
+                    setField(guildId, 'roles.verifyPanelId', panel.id);
+
+                    await logAudit(client, {
+                        action: 'SETUP_VERIFY',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Install verification panel **${title}** (${panel.id}) in <#${channelId}> — Verified role: ${role.name} (one-way)`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] verification panel installed in ${guildId} (${panel.id})`);
+                    return sendJson(res, 201, { ok: true, panel: selfRoleManager.getPanel(panel.id) });
                 }
 
                 // ---- Serverstats: force refresh ----

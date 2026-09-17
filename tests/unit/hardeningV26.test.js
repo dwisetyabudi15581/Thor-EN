@@ -153,8 +153,10 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
 
     const config = getConfig('g_v26');
     // Flat v1 → dipindah ke nested. v3.22.0: verifiedRoleId is no longer mapped
-    // anywhere (the verified role concept was removed).
-    assert.strictEqual(config.roles.verified, undefined, 'v3.22.0: verified is dropped (feature removed)');
+    // anywhere (the old flat key is gone). v3.28.0: roles.verified is BACK as a
+    // nested key (set by /setup-verify) — but the legacy FLAT verifiedRoleId is
+    // still dropped (the wizard sets the nested key when it runs).
+    assert.strictEqual(config.roles.verified, undefined, 'the legacy FLAT verifiedRoleId is not mapped (roles.verified is set by /setup-verify)');
     assert.strictEqual(config.channels.invoice, 'c_invoice_old');
     // Modern fields must be present in the merged result
     assert.strictEqual(config.leveling.enabled, true);

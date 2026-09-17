@@ -76,9 +76,9 @@ test('cmdmgr: normalize — more than 100 entries rejected', () => {
     assert.match(result.error, /100/);
 });
 
-test('cmdmgr: registry — /commands registered (94) & mapped to its own domain', () => {
+test('cmdmgr: registry — /commands registered (95) & mapped to its own domain', () => {
     const cmds = getCommands();
-    assert.strictEqual(cmds.length, 94);
+    assert.strictEqual(cmds.length, 95);
     assert.ok(cmds.some((c) => c.name === 'commands'));
     assert.strictEqual(routeCommand.COMMAND_TO_DOMAIN.commands, 'commands');
 });

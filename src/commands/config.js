@@ -685,7 +685,9 @@ module.exports = async function (interaction) {
                             `• Midman (Escrow): ${fmt(config.roles.midman, '@&')}`,
                             // v3.9.59: booster auto role (granted on boost,
                             // removed when the boost ends).
-                            `• Booster (auto): ${fmt(config.roles.booster, '@&')}`
+                            `• Booster (auto): ${fmt(config.roles.booster, '@&')}`,
+                            // v3.28.0: the Verified role is back (/setup-verify).
+                            `• Verified: ${fmt(config.roles.verified, '@&')}`
                         ].join('\n')
                     ),
                     inline: false

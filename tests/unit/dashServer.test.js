@@ -104,7 +104,10 @@ function makeMockClient({ failChannelFetch = false } = {}) {
             ])
         },
         // v3.19.0: the keys module needs member fetch (best-effort role add/remove).
+        // v3.28.0: `me` — the verify-panel endpoint checks the bot's role
+        // hierarchy (a role at/above the bot cannot be granted).
         members: {
+            me: { roles: { highest: { position: 10 } } },
             fetch: async (id) => ({
                 id,
                 user: { id, tag: 'Tester#0001' },
@@ -724,7 +727,7 @@ test('dash: dashboard payload includes commands (list + disabled + protected)', 
     const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
     assert.strictEqual(res.status, 200);
     const data = await res.json();
-    assert.strictEqual(data.commands.list.length, 94, 'all commands from the registry');
+    assert.strictEqual(data.commands.list.length, 95, 'all commands from the registry');
     assert.ok(Array.isArray(data.commands.disabled), 'disabled is always an array');
     assert.ok(data.commands.protected.includes('commands'), '/commands is disable-proof');
     // Every command has a valid domain (for UI grouping)
@@ -739,7 +742,7 @@ test('dash: PUT /commands — save the disabled list', async () => {
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.deepStrictEqual(data.disabled, ['giveaway', 'poll']);
-    assert.strictEqual(data.total, 94);
+    assert.strictEqual(data.total, 95);
 
     // Read back through the payload
     const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
@@ -1004,12 +1007,47 @@ test('dash: POST /panels categoryIds with no match → 400', async () => {
     assert.strictEqual(res.status, 400);
 });
 
-test('dash: v3.22.0 — POST /verify-panel REMOVED → 404 (verification is now a self-role panel)', async () => {
+test('dash: v3.28.0 — POST /verify-panel is BACK → 201, one-way panel + Verified role saved; DELETE clears it', async () => {
+    // v3.22.0 removed the endpoint; v3.28.0 re-added it as the /setup-verify
+    // parity route — a ONE-WAY panel whose only button gives the Verified role.
+    // Clean slate: no verify panel link for this guild.
+    try {
+        require('../../src/data/configManager').setField(GUILD_ID, 'roles.verifyPanelId', null);
+        require('../../src/data/configManager').setField(GUILD_ID, 'roles.verified', null);
+    } catch (_) {}
+
     const res = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
-        body: { channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+        body: { roleId: '888000111222333444', channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
     });
-    assert.strictEqual(res.status, 404);
+    assert.strictEqual(res.status, 201);
+    const { panel } = await res.json();
+    assert.strictEqual(panel.once, true, 'the verification panel is ONE-WAY');
+    assert.strictEqual(panel.type, 'button');
+    assert.strictEqual(panel.roles.length, 1, 'a single Verify button');
+    assert.strictEqual(configManagerGetVerified(GUILD_ID), '888000111222333444', 'roles.verified saved');
+
+    // Duplicate while alive → 409 with guidance.
+    const dup = await api('POST', `/guilds/${GUILD_ID}/verify-panel`, {
+        body: { roleId: '888000111222333444', channelId: '777000111222333444', actor: { id: '42', tag: 'tester' } }
+    });
+    assert.strictEqual(dup.status, 409);
+
+    // Deleting the panel clears the verify config too (the gates must not point
+    // at a role nobody can obtain anymore).
+    const del = await api('DELETE', `/guilds/${GUILD_ID}/selfroles/${panel.id}`);
+    assert.strictEqual(del.status, 200);
+    assert.strictEqual(configManagerGetVerified(GUILD_ID), null, 'roles.verified cleared with the panel');
 });
+
+// Local helper so the requires stay at the top of the test body.
+function configManagerGetVerified(guildId) {
+    try {
+        const { getConfig } = require('../../src/data/configManager');
+        return getConfig(guildId).roles.verified ?? null;
+    } catch (_) {
+        return null;
+    }
+}
 
 test('dash: v3.22.0 — PUT config verifyButton.* → 422 (section removed)', async () => {
     const res = await api('PUT', `/guilds/${GUILD_ID}/config`, {

@@ -268,9 +268,14 @@ function getConfig(guildId) {
     // data/config/<guildId>.json: if you used @Unverified as a marker, add
     // that role to the /set-autorole list and turn the removeOnNewRole
     // toggle on — the behavior is identical.
+    // v3.23.0 MIGRATION (updated v3.28.0): the Unverified marker concept was
+    // REMOVED (admin's request — replacement: /set-autorole + removeOnNewRole
+    // toggle). roles.verified is PRESERVED again since v3.28.0: /setup-verify
+    // is back and stores the Verified role there (it also gates tickets/escrow
+    // for verified-only access). Only unverified + the old verify-panel keys
+    // stay cleaned.
     let didVerifyCleanup = false;
-    if (raw.roles && ('verified' in raw.roles || 'unverified' in raw.roles)) {
-        delete raw.roles.verified;
+    if (raw.roles && 'unverified' in raw.roles) {
         delete raw.roles.unverified;
         didVerifyCleanup = true;
     }
@@ -284,7 +289,7 @@ function getConfig(guildId) {
         didVerifyCleanup = true;
     }
     if (didVerifyCleanup) {
-        console.log('🧹 [v3.23.0] Removed the legacy verify/unverified role config for this guild (now: autorole + toggle; verify = self-role panel).');
+        console.log('🧹 [v3.23.0] Removed the legacy unverified role config for this guild (now: autorole + toggle; verify = /setup-verify).');
     }
 
     // === MERGE with DEFAULTS (deep for messages) ===

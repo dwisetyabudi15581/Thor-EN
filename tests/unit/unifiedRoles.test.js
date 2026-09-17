@@ -433,7 +433,7 @@ test('/set-autorole toggle: explicit enabled:false → toggle turned off', async
 // === 5. The btn_verify deprecation stub              ===
 // ====================================================
 
-test('btn_verify stub: replies with the self-role migration guide (no crash)', async () => {
+test('btn_verify stub: replies with the new /setup-verify migration guide (no crash)', async () => {
     const verifyHandler = require('../../src/interactions/verify');
     const replies = [];
     await verifyHandler({
@@ -447,7 +447,9 @@ test('btn_verify stub: replies with the self-role migration guide (no crash)', a
     });
     assert.strictEqual(replies.length, 1);
     assert.match(replies[0].content, /no longer works/i);
-    assert.match(replies[0].content, /setup-selfrole/);
+    // v3.28.0: the stub now points to the RE-ADDED /setup-verify wizard
+    // (previously it pointed to the manual /setup-selfrole + /selfrole-add chain).
+    assert.match(replies[0].content, /\/setup-verify/);
     assert.strictEqual(replies[0].flags, 64); // Ephemeral
 });
 
@@ -455,9 +457,12 @@ test('btn_verify stub: replies with the self-role migration guide (no crash)', a
 // === 6. Static contracts (anti-regression pins)     ===
 // ====================================================
 
-test('PIN: the verify command registrations are gone from the registry', () => {
+test('PIN (v3.28.0): /setup-verify is REGISTERED again — /set-verify-button stays removed', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'registry.js'), 'utf8');
-    assert.ok(!/name:\s*'setup-verify'/.test(src), '/setup-verify must be removed');
+    // v3.22.0 removed it; v3.28.0 RE-ADDED it (owner's request) — as a one-way
+    // wizard over the self-role panel, NOT the old duplicated system.
+    assert.ok(/name:\s*'setup-verify'/.test(src), '/setup-verify is registered (v3.28.0)');
+    // The old companion command stays gone — the wizard covers its use.
     assert.ok(!/name:\s*'set-verify-button'/.test(src), '/set-verify-button must be removed');
     assert.ok(/name:\s*'set-autorole'/.test(src), '/set-autorole must be registered');
 });

@@ -173,6 +173,17 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
   const [addDesc, setAddDesc] = useState("");
   const [addStyle, setAddStyle] = useState("Secondary");
   const [addRequires, setAddRequires] = useState<string | null>(null);
+  // v3.28.0: verification wizard (parity with /setup-verify) — installs THE
+  // one-way verification panel + remembers the Verified role.
+  const [verifyRoleId, setVerifyRoleId] = useState<string | null>(null);
+  const [verifyChannelId, setVerifyChannelId] = useState<string | null>(null);
+  const [verifyLabel, setVerifyLabel] = useState("Verify Me");
+  const [verifyBusy, setVerifyBusy] = useState(false);
+
+  // The installed verification panel (config.roles.verifyPanelId → live panel).
+  const verifyPanelId = draft.config?.roles?.verifyPanelId ?? null;
+  const verifyPanel = verifyPanelId ? draft.selfroles.find((p) => p.id === verifyPanelId) ?? null : null;
+  const verifiedRoleLabel = draft.config?.roles?.verified ? roleLabelFn(meta.roles, draft.config.roles.verified) : null;
 
   async function createPanel() {
     if (!channelId) {
@@ -204,6 +215,36 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
       toast("Panel deleted.");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed to delete the panel.", "err");
+    }
+  }
+
+  // v3.28.0: install the verification panel (POST verify-panel — /setup-verify parity).
+  async function installVerify() {
+    if (!verifyRoleId) {
+      toast("Pick the Verified role members get when they click.", "err");
+      return;
+    }
+    if (!verifyChannelId) {
+      toast("Pick the channel for the verification panel.", "err");
+      return;
+    }
+    setVerifyBusy(true);
+    try {
+      await call("verify-panel", "POST", {
+        roleId: verifyRoleId,
+        channelId: verifyChannelId,
+        label: verifyLabel.trim() || "Verify Me",
+        actor: { id: "web", tag: "web dashboard" },
+      });
+      setVerifyRoleId(null);
+      setVerifyChannelId(null);
+      setVerifyLabel("Verify Me");
+      await refresh();
+      toast("Verification panel installed — the button only GIVES the role.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to install the verification panel.", "err");
+    } finally {
+      setVerifyBusy(false);
     }
   }
 
@@ -294,6 +335,58 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
 
   return (
     <div className="space-y-5">
+      {/* v3.28.0: Verification — one command, one-way button, repeat-click safe. */}
+      <section className="rounded-2xl border border-emerald-900/50 bg-emerald-950/20 p-5 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-zinc-100">✅ Verification</h3>
+            <p className="mt-1 text-xs text-zinc-500">
+              A one-way button — members click to GAIN the Verified role. Repeat clicks never remove it (safe for Discord newcomers).
+            </p>
+          </div>
+          {verifyPanel ? <Pill tone="green">installed</Pill> : null}
+        </div>
+        {verifyPanel ? (
+          <div className="mt-4 space-y-2 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 text-xs text-zinc-400">
+            <p>
+              <span className="font-medium text-zinc-200">{verifyPanel.title}</span> in{" "}
+              <span className="text-zinc-300">{channelLabel(meta.channels, verifyPanel.channelId)}</span> — clicking gives{" "}
+              <span className="text-emerald-300">{verifiedRoleLabel}</span>.
+            </p>
+            <p className="text-zinc-500">
+              While the Verified role is set, tickets & escrow accept verified members only. Edit the panel below — deleting it also clears the
+              Verified role (reinstall here anytime).
+            </p>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <Field label="Verified Role" hint="Granted when a member clicks the button.">
+              <RoleSelect value={verifyRoleId} onChange={setVerifyRoleId} roles={meta.roles} placeholder="Pick a role…" />
+            </Field>
+            <Field label="Target Channel" hint="Where the panel message is posted.">
+              <ChannelSelect value={verifyChannelId} onChange={setVerifyChannelId} channels={meta.channels} placeholder="Pick a channel…" />
+            </Field>
+            <Field label="Button Label" hint="The text on the verify button.">
+              <TextInput value={verifyLabel} onChange={setVerifyLabel} placeholder="Verify Me" />
+            </Field>
+            <div className="md:col-span-3">
+              <Button
+                onClick={installVerify}
+                disabled={verifyBusy}
+                className="w-full bg-emerald-400 text-zinc-950 hover:bg-emerald-300 font-semibold"
+              >
+                {verifyBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                )}
+                Install Verification Panel
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {!open ? (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
           <div>

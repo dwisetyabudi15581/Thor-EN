@@ -39,6 +39,8 @@ const ACTION_LABELS = {
     RESET_MESSAGE: '🔄 Reset Message to Default',
     // Self-Role
     SETUP_SELFROLE: '🎭 Create Self-Role Panel',
+    // v3.28.0: verification wizard (re-added feature)
+    SETUP_VERIFY: '✅ Install Verification Panel',
     SELFROLE_ADD: '➕ Add Role to Panel',
     SELFROLE_REMOVE: '❌ Remove Role from Panel',
     SELFROLE_DELETE: '🗑️ Delete Self-Role Panel',

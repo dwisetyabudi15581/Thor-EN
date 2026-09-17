@@ -86,7 +86,7 @@ const HELP_CATEGORIES = [
             '1️⃣ `/set-autorole action:add role:@Member` — auto-role on join · `action:toggle` = gone on a new role',
             '2️⃣ `/add-category` + `/add-product` — prepare the catalog',
             '3️⃣ `/setup-ticket-panel` — mount the ticket panel',
-            '4️⃣ `/setup-selfrole` + `/selfrole-add` — self-role panels (e.g. a Verification panel)',
+            '4️⃣ `/setup-verify` — verification · `/setup-selfrole` — self-role panels',
             '5️⃣ `/set-channel server-log #log` — enable server log',
             '💡 Then explore the other categories via the 📂 dropdown.'
         ],
@@ -96,7 +96,7 @@ const HELP_CATEGORIES = [
             '1️⃣ `/set-autorole action:add role:@Member` — roles granted automatically on join; turn on `action:toggle` if you want them gone once the member gets any other role',
             '2️⃣ `/add-category` + `/add-product` — prepare what you sell (see the Products category)',
             '3️⃣ `/setup-ticket-panel` — mount the order panel members click to buy',
-            '4️⃣ `/setup-selfrole` + `/selfrole-add` — mount a self-role panel (e.g. Verification: members click to get the Verified role)',
+            '4️⃣ `/setup-verify role:@Verified` — mount the verification panel (a one-way button — repeat clicks never remove the role) · `/setup-selfrole` — other self-role panels',
             '5️⃣ `/set-channel tipe:server-log channel:#log` — record joins, leaves, deletions, bans',
             '',
             '**Nice extras once the basics run (all optional):**',
@@ -352,15 +352,20 @@ const HELP_CATEGORIES = [
         name: 'Roles & Self-Roles',
         short: 'System roles + member-choice role panels',
         lines: [
-            '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
-            '• `/setup-selfrole type once` — panel · `/selfrole-update` — edit it',
+            '• `/setup-verify role` — verify · `/setup-selfrole` — panels · `/selfrole-update` — edit',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
-            '💡 `once:true` = 1-way verify · `requires_role` — gated'
+            '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
+            '💡 `once:true` = 1-way · `requires_role` — gated'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
+            '**Verification (new members)** — the one-way verify button:',
+            '• `/setup-verify role:@Verified` (v3.28.0 — back by demand) — installs the verification panel in ONE command: a button that only GIVES the Verified role; repeat clicks never remove it (safe for Discord newcomers). Options: `channel`, `title`, `description`, `button_label`, `button_emoji`, `button_style`.',
+            '• While the Verified role is set, tickets & escrow accept verified members only. Deleting the verify panel (`/selfrole-delete`) clears the Verified role too — reinstall with `/setup-verify`.',
+            '• New-member marker: `/set-autorole action:add role:@Member` + `action:toggle` — the join role disappears automatically once the member verifies.',
+            '',
             '**System roles (bot logic)** — `/set-role tipe role`:',
-            '• `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers · `tipe:booster` — auto boost role. `/remove-role tipe` clears one. (The verified/unverified concepts were removed in v3.23.0.)',
+            '• `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers · `tipe:booster` — auto boost role. `/remove-role tipe` clears one. (The unverified concept was removed in v3.23.0 — verified is set by `/setup-verify`.)',
             '• `/set-autorole action:add role:@Member` — roles granted automatically on join (max 10); `action:toggle` = "join roles removed when the member gets another role" — perfect for a new-member marker.',
             '• `tipe:booster` (v3.9.59) — Booster role: granted **automatically** when a member boosts & removed when the boost ends; applied right away to existing boosters when set. Test the chain: `/test-booster`.',
             '',

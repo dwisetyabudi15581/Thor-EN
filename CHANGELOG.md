@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.28.0] — 2026-09-18
+
+### Added — ✅ THE VERIFICATION FEATURE IS BACK — `/setup-verify`, REBUILT ON THE ONE-WAY PANEL
+
+Owner's request: *"I saw the changelog where I deleted verify — I think I still need that feature, can you help me add it back?"* The dedicated verification feature was removed back in v3.22.0 ("verified is just another role on a self-role panel"), and the 2-command manual chain (`/setup-selfrole once:true` → copy panel ID → `/selfrole-add …`) proved too cumbersome. It is now back as a **one-command wizard** — built on TOP of the v3.27.0 one-way panel instead of the old duplicated system, so every improvement (repeat-click safety, embed badges, web management) applies automatically.
+
+- 🟠 **`/setup-verify role:@Verified`** — installs the verification panel in ONE command: a one-way button that only GIVES the Verified role. Options: `channel` (default: this channel), `title`, `description` (default: welcome text with the server name), `button_label` (default "Verify Me"), `button_emoji` (default ✅), `button_style` (default green Success). Same role validation as `/set-role` (@everyone / managed / role-above-bot rejected up front).
+- 🟠 **The Verified role is a first-class config value again** (`config.roles.verified`) — it also gates **tickets & escrow** (verified members only, exactly like the pre-v3.22 behavior). `/config-show` displays it in the Roles section. The v3.23.0 load-time cleanup no longer deletes it (the `unverified` marker concept stays removed — its replacement remains `/set-autorole` + the removeOnNewRole toggle).
+- 🟠 **One verification panel per guild** (`config.roles.verifyPanelId`) — a second `/setup-verify` while one is alive gives clear guidance (edit via `/selfrole-update`, change the role via `/selfrole-add` + `/selfrole-remove`, or `/selfrole-delete` then reinstall). A stale link (panel deleted on Discord) self-clears. **Deleting the verify panel clears the Verified role too** — the ticket/escrow gate can never point at a role nobody can obtain anymore.
+- 🟠 **Web parity — install verification from the dashboard:** a green **✅ Verification** card at the top of the Self Roles module (Verified role + channel + button label → "Install Verification Panel"), with an "installed" status card (panel, channel, role, and the ticket/escrow gate note). New endpoint `POST /guilds/:id/verify-panel` with the full validation chain (unknown role, @everyone, managed, above-bot → 400; duplicate → 409) + audit `SETUP_VERIFY`. `DELETE /guilds/:id/selfroles/:panelId` clears the verify config on the web path too.
+- 🟡 **PUT /guilds/:id/config:** `roles.verified` is accepted again (a Discord ID or null — for changing the role without reinstalling); `roles.unverified` stays 422 with a pointer to autorole; `roles.verifyPanelId` is rejected as a managed key (it is wired by `/setup-verify` / the endpoint, not by hand).
+- 🟢 **Legacy `btn_verify` buttons** (panels installed before the upgrades) now point members & admins to the new `/setup-verify` instead of the old 2-command migration chain.
+- 🟢 **Help:** the Roles category gains a "Verification (new members)" guide block and the compact line; Quick Start step 4 now leads with `/setup-verify`. All-Commands budget: 5.791/5.800 with all 20 categories.
+- 🟢 **Tests: 826 (from 817)** — new `tests/unit/setupVerify.test.js` (9 tests: registry contract, handler happy path, duplicate guard, stale-link self-clear, the 3 role rejections, `/selfrole-delete` clears the config, DASH API 201/409/400 + DELETE clearing, PUT config accepted/422s). The v3.22/v3.23 removal PINs and the `roles.verified`-cleaned tests were updated to the new contract (verified preserved, unverified still cleaned). Audit log gains the `SETUP_VERIFY` label.
+
+**Recommended newcomer-safe setup:** `/setup-verify role:@Verified channel:#verify` → (optional marker role) `/set-autorole action:add role:@Member` → `/set-autorole action:toggle`.
+
 ## [3.27.2] — 2026-09-17
 
 ### Fixed — 🎤 TEMP VOICE: ROOM CREATION FAILURE NO LONGER SILENT (50013 MISSING PERMISSIONS)

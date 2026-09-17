@@ -758,6 +758,41 @@ function getCommands() {
 
         // === FLEXIBLE SELF-ROLE ===
         {
+            // v3.28.0: /setup-verify is BACK (removed in v3.22.0, re-added by
+            // the owner's request). It is now a wizard over the one-way
+            // self-role panel (v3.27.0): one command = a verification panel
+            // where the button can only GIVE the Verified role.
+            name: 'setup-verify',
+            description: 'Install a verification panel — a one-way button that gives the Verified role (repeat-click safe)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                { type: 8, name: 'role', description: 'The Verified role members get when they click', required: true },
+                { type: 7, name: 'channel', description: 'Channel for the panel (default: this channel)', required: false },
+                { type: 3, name: 'title', description: 'Panel title (default: ✅ Verification)', required: false, max_length: 256 },
+                {
+                    type: 3,
+                    name: 'description',
+                    description: 'Panel text (supports \\n newline; default: welcome text)',
+                    required: false,
+                    max_length: 4000
+                },
+                { type: 3, name: 'button_label', description: 'Button text (default: Verify Me)', required: false, max_length: 80 },
+                { type: 3, name: 'button_emoji', description: 'Button emoji (default: ✅)', required: false, max_length: 64 },
+                {
+                    type: 3,
+                    name: 'button_style',
+                    description: 'Button color (default: Success)',
+                    required: false,
+                    choices: [
+                        { name: 'Blue (Primary)', value: 'Primary' },
+                        { name: 'Gray (Secondary)', value: 'Secondary' },
+                        { name: 'Green (Success)', value: 'Success' },
+                        { name: 'Red (Danger)', value: 'Danger' }
+                    ]
+                }
+            ]
+        },
+        {
             name: 'setup-selfrole',
             description: 'Create a new self-role panel (members can take/drop roles themselves)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,

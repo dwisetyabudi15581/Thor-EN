@@ -1,10 +1,17 @@
 /**
  * Domain: selfrole
- * Slash commands: /setup-selfrole, /selfrole-add, /selfrole-remove,
+ * Slash commands: /setup-verify, /setup-selfrole, /selfrole-add, /selfrole-remove,
  *                 /selfrole-list, /selfrole-update, /selfrole-delete
  *
  * Split off from handlers/commandHandler.js (v3.9.9 refactor).
  * Behavior: manage self-role panels (members pick their own roles via buttons/selects).
+ *
+ * v3.28.0: /setup-verify is BACK (the owner missed the dedicated verification
+ * feature removed in v3.22.0). It is now a thin WIZARD over the v3.27.0 one-way
+ * self-role panel: one command installs a repeat-click-safe verification panel
+ * and remembers the Verified role (config.roles.verified — which also gates
+ * tickets & escrow for verified-only access) + the panel id
+ * (config.roles.verifyPanelId — deleted together with the panel).
  *
  * P0-5 FIX: roll back the panel entry if the message fails to send (prevents zombie entries).
  */
@@ -24,13 +31,157 @@ const {
     buildPanelEmbed,
     buildPanelComponents,
     logAudit,
-    safeEditReply
+    safeEditReply,
+    getConfig,
+    setField
 } = require('./_shared');
 
 // v3.9.25: convert literal \n → real newlines (PC multi-line feature)
 const { normalizeNewlines, joinCappedLines } = require('../infra/text');
 
 module.exports = async function (interaction) {
+    // ====================================================
+    // === VERIFY: /setup-verify (v3.28.0 — re-added) ===
+    // ====================================================
+    if (interaction.commandName === 'setup-verify') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const guildId = interaction.guild.id;
+        const role = interaction.options.getRole('role');
+        const channel = interaction.options.getChannel('channel') || interaction.channel;
+        const title = interaction.options.getString('title') || '✅ Verification';
+        const description =
+            normalizeNewlines(interaction.options.getString('description')) ||
+            `Welcome to **${interaction.guild.name}**!\nClick the button below to verify yourself and get full access.`;
+        const label = interaction.options.getString('button_label') || 'Verify Me';
+        const emoji = interaction.options.getString('button_emoji') || '✅';
+        const style = interaction.options.getString('button_style') || 'Success';
+
+        // Same validation as /set-role (v3.9.38): catch an unassignable role
+        // BEFORE anything is created, not on the first member click.
+        if (role.id === interaction.guild.id) {
+            return safeEditReply(interaction, { content: '❌ @everyone cannot be used. Pick a regular role.' });
+        }
+        if (role.managed) {
+            return safeEditReply(interaction, {
+                content: '❌ This role is managed by another integration/bot — it cannot be assigned by the bot.'
+            });
+        }
+        const botHighestPos = interaction.guild.members.me?.roles?.highest?.position ?? 0;
+        if ((role.position ?? 0) >= botHighestPos) {
+            return safeEditReply(interaction, {
+                content:
+                    '❌ This role is positioned ABOVE the bot highest role — the bot cannot assign it. ' +
+                    'Move the bot role up in Server Settings → Roles, or pick another role.'
+            });
+        }
+        if (!channel || channel.type === undefined) {
+            return safeEditReply(interaction, { content: '❌ Channel not found. Pick a valid text channel.' });
+        }
+
+        // One verification panel per guild — tracked via config.roles.verifyPanelId.
+        // (If the tracked panel was already deleted manually on Discord, the
+        // entry is stale → the guard self-clears and a new install is allowed.)
+        const config = getConfig(guildId);
+        const existingId = config?.roles?.verifyPanelId;
+        if (existingId) {
+            const existingPanel = getPanel(existingId);
+            if (existingPanel && existingPanel.guildId === guildId) {
+                const existingChannel = interaction.guild.channels.cache.get(existingPanel.channelId);
+                return safeEditReply(interaction, {
+                    content:
+                        `⚠️ A verification panel is already installed: **${existingPanel.title}** in ${
+                            existingChannel || `<#${existingPanel.channelId}>`
+                        } (panel ID: \`${existingId}\`).\n\n` +
+                        `• Change its look → \`/selfrole-update panel_id:${existingId} …\`\n` +
+                        `• Change the Verified role → \`/selfrole-add panel_id:${existingId} role:@New label:Verify Me\` + \`/selfrole-remove panel_id:${existingId} role:@Old\`\n` +
+                        `• Move / reinstall it → \`/selfrole-delete panel_id:${existingId}\` first (that also clears the Verified role), then run \`/setup-verify\` again.`
+                });
+            }
+            // Stale entry (panel already deleted) — clear it and fall through.
+            setField(guildId, 'roles.verifyPanelId', null);
+            setField(guildId, 'roles.verified', null);
+        }
+
+        // Create the ONE-WAY panel (once:true — the whole point of the
+        // v3.27.0 fix: repeat clicks can never strip the role) with the
+        // Verified role as its only button.
+        const panel = createPanel({
+            guildId,
+            channelId: channel.id,
+            title,
+            description,
+            type: 'button',
+            exclusive: false,
+            once: true
+        });
+        const added = addRoleToPanel(panel.id, {
+            roleId: role.id,
+            label,
+            emoji,
+            style
+        });
+        if (!added.ok) {
+            try {
+                deleteSelfRolePanel(panel.id);
+            } catch (_) {}
+            return safeEditReply(interaction, { content: `❌ ${added.error}` });
+        }
+
+        // Render + send (P0-5 rollback pattern, identical to /setup-selfrole).
+        const fresh = getPanel(panel.id);
+        let embed;
+        let components;
+        try {
+            embed = buildPanelEmbed(fresh, interaction.client);
+            components = buildPanelComponents(fresh);
+        } catch (renderErr) {
+            try {
+                deleteSelfRolePanel(panel.id);
+            } catch (_) {}
+            return safeEditReply(interaction, {
+                content: `❌ Failed to render the panel: ${renderErr.message}\n💡 Keep the title under **256** and the description under **4000** characters. Entry rolled back.`
+            });
+        }
+        let panelMsg;
+        try {
+            panelMsg = await channel.send({ embeds: [embed], components });
+        } catch (sendErr) {
+            try {
+                deleteSelfRolePanel(panel.id);
+            } catch (_) {}
+            return safeEditReply(interaction, {
+                content: `❌ Failed to send the panel to ${channel}: ${sendErr.message}\n💡 The bot needs **Send Messages** + **Embed Links** there. Entry rolled back.`
+            });
+        }
+        setMessageId(panel.id, panelMsg.id);
+
+        // Remember the Verified role (gates tickets/escrow for verified-only
+        // access) + which panel is THE verification panel (one per guild).
+        setField(guildId, 'roles.verified', role.id);
+        setField(guildId, 'roles.verifyPanelId', panel.id);
+
+        await logAudit(interaction.client, {
+            action: 'SETUP_VERIFY',
+            actorId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            details: `Install verification panel **${title}** (\`${panel.id}\`) in ${channel} — Verified role: ${role.name} (one-way)`,
+            guildId
+        });
+
+        return safeEditReply(interaction, {
+            content:
+                `✅ **Verification panel installed!**\n\n` +
+                `📍 Channel: ${channel}\n` +
+                `🎭 Verified role: ${role}\n` +
+                `🎟️ Mode: **One-way** — members can only GAIN the role; repeat clicks never remove it (safe for Discord newcomers).\n\n` +
+                `💡 **Tips:**\n` +
+                `• Want a "new member" role that disappears once verified? \`/set-autorole action:add role:@Member\` then \`/set-autorole action:toggle\`.\n` +
+                `• Tickets & escrow are now limited to verified members while the Verified role is set.\n` +
+                `• Edit the panel anytime: \`/selfrole-update panel_id:${panel.id}\``
+        });
+    }
+
     // ====================================================
     // === SELF-ROLE: /setup-selfrole ===
     // ====================================================
@@ -397,6 +548,21 @@ module.exports = async function (interaction) {
         }
 
         deletePanel(panelId);
+
+        // v3.28.0: deleting THE verification panel also clears the Verified
+        // role — otherwise the ticket/escrow verified-only gate would keep
+        // filtering members against a role nobody can obtain anymore
+        // (a deleted panel = no way to get verified).
+        let verifyClearedNote = '';
+        const config = getConfig(interaction.guild.id);
+        if (config?.roles?.verifyPanelId === panelId) {
+            setField(interaction.guild.id, 'roles.verifyPanelId', null);
+            setField(interaction.guild.id, 'roles.verified', null);
+            verifyClearedNote =
+                '\n🎟️ This was the **verification panel** — the Verified role was cleared with it. ' +
+                'Run `/setup-verify` again to reinstall verification.';
+        }
+
         await logAudit(interaction.client, {
             action: 'SELFROLE_DELETE',
             actorId: interaction.user.id,
@@ -404,6 +570,8 @@ module.exports = async function (interaction) {
             details: `Delete self-role panel **${panel.title}** (\`${panelId}\`)`,
             guildId: interaction.guild.id
         });
-        return safeEditReply(interaction, { content: `✅ Panel \`${panelId}\` (${panel.title}) successfully deleted.` });
+        return safeEditReply(interaction, {
+            content: `✅ Panel \`${panelId}\` (${panel.title}) successfully deleted.${verifyClearedNote}`
+        });
     }
 };

@@ -128,7 +128,7 @@ test('registry: /set-transcript-channel is NO LONGER registered (merged into /se
 
 test('registry: total commands exactly 94 (v3.26.0 — selfrole-update added)', () => {
     const { getCommands } = require('../../src/commands/registry');
-    assert.strictEqual(getCommands().length, 94);
+    assert.strictEqual(getCommands().length, 95);
 });
 
 test('registry: /set-channel has the "transcript" tipe choice + description mentions transcript', () => {

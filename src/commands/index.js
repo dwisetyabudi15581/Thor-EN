@@ -163,6 +163,8 @@ const COMMAND_TO_DOMAIN = {
     'clear-schedule': 'keys',
 
     // selfrole
+    // v3.28.0: /setup-verify re-added — the verification wizard (one-way panel).
+    'setup-verify': 'selfrole',
     'setup-selfrole': 'selfrole',
     'selfrole-add': 'selfrole',
     'selfrole-remove': 'selfrole',

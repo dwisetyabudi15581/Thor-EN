@@ -154,7 +154,7 @@ function seedPanel({ once, exclusive = false, type = 'button' }) {
 test('contract: /setup-selfrole and /selfrole-update expose a `once` boolean option', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
-    assert.strictEqual(cmds.length, 94, 'command count unchanged (no new commands in v3.27.0)');
+    assert.strictEqual(cmds.length, 95, '95 commands (v3.28.0 — setup-verify re-added)');
     for (const name of ['setup-selfrole', 'selfrole-update']) {
         const cmd = cmds.find((c) => c.name === name);
         assert.ok(cmd, `${name} is registered`);
