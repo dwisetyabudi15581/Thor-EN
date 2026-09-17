@@ -16,6 +16,8 @@ const selfRolesPath = path.join(__dirname, '..', '..', 'data', 'selfRoles.json')
  *     "description": "Click a button to get / remove a role.",
  *     "type": "button",           // "button" or "select"
  *     "exclusive": false,         // true = only 1 role at a time
+ *     "once": false,              // v3.27.0: true = one-way (verification) —
+ *                                  // clicking only GIVES the role, never removes it
  *     "roles": [
  *       {
  *         "roleId": "...",
@@ -33,6 +35,10 @@ const selfRolesPath = path.join(__dirname, '..', '..', 'data', 'selfRoles.json')
  * - Type: button (≤25 roles, 1 row = 5 buttons) or select menu (≤25 roles)
  * - Mode: multi (can take many) or exclusive (only 1 role at a time)
  * - Member clicks a button / picks from the dropdown → toggles the role
+ * - once:true (v3.27.0) = ONE-WAY panel: clicking only grants the role — a
+ *   member who already has it gets a friendly "you're all set" reply instead
+ *   of losing it. Built for verification panels used by Discord newcomers
+ *   who tend to click buttons repeatedly.
  */
 
 function loadPanels() {
@@ -75,6 +81,8 @@ function createPanel(data) {
         description: data.description || 'Click to get / remove a role.',
         type: data.type === 'select' ? 'select' : 'button',
         exclusive: !!data.exclusive,
+        // v3.27.0: one-way (verification) mode — see the header comment.
+        once: !!data.once,
         roles: [],
         createdAt: now
     };
@@ -171,9 +179,11 @@ function getPanelByMessage(messageId) {
 }
 
 /**
- * Update a panel's title/description/type/exclusive.
+ * Update a panel's title/description/type/exclusive/once.
  * v3.26.0: `type` is editable too (button ⇄ select re-renders cleanly since
  * both layouts are built from the same roles array on every render).
+ * v3.27.0: `once` — flip a live panel into one-way (verification) mode without
+ * delete + recreate (legacy panels simply gain the field when edited).
  */
 function updatePanel(panelId, updates) {
     const list = loadPanels();
@@ -191,6 +201,7 @@ function updatePanel(panelId, updates) {
         panel.type = updates.type;
     }
     if (updates.exclusive !== undefined) panel.exclusive = !!updates.exclusive;
+    if (updates.once !== undefined) panel.once = !!updates.once;
     savePanels(list);
     return panel;
 }

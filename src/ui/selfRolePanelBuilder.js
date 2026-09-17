@@ -28,9 +28,13 @@ const STYLE_MAP = {
 };
 
 function buildPanelEmbed(panel, client) {
-    const modeText = panel.exclusive
-        ? '🔒 **Exclusive mode** — you may only hold 1 role at a time.'
-        : '✅ **Multi mode** — you may take more than 1 role.';
+    // v3.27.0: one-way (verification) panels get their own mode line — members
+    // must KNOW that clicking again never removes the role.
+    const modeText = panel.once
+        ? '🎟️ **One-way mode** — clicking only GIVES you the role. It can never be removed from this panel.'
+        : panel.exclusive
+            ? '🔒 **Exclusive mode** — you may only hold 1 role at a time.'
+            : '✅ **Multi mode** — you may take more than 1 role.';
 
     const rolesText =
         panel.roles.length === 0
@@ -76,7 +80,7 @@ function buildPanelEmbed(panel, client) {
         .setDescription(fullDesc)
         .setColor(0x9b59b6)
         .setFooter({
-            text: `${client?.user?.username || 'Bot'} • Panel ID: ${panel.id} • ${panel.exclusive ? 'Exclusive' : 'Multi'}`,
+            text: `${client?.user?.username || 'Bot'} • Panel ID: ${panel.id} • ${[panel.once ? 'One-way' : null, panel.exclusive ? 'Exclusive' : (panel.once ? null : 'Multi')].filter(Boolean).join(' + ')}`,
             iconURL: client?.user?.displayAvatarURL?.({ dynamic: true })
         })
         .setTimestamp();

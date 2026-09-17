@@ -86,6 +86,20 @@ async function handleSelfRoleButton(interaction) {
     const member = interaction.member;
     const hasRole = member.roles.cache.has(roleId);
 
+    // v3.27.0: ONE-WAY (verification) mode — the button can only GIVE the role.
+    // Discord newcomers tend to click panel buttons repeatedly; on a toggle
+    // panel the 2nd click silently REMOVED the role they had just claimed and
+    // they ended up "unverified" without noticing. On a once panel a repeat
+    // click is a friendly no-op instead.
+    if (panel.once && hasRole) {
+        return interaction.reply({
+            content:
+                `✅ You're all set — you already have the ${role} role.\n` +
+                `💡 No need to click again: this panel never removes the role.`,
+            flags: MessageFlags.Ephemeral
+        });
+    }
+
     // v3.22.0: all grant/revoke calls go through the Role Engine — same
     // checks, same failure logging as every other feature. Granting a role
     // here can also trigger the automatic removal of the member's join
@@ -108,7 +122,7 @@ async function handleSelfRoleButton(interaction) {
         }
         const removedMentions = toRemove.map(rid => `<@&${rid}>`).join(', ');
         return interaction.reply({
-            content: `✅ Role ${role} added.${toRemove.length > 0 ? `\n↳ Other roles removed: ${removedMentions}` : ''}`,
+            content: `✅ Role ${role} added.${toRemove.length > 0 ? `\n↳ Other roles removed: ${removedMentions}` : ''}${panel.once ? '\n💡 One-way panel — clicking again never removes it.' : ''}`,
             flags: MessageFlags.Ephemeral
         });
     }
@@ -132,7 +146,10 @@ async function handleSelfRoleButton(interaction) {
                 flags: MessageFlags.Ephemeral
             });
         }
-        return interaction.reply({ content: `✅ Role ${role} added.`, flags: MessageFlags.Ephemeral });
+        return interaction.reply({
+            content: `✅ Role ${role} added.${panel.once ? '\n💡 One-way panel — clicking again never removes it.' : ''}`,
+            flags: MessageFlags.Ephemeral
+        });
     }
     // Multi + already has it → remove (toggle)
     const res = await revokeRoles(member, [roleId], { reason: 'self-role panel (toggle off)' });
@@ -159,6 +176,91 @@ async function handleSelfRoleSelect(interaction) {
     const member = interaction.member;
     const selectedIds = new Set(interaction.values); // role IDs the user selected
     const panelRoleIds = panel.roles.map(r => r.roleId);
+
+    // === v3.27.0: ONE-WAY (verification) mode ===
+    // The menu can only GIVE roles: deselecting rows or clearing the menu
+    // never strips anything. Guards mirror the sibling paths (anti-forgery
+    // + requiresRoleId prerequisite).
+    if (panel.once) {
+        for (const selId of selectedIds) {
+            if (!panelRoleIds.includes(selId)) {
+                return interaction.reply({
+                    content: '❌ That role is not registered on this self-role panel.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+            const rConfig = panel.roles.find(r => r.roleId === selId);
+            if (rConfig?.requiresRoleId && !member.roles.cache.has(rConfig.requiresRoleId)) {
+                const reqRole = interaction.guild.roles.cache.get(rConfig.requiresRoleId);
+                const reqName = reqRole ? reqRole.name : `<@&${rConfig.requiresRoleId}>`;
+                return interaction.reply({
+                    content:
+                        `❌ You need the **${reqName}** role to claim this role.\n\n` +
+                        `💡 Get the ${reqName} role first via the matching self-role panel.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+        }
+
+        let toAddOnce;
+        if (panel.exclusive) {
+            // One-way + exclusive: picking a role you don't have switches to
+            // it (classic exclusive switch); picking the one you already have
+            // — or clearing the menu — is a friendly no-op.
+            const targetRoleId = selectedIds.size > 0 ? interaction.values[0] : null;
+            toAddOnce = targetRoleId && !member.roles.cache.has(targetRoleId) ? [targetRoleId] : [];
+            if (toAddOnce.length > 0) {
+                const toRemoveEx = panelRoleIds.filter(rid => rid !== targetRoleId && member.roles.cache.has(rid));
+                const rmRes = toRemoveEx.length > 0
+                    ? await revokeRoles(member, toRemoveEx, { reason: 'self-role select (one-way exclusive)' })
+                    : null;
+                if (rmRes && !rmRes.ok) {
+                    return interaction.reply({
+                        content: `❌ Failed to change the roles. Make sure the bot's role is ABOVE the selected roles.`,
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+            }
+        } else {
+            // One-way + multi: add every selected role not owned; NEVER remove.
+            toAddOnce = panelRoleIds.filter(rid => selectedIds.has(rid) && !member.roles.cache.has(rid));
+        }
+
+        if (toAddOnce.length === 0) {
+            // Repeat selection / cleared menu → nothing to grant.
+            return interaction.reply({
+                content:
+                    '✅ You\'re all set — one-way panels only **add** roles, they never remove them.\n' +
+                    '💡 No need to select again: your current roles stay.',
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        const addRes = await grantRoles(member, toAddOnce, { reason: 'self-role select (one-way)' });
+        if (!addRes.ok) {
+            return interaction.reply({
+                content: `❌ Failed to give you the roles. Make sure the bot's role is ABOVE the selected roles.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+        await interaction.reply({
+            content:
+                `✅ Roles added: ${toAddOnce.map(rid => `<@&${rid}>`).join(', ')}\n` +
+                '💡 One-way panel — deselecting never removes your roles.',
+            flags: MessageFlags.Ephemeral
+        });
+
+        // Reset the menu selection (same best-effort re-render as the other paths).
+        try {
+            const newComponents = buildPanelComponents(panel);
+            if (newComponents.length > 0) {
+                await interaction.message.edit({ components: newComponents });
+            }
+        } catch (err) {
+            console.warn('Failed to update the select menu after selecting (one-way):', err.message);
+        }
+        return;
+    }
 
     // === v3.9.0 FIX: implement the previously missing EXCLUSIVE mode ===
     // Exclusive mode: the user may only have 1 role from the panel at a time.

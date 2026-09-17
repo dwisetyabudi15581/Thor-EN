@@ -353,9 +353,9 @@ const HELP_CATEGORIES = [
         short: 'System roles + member-choice role panels',
         lines: [
             '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
-            '• `/setup-selfrole type:button` — role panel · `/selfrole-update` — edit it',
+            '• `/setup-selfrole type once` — panel · `/selfrole-update` — edit it',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
-            '💡 `requires_role:@Verified` — conditionally locked role'
+            '💡 `once:true` = 1-way verify · `requires_role` — gated'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -365,10 +365,10 @@ const HELP_CATEGORIES = [
             '• `tipe:booster` (v3.9.59) — Booster role: granted **automatically** when a member boosts & removed when the boost ends; applied right away to existing boosters when set. Test the chain: `/test-booster`.',
             '',
             '**Self-role panels (member choice)** — members click to take/drop a role themselves:',
-            '• `/setup-selfrole title description type:button|dropdown exclusive` — mount the panel. `exclusive:true` = only ONE role from the panel at a time.',
+            '• `/setup-selfrole title description type:button|dropdown exclusive once` — mount the panel. `exclusive:true` = only ONE role from the panel at a time · `once:true` (v3.27.0) = ONE-WAY (verification): clicking only GIVES the role — repeat clicks never remove it. Built for newcomers who click buttons several times.',
             '• `/selfrole-add panel_id role label emoji style requires_role` — add a role to the panel (button look + optional emoji). `requires_role:@Verified` — only members already holding that role can take it (gated perks).',
             '• `/selfrole-remove panel_id role` — take a role off · `/selfrole-list` — panels + roles · `/selfrole-delete panel_id` — remove a whole panel.',
-            '• `/selfrole-update panel_id title/description/type/exclusive` (v3.26.0) — edit a live panel in place (no delete + recreate); the panel message is re-rendered right away.',
+            '• `/selfrole-update panel_id title/description/type/exclusive/once` (v3.26.0) — edit a live panel in place (no delete + recreate); the panel message is re-rendered right away.',
             '❓ **Members can\'t take a role?** Check `requires_role` on that entry + the bot\'s role position (must be ABOVE the roles it manages).'
         ]
     },

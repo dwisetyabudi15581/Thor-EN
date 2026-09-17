@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.27.0] — 2026-09-17
+
+### Changed — 🎟️ ONE-WAY (VERIFICATION) SELF-ROLE PANELS — REPEAT CLICKS CAN NEVER REMOVE THE ROLE
+
+Owner's request: *"I have a problem with selfrole and autorole — when I use them for a verification system, the panel button can be clicked repeatedly, which troubles people who are new to Discord."* Root cause: self-role buttons are TOGGLES — a newcomer who clicks "Verify" twice (they often do) silently LOSES the role they just claimed and ends up unverified without noticing. The fix: a **`once` (one-way) mode** for self-role panels, built exactly for verification use.
+
+**How it works:**
+
+- 🟠 **`once:true` = one-way panel** — clicking a button only GIVES the role. A member who already has it gets a friendly ephemeral **"✅ You're all set — you already have this role. No need to click again: this panel never removes it."** instead of a silent toggle-off. Same for dropdown panels: selecting adds missing roles; deselecting or clearing the menu never strips anything.
+- 🟠 **Slash commands** — `/setup-selfrole … once:true` creates a one-way panel from the start, and `/selfrole-update panel_id once:true|false` flips the mode on a LIVE panel (no delete + recreate; the panel message is re-rendered). `/selfrole-list` and the setup/update confirmations show the mode. Existing panels are untouched (classic toggle behavior unless flipped).
+- 🟠 **Web dashboard** — a "One-way (verification)" toggle in BOTH the New Panel form and the per-panel Manage editor (`POST /guilds/:id/selfroles` + `PUT /guilds/:id/selfroles/:panelId` accept `once`), plus a green `one-way` badge on every panel card.
+- 🟡 **Panel embed announces the mode** — one-way panels display "🎟️ **One-way mode** — clicking only GIVES you the role. It can never be removed from this panel." with an One-way / One-way + Exclusive footer badge, so members know repeat clicks are safe.
+- 🟢 **Compatibility matrix preserved** — `once` composes with `exclusive` (switching to another panel role still works; the newly claimed role can never be toggled off) and with `requires_role` gates; the Role Engine + autorole "remove join roles on another role" toggle (v3.23.0) still fire normally, so the full verification chain — autorole on join → one-way verify click → join role auto-removed — works end to end.
+- 🟢 **Tests** — `tests/unit/selfroleOnce.test.js` adds **11 new tests**: the spam-click regression (3 clicks → role still held, zero removal calls), grant-then-spam, exclusive switching, dropdown add-without-strip, cleared-menu no-op, embed badges, manager round-trips, and the two DASH API routes. The `dashParityV326` contract was extended for the new option. Total suite: **814 tests, all passing**.
+
+**Recommended verification setup for newcomer-heavy servers:** `/set-autorole action:add role:@Member` → `/set-autorole action:toggle` (join roles vanish once the member gets another role) → `/setup-selfrole title:Verification once:true` → `/selfrole-add panel_id:<id> role:@Verified label:Verify Me emoji:✅ style:Success`.
+
 ## [3.26.0] — 2026-09-17
 
 ### Changed — 🌐 FULL WEB CONTROL, ROUND 2 — EVERY REMAINING SLASH COMMAND NOW HAS A DASHBOARD TWIN

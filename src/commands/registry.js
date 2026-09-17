@@ -782,6 +782,15 @@ function getCommands() {
                     name: 'exclusive',
                     description: 'True = only 1 role allowed at a time (e.g. color roles). Default false.',
                     required: false
+                },
+                // v3.27.0: one-way (verification) mode — repeated clicks can
+                // never REMOVE the role. Built for verification panels used by
+                // Discord newcomers who tend to click buttons several times.
+                {
+                    type: 5,
+                    name: 'once',
+                    description: 'True = one-way (verification): clicking only GIVES the role, never removes it.',
+                    required: false
                 }
             ]
         },
@@ -867,6 +876,13 @@ function getCommands() {
                     type: 5,
                     name: 'exclusive',
                     description: 'True = only 1 role at a time (e.g. color roles)',
+                    required: false
+                },
+                // v3.27.0: flip one-way (verification) mode on a live panel.
+                {
+                    type: 5,
+                    name: 'once',
+                    description: 'True = one-way (verification): clicking only GIVES the role, never removes it',
                     required: false
                 }
             ]

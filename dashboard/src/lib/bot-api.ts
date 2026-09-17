@@ -180,6 +180,8 @@ export type SelfRolePanel = {
   description: string;
   type: string;
   exclusive: boolean;
+  /** v3.27.0: one-way (verification) panel — clicking only GIVES the role. */
+  once?: boolean;
   roles: Array<{ roleId: string; label: string; emoji?: string; description?: string; style?: string }>;
 };
 

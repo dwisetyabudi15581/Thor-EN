@@ -156,6 +156,8 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
   const [description, setDescription] = useState("Click a button to get or remove a role.");
   const [type, setType] = useState("button");
   const [exclusive, setExclusive] = useState(false);
+  // v3.27.0: one-way (verification) panel — repeat clicks never remove the role.
+  const [once, setOnce] = useState(false);
   const [roleId, setRoleId] = useState<string | null>(null);
   const [roleLabel, setRoleLabel] = useState("");
   const [roleEmoji, setRoleEmoji] = useState("");
@@ -164,7 +166,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
   // v3.26.0: per-panel management — edit panel (PUT) + add/remove role on a
   // LIVE panel (parity with /selfrole-update, /selfrole-add, /selfrole-remove).
   const [manageId, setManageId] = useState<string | null>(null);
-  const [editPanel, setEditPanel] = useState({ title: "", description: "", type: "button", exclusive: false });
+  const [editPanel, setEditPanel] = useState({ title: "", description: "", type: "button", exclusive: false, once: false });
   const [addRoleId, setAddRoleId] = useState<string | null>(null);
   const [addLabel, setAddLabel] = useState("");
   const [addEmoji, setAddEmoji] = useState("");
@@ -183,7 +185,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
     }
     setBusy(true);
     try {
-      await call("selfroles", "POST", { channelId, title, description, type, exclusive, roles });
+      await call("selfroles", "POST", { channelId, title, description, type, exclusive, once, roles });
       setOpen(false);
       setRoles([]);
       await refresh();
@@ -213,7 +215,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
     }
     const p = draft.selfroles.find((x) => x.id === id);
     if (!p) return;
-    setEditPanel({ title: p.title, description: p.description, type: p.type, exclusive: p.exclusive });
+    setEditPanel({ title: p.title, description: p.description, type: p.type, exclusive: p.exclusive, once: !!p.once });
     setAddRoleId(null);
     setAddLabel("");
     setAddEmoji("");
@@ -236,6 +238,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
         description: editPanel.description,
         type: editPanel.type,
         exclusive: editPanel.exclusive,
+        once: editPanel.once,
       });
       setManageId(null);
       await refresh();
@@ -334,6 +337,18 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
               />
             </div>
           </div>
+          {/* v3.27.0: one-way (verification) mode — the answer to newcomers
+              clicking the verify button repeatedly and silently losing the role. */}
+          <div className="flex items-end">
+            <div className="w-full">
+              <Toggle
+                checked={once}
+                onChange={setOnce}
+                label="One-way (verification)"
+                desc="Clicking only GIVES the role — repeat clicks never remove it. Perfect for verification."
+              />
+            </div>
+          </div>
           <div className="md:col-span-2 space-y-2">
             <p className="text-[13px] font-medium text-zinc-300">Roles in the panel ({roles.length})</p>
             <div className="flex flex-wrap gap-2">
@@ -410,6 +425,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                     <p className="text-sm font-medium text-zinc-200">{p.title}</p>
                     <Pill>{p.type === "select" ? "dropdown" : "buttons"}</Pill>
                     {p.exclusive ? <Pill tone="amber">exclusive</Pill> : null}
+                    {p.once ? <Pill tone="green">one-way</Pill> : null}
                     <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
                   </div>
                   <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.description}</p>
@@ -493,6 +509,17 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                             onChange={(v) => setEditPanel({ ...editPanel, exclusive: v })}
                             label="Exclusive"
                             desc="Members may only hold one role from this panel."
+                          />
+                        </div>
+                      </div>
+                      {/* v3.27.0: flip one-way (verification) mode on a live panel. */}
+                      <div className="flex items-end">
+                        <div className="w-full">
+                          <Toggle
+                            checked={editPanel.once}
+                            onChange={(v) => setEditPanel({ ...editPanel, once: v })}
+                            label="One-way (verification)"
+                            desc="Clicking only GIVES the role — repeat clicks never remove it."
                           />
                         </div>
                       </div>

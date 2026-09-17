@@ -926,8 +926,10 @@ function createDashHandler({ client, token, log = () => {} }) {
                         const hasDescription = body?.description !== undefined;
                         const hasType = body?.type !== undefined;
                         const hasExclusive = body?.exclusive !== undefined;
-                        if (!hasTitle && !hasDescription && !hasType && !hasExclusive) {
-                            return sendJson(res, 400, { error: 'Provide at least one of: title, description, type, exclusive' });
+                        // v3.27.0: one-way (verification) mode.
+                        const hasOnce = body?.once !== undefined;
+                        if (!hasTitle && !hasDescription && !hasType && !hasExclusive && !hasOnce) {
+                            return sendJson(res, 400, { error: 'Provide at least one of: title, description, type, exclusive, once' });
                         }
                         const updates = {};
                         if (hasTitle) {
@@ -947,6 +949,7 @@ function createDashHandler({ client, token, log = () => {} }) {
                             updates.type = body.type;
                         }
                         if (hasExclusive) updates.exclusive = !!body.exclusive;
+                        if (hasOnce) updates.once = !!body.once;
 
                         const updated = selfRoleManager.updatePanel(rest[1], updates);
                         if (!updated) {
@@ -979,7 +982,9 @@ function createDashHandler({ client, token, log = () => {} }) {
                             title: String(body?.title || '🎭 Self Role').slice(0, 200),
                             description: normalizeNewlines(String(body?.description || 'Click to take / drop a role.').slice(0, 2000)),
                             type,
-                            exclusive: !!body?.exclusive
+                            exclusive: !!body?.exclusive,
+                            // v3.27.0: one-way (verification) panel.
+                            once: !!body?.once
                         });
                         for (const r of roles) {
                             if (!SNOWFLAKE_RE.test(String(r?.roleId || ''))) {

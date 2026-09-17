@@ -42,6 +42,8 @@ module.exports = async function (interaction) {
         const description = normalizeNewlines(interaction.options.getString('description'));
         const type = interaction.options.getString('type') || 'button';
         const exclusive = interaction.options.getBoolean('exclusive') || false;
+        // v3.27.0: one-way (verification) mode — clicking only GIVES the role.
+        const once = interaction.options.getBoolean('once') || false;
 
         // Create the panel (no messageId yet; it's updated after the message is sent)
         const panel = createPanel({
@@ -50,7 +52,8 @@ module.exports = async function (interaction) {
             title,
             description,
             type,
-            exclusive
+            exclusive,
+            once
         });
 
         // v3.24.1 FIX (M-1): the embed/components build was OUTSIDE the P0-5
@@ -104,7 +107,7 @@ module.exports = async function (interaction) {
             action: 'SETUP_SELFROLE',
             actorId: interaction.user.id,
             actorTag: interaction.user.tag,
-            details: `Create self-role panel **${title}** (\`${panel.id}\`) in ${interaction.channel} — type: ${panel.type}, exclusive: ${panel.exclusive}`,
+            details: `Create self-role panel **${title}** (\`${panel.id}\`) in ${interaction.channel} — type: ${panel.type}, exclusive: ${panel.exclusive}, once: ${panel.once}`,
             guildId: interaction.guild.id
         });
 
@@ -114,7 +117,7 @@ module.exports = async function (interaction) {
                 `🆔 Panel ID: \`${panel.id}\`\n` +
                 `📍 Channel: ${interaction.channel}\n` +
                 `🎨 Type: **${panel.type}**\n` +
-                `🔒 Mode: **${panel.exclusive ? 'Exclusive (1 role)' : 'Multi (multiple allowed)'}**\n\n` +
+                `🔒 Mode: **${panel.once ? 'One-way (verification)' : panel.exclusive ? 'Exclusive (1 role)' : 'Multi (multiple allowed)'}**\n\n` +
                 `💡 Now add roles to the panel with:\n\`\`\`\n/selfrole-add panel_id:${panel.id} role:@role label:Notif emoji:🔔\n\`\`\``
         });
     }
@@ -258,7 +261,7 @@ module.exports = async function (interaction) {
             panels,
             p => {
                 const typeStr = p.type === 'select' ? '📋 Select' : '🔘 Button';
-                const modeStr = p.exclusive ? '🔒 Exclusive' : '✅ Multi';
+                const modeStr = p.once ? '🎟️ One-way' : p.exclusive ? '🔒 Exclusive' : '✅ Multi';
                 const rolesStr =
                     p.roles.length === 0
                         ? '_empty_'
@@ -294,6 +297,8 @@ module.exports = async function (interaction) {
         const description = interaction.options.getString('description'); // null = keep
         const type = interaction.options.getString('type'); // null = keep
         const exclusive = interaction.options.getBoolean('exclusive'); // null = keep
+        // v3.27.0: flip one-way (verification) mode on/off on a LIVE panel.
+        const once = interaction.options.getBoolean('once'); // null = keep
 
         const panel = getPanel(panelId);
         if (!panel) {
@@ -304,9 +309,9 @@ module.exports = async function (interaction) {
         if (panel.guildId !== interaction.guild.id) {
             return safeEditReply(interaction, { content: '❌ This panel does not belong to this server.' });
         }
-        if (title === null && description === null && type === null && exclusive === null) {
+        if (title === null && description === null && type === null && exclusive === null && once === null) {
             return safeEditReply(interaction, {
-                content: 'ℹ️ Nothing to update — fill in at least one option (title / description / type / exclusive).'
+                content: 'ℹ️ Nothing to update — fill in at least one option (title / description / type / exclusive / once).'
             });
         }
 
@@ -315,6 +320,7 @@ module.exports = async function (interaction) {
         if (description !== null) updates.description = normalizeNewlines(description);
         if (type !== null) updates.type = type;
         if (exclusive !== null) updates.exclusive = exclusive;
+        if (once !== null) updates.once = once;
 
         const updated = updatePanel(panelId, updates);
         if (!updated) {
@@ -358,7 +364,7 @@ module.exports = async function (interaction) {
             content:
                 `✅ Panel **${updated.title}** updated!${rendered}\n\n` +
                 `🎨 Type: **${updated.type === 'select' ? 'Select Menu' : 'Buttons'}** · ` +
-                `🔒 Mode: **${updated.exclusive ? 'Exclusive (1 role)' : 'Multi'}** · ` +
+                `🔒 Mode: **${updated.once ? 'One-way (verification)' : updated.exclusive ? 'Exclusive (1 role)' : 'Multi'}** · ` +
                 `🎭 ${updated.roles.length} role(s)`
         });
     }

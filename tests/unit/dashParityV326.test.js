@@ -147,16 +147,17 @@ const ACTOR = { id: ACTOR_ID, tag: 'admin#0001' };
 // === Contract: /selfrole-update registered + routed ===
 // ====================================================
 
-test('contract: registry has 94 commands and selfrole-update is admin-gated with 5 options', () => {
+test('contract: registry has 94 commands and selfrole-update is admin-gated with 6 options', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
     assert.strictEqual(cmds.length, 94, '94 commands (v3.26.0 — selfrole-update added)');
     const cmd = cmds.find((c) => c.name === 'selfrole-update');
     assert.ok(cmd, '/selfrole-update is registered');
     assert.ok(cmd.defaultMemberPermissions, '/selfrole-update is admin-gated');
+    // v3.27.0: `once` — one-way (verification) mode.
     assert.deepStrictEqual(
         (cmd.options || []).map((o) => o.name),
-        ['panel_id', 'title', 'description', 'type', 'exclusive']
+        ['panel_id', 'title', 'description', 'type', 'exclusive', 'once']
     );
     // Type choices = button | select (same vocabulary as /setup-selfrole)
     const typeOpt = cmd.options.find((o) => o.name === 'type');
