@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.27.1] — 2026-09-17
+
+### Fixed — 🔁 START.SH NOW AUTO-REBUILDS THE DASHBOARD AFTER `git pull` (STALE-BUILD TRAP)
+
+Owner's report: *"I already updated in Termux but the One-way toggle doesn't appear in the dashboard."* Root cause: `start.sh` only built the dashboard **if `dashboard/.next/standalone/server.js` was missing**. After the first-ever build, that file always exists — so every later `git pull` + `./start.sh` kept serving the **OLD compiled dashboard** while running the NEW bot code. New UI (like the v3.27.0 One-way toggle) silently never showed up unless the owner remembered to run `npm run build` by hand inside `dashboard/`.
+
+- 🟠 **Version-marker rebuild** — `start.sh` now reads `dashboard/package.json`'s version and compares it to `dashboard/.build-version` (a marker written after every successful build). Mismatch or missing marker → the dashboard is rebuilt automatically, so `git pull && ./start.sh` is now the ONLY update step needed. Matching marker → instant start, no wasted rebuild.
+- 🟢 **Marker is git-ignored** (`dashboard/.build-version`) so `git pull` never conflicts with it; fresh clones simply build on first start as before.
+- 🟢 **Failure-safe** — the marker is only written AFTER a successful build, and `set -euo pipefail` aborts the run if the build fails (no half-updated state).
+
 ## [3.27.0] — 2026-09-17
 
 ### Changed — 🎟️ ONE-WAY (VERIFICATION) SELF-ROLE PANELS — REPEAT CLICKS CAN NEVER REMOVE THE ROLE

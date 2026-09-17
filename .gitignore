@@ -58,6 +58,7 @@ coverage/
 
 # === Web dashboard (dashboard/) — build & runtime artifacts ===
 dashboard/.next/
+dashboard/.build-version
 dashboard/tsconfig.tsbuildinfo
 dashboard/db/*
 !dashboard/db/.gitkeep
