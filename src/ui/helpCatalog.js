@@ -353,7 +353,7 @@ const HELP_CATEGORIES = [
         short: 'System roles + member-choice role panels',
         lines: [
             '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
-            '• `/setup-selfrole title:... type:button` — member-choice role panel',
+            '• `/setup-selfrole type:button` — role panel · `/selfrole-update` — edit it',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
             '💡 `requires_role:@Verified` — conditionally locked role'
         ],
@@ -368,6 +368,7 @@ const HELP_CATEGORIES = [
             '• `/setup-selfrole title description type:button|dropdown exclusive` — mount the panel. `exclusive:true` = only ONE role from the panel at a time.',
             '• `/selfrole-add panel_id role label emoji style requires_role` — add a role to the panel (button look + optional emoji). `requires_role:@Verified` — only members already holding that role can take it (gated perks).',
             '• `/selfrole-remove panel_id role` — take a role off · `/selfrole-list` — panels + roles · `/selfrole-delete panel_id` — remove a whole panel.',
+            '• `/selfrole-update panel_id title/description/type/exclusive` (v3.26.0) — edit a live panel in place (no delete + recreate); the panel message is re-rendered right away.',
             '❓ **Members can\'t take a role?** Check `requires_role` on that entry + the bot\'s role position (must be ABOVE the roles it manages).'
         ]
     },

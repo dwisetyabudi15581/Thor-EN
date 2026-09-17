@@ -53,6 +53,7 @@ const {
     getPanelsByGuild,
     deletePanel,
     setMessageId,
+    updatePanel,
     deletePanel: deleteSelfRolePanel
 } = require('../data/selfRoleManager');
 const {
@@ -173,6 +174,7 @@ module.exports = {
     deletePanel,
     deleteSelfRolePanel,
     setMessageId,
+    updatePanel,
     createGiveaway,
     setGiveawayMessageId,
     getGiveawaysByGuild,

@@ -32,11 +32,18 @@
  *   POST   /guilds/:id/announce                 → schedule an announcement
  *   DELETE /guilds/:id/announce/:annId          → cancel an announcement
  *   POST   /guilds/:id/selfroles                → create a self-role panel (sends the message)
+ *   PUT    /guilds/:id/selfroles/:panelId       → edit a live panel (v3.26.0 — /selfrole-update parity)
  *   POST   /guilds/:id/selfroles/:panelId/roles → add a role to a panel (re-renders)
  *   DELETE /guilds/:id/selfroles/:panelId/roles?roleId=... → remove a role from a panel
  *   DELETE /guilds/:id/selfroles/:panelId       → delete the panel + its message
  *   POST   /guilds/:id/serverstats/refresh      → force-refresh the counters
  *   POST   /guilds/:id/panels                   → install ticket panel to a channel (v3.21.0)
+ *   PUT    /guilds/:id/panels/:panelId           → edit panel fields (v3.26.0 — /update-panel parity)
+ *   POST   /guilds/:id/panels/:panelId/refresh   → re-render with latest config (v3.26.0 — /refresh-panel parity)
+ *   DELETE /guilds/:id/panels/:panelId           → delete panel + message (v3.26.0 — /delete-panel parity)
+ *   POST   /guilds/:id/giveaway/end             → end + announce winners (v3.26.0 — /giveaway end parity)
+ *   POST   /guilds/:id/giveaway/reroll          → reroll a winner (v3.26.0 — /giveaway reroll parity)
+ *   POST   /guilds/:id/poll/close               → close + final results (v3.26.0 — /poll close parity)
  *   POST   /guilds/:id/verify-panel             → REMOVED v3.22.0 (verification is now a self-role panel)
  *   DELETE /guilds/:id/tempvoice                → detach the temp voice setup (config only)
  *
@@ -89,7 +96,7 @@ const midmanManager = require('../data/midmanManager');
 const levelManager = require('../data/levelManager');
 // v3.24.0: /test-welcome from the web — the SAME builder as the real event.
 const { buildWelcomeEmbed, buildGoodbyeEmbed } = require('../bot/memberHandler');
-const { buildTicketPanel } = require('../commands/panels');
+const { buildTicketPanel, parseColor, validateUrl, findEmptyCategoryWarnings } = require('../commands/panels');
 // v3.24.4: full slash-command parity from the web — moderation guards
 // (hierarchy/timeout/purge validation, the SAME rules as the slash commands),
 // the boost preview builders, and the audit logger for the new mutation
@@ -105,6 +112,15 @@ const {
 } = require('./moderationGuards');
 const { buildBoostAddEmbed, buildBoostRemoveEmbed } = require('../bot/boostHandler');
 const { logAudit } = require('./auditLog');
+// v3.26.0: full parity for giveaway end/reroll + poll close from the web —
+// the SAME locks + announce helpers the slash commands use, so a web end
+// and a Discord end can never double-pick winners.
+const { withLock: withUserLock } = require('./userLock');
+const {
+    isGiveawayProcessing,
+    processGiveawayEnd,
+    announceRerollWinner
+} = require('../services/schedulerTasks');
 const {
     EmbedBuilder,
     ActionRowBuilder,
@@ -896,6 +912,58 @@ function createDashHandler({ client, token, log = () => {} }) {
 
                 // ---- Self-role panels ----
                 if (rest[0] === 'selfroles') {
+                    // v3.26.0: PUT — edit a live panel (parity with the NEW
+                    // /selfrole-update slash command + the web "Edit panel" form).
+                    // Same guild-IDOR guard as every other selfroles route.
+                    if (method === 'PUT' && rest.length === 2) {
+                        const body = await readBody(req, res);
+                        const target = selfRoleManager.getPanel(rest[1]);
+                        if (!target || target.guildId !== guildId) {
+                            return sendJson(res, 404, { error: 'Panel not found' });
+                        }
+                        // At least one editable field must be present.
+                        const hasTitle = body?.title !== undefined;
+                        const hasDescription = body?.description !== undefined;
+                        const hasType = body?.type !== undefined;
+                        const hasExclusive = body?.exclusive !== undefined;
+                        if (!hasTitle && !hasDescription && !hasType && !hasExclusive) {
+                            return sendJson(res, 400, { error: 'Provide at least one of: title, description, type, exclusive' });
+                        }
+                        const updates = {};
+                        if (hasTitle) {
+                            const t = String(body.title).trim();
+                            if (!t || t.length > 256) return sendJson(res, 400, { error: 'Title must be 1-256 characters' });
+                            updates.title = t;
+                        }
+                        if (hasDescription) {
+                            const d = normalizeNewlines(String(body.description));
+                            if (d.length > 4000) return sendJson(res, 400, { error: 'Description must be at most 4000 characters' });
+                            updates.description = d;
+                        }
+                        if (hasType) {
+                            if (body.type !== 'button' && body.type !== 'select') {
+                                return sendJson(res, 400, { error: 'type must be button | select' });
+                            }
+                            updates.type = body.type;
+                        }
+                        if (hasExclusive) updates.exclusive = !!body.exclusive;
+
+                        const updated = selfRoleManager.updatePanel(rest[1], updates);
+                        if (!updated) {
+                            return sendJson(res, 422, { error: 'Failed to update the panel (empty title?) — nothing was changed' });
+                        }
+                        await reRenderPanel(rest[1]);
+                        await logAudit(client, {
+                            action: 'SELFROLE_UPDATE',
+                            actorId: String(body?.actor?.id || ''),
+                            actorTag: String(body?.actor?.tag || 'web dashboard'),
+                            details: `Update self-role panel **${updated.title}** (${rest[1]}) — ${Object.keys(updates).join(', ')}`,
+                            guildId
+                        }).catch(() => {});
+                        log(`[dash] self-role panel ${rest[1]} updated in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                        return sendJson(res, 200, { ok: true, panel: selfRoleManager.getPanel(rest[1]) });
+                    }
+
                     if (method === 'POST' && rest.length === 1) {
                         const body = await readBody(req, res);
                         const channelId = String(body?.channelId || '');
@@ -959,12 +1027,23 @@ function createDashHandler({ client, token, log = () => {} }) {
                         if (!targetPanel || targetPanel.guildId !== guildId) {
                             return sendJson(res, 404, { error: 'Panel not found' });
                         }
+                        // v3.26.0: requiresRoleId — the conditional-role gate from
+                        // /selfrole-add (only members already holding that role see the
+                        // button). Optional + snowflake-validated, exactly like the slash option.
+                        let requiresRoleId = null;
+                        if (body?.requiresRoleId !== undefined && body?.requiresRoleId !== null && body?.requiresRoleId !== '') {
+                            if (!SNOWFLAKE_RE.test(String(body.requiresRoleId))) {
+                                return sendJson(res, 400, { error: 'Invalid requiresRoleId' });
+                            }
+                            requiresRoleId = String(body.requiresRoleId);
+                        }
                         const added = selfRoleManager.addRoleToPanel(rest[1], {
                             roleId: String(body.roleId),
                             label: String(body?.label || 'Role').slice(0, 80),
                             emoji: body?.emoji ? String(body.emoji).slice(0, 64) : undefined,
                             description: body?.description ? String(body.description).slice(0, 100) : undefined,
-                            style: BUTTON_STYLES.includes(body?.style) ? body.style : 'Secondary'
+                            style: BUTTON_STYLES.includes(body?.style) ? body.style : 'Secondary',
+                            requiresRoleId
                         });
                         if (!added.ok) return sendJson(res, 409, { error: added.error });
                         await reRenderPanel(rest[1]);
@@ -1235,6 +1314,149 @@ function createDashHandler({ client, token, log = () => {} }) {
                     giveawayManager.setMessageId(gw.id, msg.id);
                     log(`[dash] giveaway created in ${guildId} (${gw.id}) by ${body?.actor?.tag || 'unknown'}`);
                     return sendJson(res, 201, { ok: true, giveaway: giveawayManager.get(gw.id) });
+                }
+
+                // ---- v3.26.0: Giveaway END from the web (parity with /giveaway end) ----
+                // Same rules as the slash command: guild check, already-ended
+                // check, scheduler in-flight check, withUserLock + skipPick so
+                // winners are picked exactly once even if Discord + web race.
+                if (method === 'POST' && rest[0] === 'giveaway' && rest[1] === 'end') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req, res);
+                    const id = String(body?.id || '');
+                    const gw = giveawayManager.get(id);
+                    if (!gw || gw.guildId !== guildId) return sendJson(res, 404, { error: 'Giveaway not found' });
+                    if (gw.ended) return sendJson(res, 409, { error: 'This giveaway has already ended' });
+                    if (isGiveawayProcessing(id)) {
+                        return sendJson(res, 423, { error: 'This giveaway is being auto-processed by the scheduler (natural end). Try again in a few seconds.' });
+                    }
+
+                    const lockResult = await withUserLock('gw_end', id, async () => {
+                        const gwFresh = giveawayManager.get(id);
+                        if (!gwFresh) return { type: 'notfound' };
+                        if (gwFresh.ended) return { type: 'ended' };
+                        const winnerIds = giveawayManager.pickWinners(gwFresh.participantIds, gwFresh.winnersCount);
+                        giveawayManager.end(id, winnerIds);
+                        const updatedGw = giveawayManager.get(id);
+                        try {
+                            await processGiveawayEnd(client, updatedGw, { skipPick: true });
+                        } catch (err) {
+                            log(`[dash] giveaway end announce failed (state saved): ${err.message}`);
+                        }
+                        return { type: 'ok', winnerIds, gw: gwFresh };
+                    });
+                    if (lockResult === null) {
+                        return sendJson(res, 423, { error: 'Giveaway end is in progress — try again shortly.' });
+                    }
+                    if (lockResult.type === 'notfound') return sendJson(res, 404, { error: 'Giveaway not found' });
+                    if (lockResult.type === 'ended') return sendJson(res, 409, { error: 'This giveaway has already ended' });
+
+                    await logAudit(client, {
+                        action: 'GIVEAWAY_END',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `End giveaway \`${id}\` (${lockResult.gw.prize}). Winners: ${lockResult.winnerIds.join(', ') || 'no participants'}`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] giveaway ${id} ended in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, winnerIds: lockResult.winnerIds, giveaway: giveawayManager.get(id) });
+                }
+
+                // ---- v3.26.0: Giveaway REROLL from the web (parity with /giveaway reroll) ----
+                // Same rules as the slash command: must be ended, guild check,
+                // withUserLock, announce + DM best-effort after the winner is persisted.
+                if (method === 'POST' && rest[0] === 'giveaway' && rest[1] === 'reroll') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req, res);
+                    const id = String(body?.id || '');
+                    const gw = giveawayManager.get(id);
+                    if (!gw || gw.guildId !== guildId) return sendJson(res, 404, { error: 'Giveaway not found' });
+                    if (!gw.ended) {
+                        return sendJson(res, 409, { error: "This giveaway hasn't ended yet — end it first." });
+                    }
+
+                    const result = await withUserLock('gw_reroll', id, async () => giveawayManager.reroll(id));
+                    if (!result) {
+                        return sendJson(res, 409, { error: "Reroll failed — giveaway not found, not ended yet, or another reroll is running. Try again shortly." });
+                    }
+                    if (!result.winnerId) return sendJson(res, 422, { error: 'No participants to reroll' });
+
+                    try {
+                        await announceRerollWinner(client, result.gw, result.winnerId);
+                    } catch (err) {
+                        log(`[dash] reroll announce failed (winner saved): ${err.message}`);
+                    }
+                    await logAudit(client, {
+                        action: 'GIVEAWAY_REROLL',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Reroll giveaway \`${id}\` → new winner: ${result.winnerId}${result.reused ? ' (reused)' : ''}`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] giveaway ${id} rerolled in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, winnerId: result.winnerId, reused: !!result.reused, giveaway: giveawayManager.get(id) });
+                }
+
+                // ---- v3.26.0: Poll CLOSE from the web (parity with /poll close) ----
+                // Closes the poll + re-renders the message with the final bars
+                // + disabled buttons (the same updatePollMessage behavior).
+                if (method === 'POST' && rest[0] === 'poll' && rest[1] === 'close') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req, res);
+                    const id = String(body?.id || '');
+                    const poll = pollManager.get(id);
+                    if (!poll || poll.guildId !== guildId) return sendJson(res, 404, { error: 'Poll not found' });
+                    if (poll.closed) return sendJson(res, 409, { error: 'This poll is already closed' });
+
+                    const updated = pollManager.close(id);
+                    if (!updated) return sendJson(res, 404, { error: 'Poll no longer exists' });
+
+                    // Re-render the poll message with the final results +
+                    // disabled buttons (best-effort — the poll stays closed).
+                    try {
+                        const channel = await client.channels.fetch(updated.channelId).catch(() => null);
+                        const msg = updated.messageId && channel
+                            ? await channel.messages.fetch(updated.messageId).catch(() => null)
+                            : null;
+                        if (channel && msg) {
+                            const total = pollManager.getTotalVotes(updated);
+                            const lines = updated.options
+                                .map((opt) => {
+                                    const pct = total > 0 ? Math.round((opt.votes.length / total) * 100) : 0;
+                                    const bar = '█'.repeat(Math.floor(pct / 10)).padEnd(10, '░');
+                                    return `${opt.emoji} **${opt.label}** — ${opt.votes.length} votes (${pct}%)\n\`${bar}\``;
+                                })
+                                .join('\n\n');
+                            const embed = new EmbedBuilder()
+                                .setTitle(`📊 ${updated.question}`)
+                                .setDescription(
+                                    `${lines}\n\n🗳️ Total votes: **${total}**\n` +
+                                        `🔒 Status: **Closed** <t:${Math.floor(updated.closedAt / 1000)}:R>`
+                                )
+                                .setColor(0x95a5a6)
+                                .setFooter({ text: `Poll by ${updated.creatorTag} | Closed` })
+                                .setTimestamp();
+                            const disabledRows = msg.components.map((row) => {
+                                const newRow = new ActionRowBuilder();
+                                for (const comp of row.components) {
+                                    newRow.addComponents(ButtonBuilder.from(comp).setDisabled(true));
+                                }
+                                return newRow;
+                            });
+                            await msg.edit({ embeds: [embed], components: disabledRows });
+                        }
+                    } catch (err) {
+                        log(`[dash] poll message update failed (poll still closed): ${err.message}`);
+                    }
+                    await logAudit(client, {
+                        action: 'POLL_CLOSE',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Close poll \`${id}\` ("${updated.question}")`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] poll ${id} closed in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, poll: pollManager.get(id) });
                 }
 
                 // ---- Poll: create from the web (parity with /poll create via modal) ----
@@ -1590,6 +1812,165 @@ function createDashHandler({ client, token, log = () => {} }) {
                     const saved = panelManager.upsertPanel({ ...panelMeta, messageId: sent.id });
                     log(`[dash] ticket panel installed in ${channelId} (${guildId}, panel ${saved.id}) by ${body?.actor?.tag || 'unknown'}`);
                     return sendJson(res, 201, { ok: true, panel: saved, url: sent.url });
+                }
+
+                // ========================================================
+                // ==== v3.26.0: TICKET PANEL MANAGEMENT (web)           ====
+                // ==== Parity with /update-panel /refresh-panel /delete-panel ====
+                // ========================================================
+
+                // Shared guard: the panel must exist + belong to THIS guild
+                // (the same cross-guild protection as the slash commands).
+                function findGuildPanel(panelId) {
+                    const p = panelManager.getPanel(panelId);
+                    return p && p.guildId === guildId ? p : null;
+                }
+
+                /** Re-render a ticket panel message with the latest config (best-effort). */
+                async function reRenderTicketPanel(panel, actorLabel) {
+                    const config = getConfig(guildId);
+                    const build = buildTicketPanel(panel, { guild: g, client, config });
+                    const channel = await client.channels.fetch(panel.channelId).catch(() => null);
+                    if (!channel) return { ok: false, note: 'Panel channel not found — metadata still updated.' };
+                    const msg = panel.messageId ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
+                    if (!msg) return { ok: false, note: 'Panel message not found (deleted?) — metadata still updated.' };
+                    await msg.edit({ embeds: [build.embed], components: build.components });
+                    return { ok: true, note: 'Panel message refreshed.', warnings: findEmptyCategoryWarnings(panel, config) };
+                }
+
+                // ---- PUT /panels/:panelId — edit fields (parity with /update-panel) ----
+                // Field mapping + validation is IDENTICAL to the modal handler in
+                // panels-mgmt.js (FIELD_TO_STORAGE_KEY): title / body / color /
+                // image / thumbnail / footer. An explicit null CLEARS a field
+                // (falls back to the global config value).
+                if (method === 'PUT' && rest[0] === 'panels' && rest.length === 2) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const body = await readBody(req, res);
+                    const panel = findGuildPanel(rest[1]);
+                    if (!panel) return sendJson(res, 404, { error: 'Panel not found' });
+
+                    const EDITABLE = ['title', 'body', 'color', 'image', 'thumbnail', 'footer'];
+                    const wanted = EDITABLE.filter((f) => body?.[f] !== undefined);
+                    if (wanted.length === 0) {
+                        return sendJson(res, 400, { error: `Provide at least one of: ${EDITABLE.join(', ')}` });
+                    }
+
+                    // v3.9.26 pattern: write to the STORAGE key, not the field name.
+                    const STORAGE = { title: 'title', body: 'body', color: 'color', image: 'imageUrl', thumbnail: 'thumbnailUrl', footer: 'footerText' };
+                    const patch = {};
+                    for (const field of wanted) {
+                        const raw = body[field];
+                        if (raw === null || String(raw).trim() === '') {
+                            patch[STORAGE[field]] = null; // clear → fall back to global
+                            continue;
+                        }
+                        const value = String(raw).trim();
+                        if (field === 'color') {
+                            try {
+                                patch.color = parseColor(value);
+                            } catch (err) {
+                                return sendJson(res, 400, { error: err.message });
+                            }
+                        } else if (field === 'image' || field === 'thumbnail') {
+                            if (value.length > 2048) {
+                                return sendJson(res, 400, { error: `The ${field} URL is too long (${value.length} char, max 2048 — Discord embed limit).` });
+                            }
+                            const validated = validateUrl(value);
+                            if (!validated) return sendJson(res, 400, { error: `Invalid ${field} URL — must be http(s)://...` });
+                            patch[STORAGE[field]] = validated;
+                        } else if (field === 'title') {
+                            if (value.length > 256) return sendJson(res, 400, { error: 'Title must be at most 256 characters' });
+                            patch.title = value;
+                        } else if (field === 'footer') {
+                            if (value.length > 2048) return sendJson(res, 400, { error: 'Footer must be at most 2048 characters' });
+                            patch.footerText = value;
+                        } else {
+                            if (value.length > 4000) return sendJson(res, 400, { error: 'Body must be at most 4000 characters' });
+                            patch.body = normalizeNewlines(value);
+                        }
+                    }
+
+                    const updated = panelManager.patchPanel(rest[1], patch);
+                    if (!updated) return sendJson(res, 422, { error: 'Failed to update the panel' });
+
+                    let renderNote = '';
+                    try {
+                        const rendered = await reRenderTicketPanel(updated, body?.actor?.tag);
+                        renderNote = rendered.ok ? ' Panel message refreshed.' : ` ${rendered.note}`;
+                    } catch (err) {
+                        renderNote = ` Failed to refresh the message: ${err.message} (metadata still updated).`;
+                    }
+                    await logAudit(client, {
+                        action: 'UPDATE_PANEL',
+                        actorId: String(body?.actor?.id || ''),
+                        actorTag: String(body?.actor?.tag || 'web dashboard'),
+                        details: `Update panel \`${rest[1]}\` — ${wanted.join(', ')}`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] ticket panel ${rest[1]} updated in ${guildId} by ${body?.actor?.tag || 'unknown'}`);
+                    return sendJson(res, 200, { ok: true, panel: panelManager.getPanel(rest[1]), note: renderNote.trim() });
+                }
+
+                // ---- POST /panels/:panelId/refresh — re-render (parity with /refresh-panel) ----
+                if (method === 'POST' && rest[0] === 'panels' && rest.length === 3 && rest[2] === 'refresh') {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const panel = findGuildPanel(rest[1]);
+                    if (!panel) return sendJson(res, 404, { error: 'Panel not found' });
+                    if (!panel.channelId || !panel.messageId) {
+                        return sendJson(res, 422, { error: 'This panel has no message reference (possibly corrupt) — delete it and set it up again.' });
+                    }
+                    try {
+                        const rendered = await reRenderTicketPanel(panel, 'web');
+                        if (!rendered.ok) return sendJson(res, 422, { error: rendered.note });
+                        await logAudit(client, {
+                            action: 'REFRESH_PANEL',
+                            actorId: '',
+                            actorTag: 'web dashboard',
+                            details: `Refreshed panel \`${rest[1]}\` — re-rendered with the latest categories/products`,
+                            guildId
+                        }).catch(() => {});
+                        log(`[dash] ticket panel ${rest[1]} refreshed in ${guildId}`);
+                        return sendJson(res, 200, {
+                            ok: true,
+                            note: rendered.note,
+                            emptyCategoryWarnings: rendered.warnings || []
+                        });
+                    } catch (err) {
+                        return sendJson(res, 422, { error: `Failed to rebuild the panel: ${err.message}` });
+                    }
+                }
+
+                // ---- DELETE /panels/:panelId — delete message + metadata (parity with /delete-panel) ----
+                if (method === 'DELETE' && rest[0] === 'panels' && rest.length === 2) {
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not on this server' });
+                    const panel = findGuildPanel(rest[1]);
+                    if (!panel) return sendJson(res, 404, { error: 'Panel not found' });
+
+                    // Delete the channel message best-effort (it may already be gone).
+                    let messageDeleted = false;
+                    if (panel.channelId && panel.messageId) {
+                        try {
+                            const channel = await client.channels.fetch(panel.channelId).catch(() => null);
+                            const msg = channel ? await channel.messages.fetch(panel.messageId).catch(() => null) : null;
+                            if (msg) {
+                                await msg.delete();
+                                messageDeleted = true;
+                            }
+                        } catch (err) {
+                            log(`[dash] deleting the panel message failed (proceeding): ${err.message}`);
+                        }
+                    }
+                    const removed = panelManager.deletePanel(rest[1]);
+                    if (!removed) return sendJson(res, 422, { error: 'Failed to delete the panel metadata' });
+                    await logAudit(client, {
+                        action: 'DELETE_PANEL',
+                        actorId: '',
+                        actorTag: 'web dashboard',
+                        details: `Deleted ticket panel \`${rest[1]}\` (message ${messageDeleted ? 'deleted' : 'already gone'})`,
+                        guildId
+                    }).catch(() => {});
+                    log(`[dash] ticket panel ${rest[1]} deleted in ${guildId}`);
+                    return sendJson(res, 200, { ok: true, messageDeleted });
                 }
 
                 // ---- v3.24.4: Reset messages (parity with /reset-message) ----

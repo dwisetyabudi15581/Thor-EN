@@ -299,6 +299,39 @@ export function GiveawayModule({ draft, meta, call, refresh, toast }: ModuleActi
     }
   }
 
+  // v3.26.0: end a running giveaway (POST giveaway/end — /giveaway end parity).
+  async function end(g: (typeof draft.giveaways)[number]) {
+    if (!window.confirm(`End the giveaway "${g.prize}" now?
+Winners are picked, announced in the channel, and DMed.`)) return;
+    setBusy(true);
+    try {
+      const res = (await call("giveaway/end", "POST", { id: g.id })) as { winnerIds?: string[] };
+      await refresh();
+      const n = res?.winnerIds?.length ?? 0;
+      toast(n > 0 ? `Giveaway ended — ${n} winner(s) announced + DMed.` : "Giveaway ended — no participants.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to end the giveaway.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // v3.26.0: reroll a finished giveaway (POST giveaway/reroll — /giveaway reroll parity).
+  async function reroll(g: (typeof draft.giveaways)[number]) {
+    if (!window.confirm(`Reroll "${g.prize}"?
+A new winner is picked from participants who haven't won yet.`)) return;
+    setBusy(true);
+    try {
+      const res = (await call("giveaway/reroll", "POST", { id: g.id })) as { winnerId?: string; reused?: boolean };
+      await refresh();
+      toast(res?.winnerId ? `New winner picked${res.reused ? " (all had won — random pick)" : ""} — announced + DMed.` : "No participants to reroll.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to reroll.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderRow(g: (typeof draft.giveaways)[number]) {
     return (
       <div key={g.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
@@ -312,6 +345,32 @@ export function GiveawayModule({ draft, meta, call, refresh, toast }: ModuleActi
             {g.winnersCount} winner(s) · {g.participantIds.length} entries · {channelLabel(meta.channels, g.channelId)} ·{" "}
             {g.ended ? `ended ${fmtDate(g.endsAt)}` : `ends ${fmtDate(g.endsAt)}`} · host {g.hostTag}
           </p>
+        </div>
+        {/* v3.26.0: live management — /giveaway end + /giveaway reroll from the web */}
+        <div className="flex shrink-0 items-center gap-2">
+          {!g.ended ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void end(g)}
+              disabled={busy}
+              className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+              title="Pick winners now, announce + DM them (same as /giveaway end)"
+            >
+              End now
+            </Button>
+          ) : g.participantIds.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void reroll(g)}
+              disabled={busy}
+              className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+              title="Pick a new winner (same as /giveaway reroll)"
+            >
+              🎲 Reroll
+            </Button>
+          ) : null}
         </div>
       </div>
     );
@@ -396,6 +455,19 @@ export function PollModule({ draft, meta, call, refresh, toast }: ModuleActionPr
     }
   }
 
+  // v3.26.0: close an open poll (POST poll/close — /poll close parity).
+  async function close(p: (typeof draft.polls)[number]) {
+    if (!window.confirm(`Close the poll "${p.question}"?
+Voting stops and the final results are shown in the message.`)) return;
+    try {
+      await call("poll/close", "POST", { id: p.id });
+      await refresh();
+      toast("Poll closed — final results shown in the channel.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to close the poll.", "err");
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Section title="Create a Poll" desc="Same as /poll create — members vote with buttons, results update live in the message.">
@@ -475,15 +547,29 @@ export function PollModule({ draft, meta, call, refresh, toast }: ModuleActionPr
             draft.polls.slice(0, 15).map((p) => {
               const total = p.options.reduce((s, o) => s + o.votes.length, 0);
               return (
-                <div key={p.id} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
-                  <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
-                    {p.question}
-                    {p.closed ? <Pill tone="zinc">closed</Pill> : <Pill tone="green">open</Pill>}
-                    {p.multiple ? <Pill tone="amber">multi</Pill> : null}
-                  </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    {p.options.length} options · {total} votes · {channelLabel(meta.channels, p.channelId)} · by {p.creatorTag} · {fmtDate(p.createdAt)}
-                  </p>
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
+                      {p.question}
+                      {p.closed ? <Pill tone="zinc">closed</Pill> : <Pill tone="green">open</Pill>}
+                      {p.multiple ? <Pill tone="amber">multi</Pill> : null}
+                    </p>
+                    <p className="mt-0.5 text-xs text-zinc-500">
+                      {p.options.length} options · {total} votes · {channelLabel(meta.channels, p.channelId)} · by {p.creatorTag} · {fmtDate(p.createdAt)}
+                    </p>
+                  </div>
+                  {/* v3.26.0: close button — /poll close parity */}
+                  {!p.closed ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void close(p)}
+                      className="h-8 shrink-0 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                      title="Stop voting and show the final results (same as /poll close)"
+                    >
+                      Close
+                    </Button>
+                  ) : null}
                 </div>
               );
             })

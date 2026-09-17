@@ -11,7 +11,7 @@ import { useState } from "react";
 import { Plus, Trash2, Loader2, RefreshCw, Clock, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, MentionSelect, Pill, channelLabel, roleLabel,
+  Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, MentionSelect, Pill, channelLabel, roleLabel as roleLabelFn,
 } from "../fields";
 import type { DashboardPayload, GuildMeta } from "@/lib/bot-api";
 
@@ -161,6 +161,16 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
   const [roleEmoji, setRoleEmoji] = useState("");
   const [roles, setRoles] = useState<Array<{ roleId: string; label: string; emoji?: string; style: string }>>([]);
   const [busy, setBusy] = useState(false);
+  // v3.26.0: per-panel management — edit panel (PUT) + add/remove role on a
+  // LIVE panel (parity with /selfrole-update, /selfrole-add, /selfrole-remove).
+  const [manageId, setManageId] = useState<string | null>(null);
+  const [editPanel, setEditPanel] = useState({ title: "", description: "", type: "button", exclusive: false });
+  const [addRoleId, setAddRoleId] = useState<string | null>(null);
+  const [addLabel, setAddLabel] = useState("");
+  const [addEmoji, setAddEmoji] = useState("");
+  const [addDesc, setAddDesc] = useState("");
+  const [addStyle, setAddStyle] = useState("Secondary");
+  const [addRequires, setAddRequires] = useState<string | null>(null);
 
   async function createPanel() {
     if (!channelId) {
@@ -192,6 +202,90 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
       toast("Panel deleted.");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed to delete the panel.", "err");
+    }
+  }
+
+  // v3.26.0: open the per-panel editor, prefilled with the live values.
+  function openManage(id: string) {
+    if (manageId === id) {
+      setManageId(null);
+      return;
+    }
+    const p = draft.selfroles.find((x) => x.id === id);
+    if (!p) return;
+    setEditPanel({ title: p.title, description: p.description, type: p.type, exclusive: p.exclusive });
+    setAddRoleId(null);
+    setAddLabel("");
+    setAddEmoji("");
+    setAddDesc("");
+    setAddStyle("Secondary");
+    setAddRequires(null);
+    setManageId(id);
+  }
+
+  // v3.26.0: save the panel edit (PUT selfroles/:id — /selfrole-update parity).
+  async function savePanelEdit(id: string) {
+    if (!editPanel.title.trim()) {
+      toast("The panel title cannot be empty.", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await call(`selfroles/${id}`, "PUT", {
+        title: editPanel.title.trim(),
+        description: editPanel.description,
+        type: editPanel.type,
+        exclusive: editPanel.exclusive,
+      });
+      setManageId(null);
+      await refresh();
+      toast("Panel updated — the Discord message was re-rendered.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to update the panel.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // v3.26.0: add a role to a LIVE panel (POST selfroles/:id/roles — /selfrole-add parity).
+  async function addRoleToPanel(panelId: string) {
+    if (!addRoleId) {
+      toast("Pick a role to add.", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await call(`selfroles/${panelId}/roles`, "POST", {
+        roleId: addRoleId,
+        label: addLabel.trim() || meta.roles.find((r) => r.id === addRoleId)?.name || "Role",
+        emoji: addEmoji.trim() || undefined,
+        description: addDesc.trim() || undefined,
+        style: addStyle,
+        requiresRoleId: addRequires ?? undefined,
+      });
+      setAddRoleId(null);
+      setAddLabel("");
+      setAddEmoji("");
+      setAddDesc("");
+      setAddStyle("Secondary");
+      setAddRequires(null);
+      await refresh();
+      toast("Role added — the panel was re-rendered.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to add the role.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // v3.26.0: remove a role from a LIVE panel (DELETE selfroles/:id/roles?roleId=…).
+  async function removeRoleFromPanel(panelId: string, rId: string) {
+    try {
+      await call(`selfroles/${panelId}/roles?roleId=${encodeURIComponent(rId)}`, "DELETE");
+      await refresh();
+      toast("Role removed from the panel.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to remove the role.", "err");
     }
   }
 
@@ -298,6 +392,10 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
 
       <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
         <h3 className="text-sm font-semibold text-zinc-100">Active Panels ({draft.selfroles.length})</h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Manage each panel live — edit the title/description/layout, add or remove roles, or delete the whole panel.
+          Every change re-renders the Discord message immediately.
+        </p>
         <div className="mt-4 space-y-2">
           {draft.selfroles.length === 0 ? (
             <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
@@ -305,32 +403,143 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
             </p>
           ) : null}
           {draft.selfroles.map((p) => (
-            <div key={p.id} className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-zinc-200">{p.title}</p>
-                  <Pill>{p.type === "select" ? "dropdown" : "buttons"}</Pill>
-                  {p.exclusive ? <Pill tone="amber">exclusive</Pill> : null}
-                  <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
+            <div key={p.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium text-zinc-200">{p.title}</p>
+                    <Pill>{p.type === "select" ? "dropdown" : "buttons"}</Pill>
+                    {p.exclusive ? <Pill tone="amber">exclusive</Pill> : null}
+                    <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.description}</p>
+                  {/* v3.26.0: live role chips — click × to remove from the panel */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {p.roles.length === 0 ? (
+                      <span className="text-[11px] text-zinc-600">No roles yet — add one below.</span>
+                    ) : null}
+                    {p.roles.map((r) => (
+                      <span
+                        key={r.roleId}
+                        title={`${roleLabelFn(meta.roles, r.roleId)}${r.description ? ` — ${r.description}` : ""}`}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-2.5 pr-1.5 text-xs text-zinc-300"
+                      >
+                        {r.emoji ? <span>{r.emoji}</span> : null}
+                        {r.label}
+                        <button
+                          type="button"
+                          onClick={() => void removeRoleFromPanel(p.id, r.roleId)}
+                          className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                          title={`Remove ${r.label} from the panel`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.description}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {p.roles.map((r) => (
-                    <span key={r.roleId} className="rounded-full bg-zinc-800/50 px-2 py-0.5 text-[10px] text-zinc-400">
-                      {r.emoji ? `${r.emoji} ` : ""}{r.label}
-                    </span>
-                  ))}
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openManage(p.id)}
+                    className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                  >
+                    {manageId === p.id ? "Close" : "Manage"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => deletePanel(p.id)}
+                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                    title="Delete panel + message"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
                 </div>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => deletePanel(p.id)}
-                className="h-8 w-8 shrink-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
-                title="Delete panel + message"
-              >
-                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              </Button>
+
+              {/* v3.26.0: per-panel manager — edit panel + add role (live, /selfrole-update & /selfrole-add parity) */}
+              {manageId === p.id ? (
+                <div className="mt-3 space-y-4 border-t border-zinc-800/60 pt-3">
+                  <div>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Edit panel — applied immediately
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="min-w-0">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Title</p>
+                        <TextInput value={editPanel.title} onChange={(v) => setEditPanel({ ...editPanel, title: v })} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Format</p>
+                        <Select
+                          value={editPanel.type}
+                          onChange={(v) => setEditPanel({ ...editPanel, type: v })}
+                          options={[
+                            { value: "button", label: "Buttons" },
+                            { value: "select", label: "Dropdown select" },
+                          ]}
+                        />
+                      </div>
+                      <div className="min-w-0 sm:col-span-2">
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Description</p>
+                        <TextArea value={editPanel.description} onChange={(v) => setEditPanel({ ...editPanel, description: v })} rows={2} />
+                      </div>
+                      <div className="flex items-end">
+                        <div className="w-full">
+                          <Toggle
+                            checked={editPanel.exclusive}
+                            onChange={(v) => setEditPanel({ ...editPanel, exclusive: v })}
+                            label="Exclusive"
+                            desc="Members may only hold one role from this panel."
+                          />
+                        </div>
+                      </div>
+                      <div className="flex items-end justify-end gap-2">
+                        <Button
+                          onClick={() => void savePanelEdit(p.id)}
+                          disabled={busy}
+                          className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                        >
+                          {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Save Panel
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-zinc-800/60 pt-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Add a role to this panel ({p.roles.length}/25)
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_130px]">
+                      <RoleSelect value={addRoleId} onChange={setAddRoleId} roles={meta.roles} placeholder="Pick a role…" />
+                      <TextInput value={addEmoji} onChange={setAddEmoji} placeholder="🔔 emoji" />
+                      <TextInput value={addLabel} onChange={setAddLabel} placeholder="Button label (default: role name)" />
+                      <Select value={addStyle} onChange={setAddStyle} options={STYLE_OPTS} />
+                    </div>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <TextInput value={addDesc} onChange={setAddDesc} placeholder="Description (dropdown rows — optional)" />
+                      <RoleSelect
+                        value={addRequires}
+                        onChange={setAddRequires}
+                        roles={meta.roles}
+                        placeholder="Requires role: — none —"
+                      />
+                      <Button
+                        onClick={() => void addRoleToPanel(p.id)}
+                        disabled={busy}
+                        className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" /> Role
+                      </Button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-zinc-500">
+                      Requires role: only members who already hold that role can take this one (gated perks).
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

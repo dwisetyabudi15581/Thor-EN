@@ -20,7 +20,7 @@
  *   - set-key, list-keys, clear-schedule → keys.js
  *   - setup-selfrole, selfrole-add,
  *     selfrole-remove, selfrole-list,
- *     selfrole-delete                    → selfrole.js
+ *     selfrole-update, selfrole-delete  → selfrole.js
  *   - announce, announce-schedule,
  *     announce-list, announce-cancel     → announce.js
  *   - embed-builder, embed-list,
@@ -167,6 +167,8 @@ const COMMAND_TO_DOMAIN = {
     'selfrole-add': 'selfrole',
     'selfrole-remove': 'selfrole',
     'selfrole-list': 'selfrole',
+    // v3.26.0: edit an existing panel (title/description/type/exclusive)
+    'selfrole-update': 'selfrole',
     'selfrole-delete': 'selfrole',
 
     // announce

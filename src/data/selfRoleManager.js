@@ -171,14 +171,25 @@ function getPanelByMessage(messageId) {
 }
 
 /**
- * Update a panel's title/description/exclusive.
+ * Update a panel's title/description/type/exclusive.
+ * v3.26.0: `type` is editable too (button ⇄ select re-renders cleanly since
+ * both layouts are built from the same roles array on every render).
  */
 function updatePanel(panelId, updates) {
     const list = loadPanels();
     const panel = list.find(p => p.id === panelId);
     if (!panel) return null;
-    if (updates.title !== undefined) panel.title = updates.title;
-    if (updates.description !== undefined) panel.description = updates.description;
+    if (updates.title !== undefined) {
+        if (!String(updates.title).trim()) return null;
+        panel.title = String(updates.title).slice(0, 256);
+    }
+    if (updates.description !== undefined) {
+        panel.description = String(updates.description).slice(0, 4000);
+    }
+    if (updates.type !== undefined) {
+        if (updates.type !== 'button' && updates.type !== 'select') return null;
+        panel.type = updates.type;
+    }
     if (updates.exclusive !== undefined) panel.exclusive = !!updates.exclusive;
     savePanels(list);
     return panel;

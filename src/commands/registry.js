@@ -841,6 +841,36 @@ function getCommands() {
             description: 'View all self-role panels in this guild',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
+        // v3.26.0: edit an existing panel (title/description/type/exclusive) —
+        // the Discord-side twin of the web dashboard's "Edit panel" form. Fills
+        // the gap where a panel could only be deleted + recreated to change
+        // its title or switch button ⇄ dropdown.
+        {
+            name: 'selfrole-update',
+            description: 'Edit an existing self-role panel (title, description, type, exclusive)',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                { type: 3, name: 'panel_id', description: 'Panel ID (see /selfrole-list)', required: true },
+                { type: 3, name: 'title', description: 'New panel title (max 256 chars)', required: false, max_length: 256 },
+                { type: 3, name: 'description', description: 'New panel description (supports \\n newline)', required: false, max_length: 4000 },
+                {
+                    type: 3,
+                    name: 'type',
+                    description: 'Change the panel UI type',
+                    required: false,
+                    choices: [
+                        { name: 'Button (≤25 roles, click to toggle)', value: 'button' },
+                        { name: 'Select Menu (dropdown, ≤25 roles)', value: 'select' }
+                    ]
+                },
+                {
+                    type: 5,
+                    name: 'exclusive',
+                    description: 'True = only 1 role at a time (e.g. color roles)',
+                    required: false
+                }
+            ]
+        },
         {
             name: 'selfrole-delete',
             description: 'Delete a self-role panel (deletes the message + config)',

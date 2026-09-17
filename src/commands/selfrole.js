@@ -1,7 +1,7 @@
 /**
  * Domain: selfrole
  * Slash commands: /setup-selfrole, /selfrole-add, /selfrole-remove,
- *                 /selfrole-list, /selfrole-delete
+ *                 /selfrole-list, /selfrole-update, /selfrole-delete
  *
  * Split off from handlers/commandHandler.js (v3.9.9 refactor).
  * Behavior: manage self-role panels (members pick their own roles via buttons/selects).
@@ -20,6 +20,7 @@ const {
     deletePanel,
     deleteSelfRolePanel,
     setMessageId,
+    updatePanel,
     buildPanelEmbed,
     buildPanelComponents,
     logAudit,
@@ -278,6 +279,88 @@ module.exports = async function (interaction) {
             })
             .setTimestamp();
         return safeEditReply(interaction, { embeds: [embed] });
+    }
+
+    // ====================================================
+    // === SELF-ROLE: /selfrole-update (v3.26.0) ===
+    // === Edit an existing panel without delete + recreate ===
+    // ====================================================
+    if (interaction.commandName === 'selfrole-update') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const panelId = interaction.options.getString('panel_id');
+        const title = interaction.options.getString('title'); // null = keep
+        // v3.9.25 pattern: literal \n → real newlines for the description
+        const description = interaction.options.getString('description'); // null = keep
+        const type = interaction.options.getString('type'); // null = keep
+        const exclusive = interaction.options.getBoolean('exclusive'); // null = keep
+
+        const panel = getPanel(panelId);
+        if (!panel) {
+            return safeEditReply(interaction, {
+                content: `❌ Panel ID \`${panelId}\` not found. Use \`/selfrole-list\` to see the list.`
+            });
+        }
+        if (panel.guildId !== interaction.guild.id) {
+            return safeEditReply(interaction, { content: '❌ This panel does not belong to this server.' });
+        }
+        if (title === null && description === null && type === null && exclusive === null) {
+            return safeEditReply(interaction, {
+                content: 'ℹ️ Nothing to update — fill in at least one option (title / description / type / exclusive).'
+            });
+        }
+
+        const updates = {};
+        if (title !== null) updates.title = title;
+        if (description !== null) updates.description = normalizeNewlines(description);
+        if (type !== null) updates.type = type;
+        if (exclusive !== null) updates.exclusive = exclusive;
+
+        const updated = updatePanel(panelId, updates);
+        if (!updated) {
+            return safeEditReply(interaction, {
+                content: '❌ Failed to update the panel (empty title?). The panel is unchanged.'
+            });
+        }
+
+        // Re-render the panel message so the change is visible immediately
+        // (same pattern as /selfrole-add & /selfrole-remove — best-effort).
+        let rendered = '';
+        try {
+            const channel = interaction.guild.channels.cache.get(updated.channelId);
+            if (channel) {
+                const msg = updated.messageId
+                    ? await channel.messages.fetch(updated.messageId).catch(() => null)
+                    : null;
+                if (msg) {
+                    await msg.edit({
+                        embeds: [buildPanelEmbed(updated, interaction.client)],
+                        components: buildPanelComponents(updated)
+                    });
+                    rendered = '\n\n✅ The panel message has been updated.';
+                } else {
+                    rendered = '\n\n⚠️ The panel message could not be found (deleted?) — the config is saved.';
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to update panel message:', err.message);
+            rendered = '\n\n⚠️ Failed to update the panel message (the config is saved).';
+        }
+
+        await logAudit(interaction.client, {
+            action: 'SELFROLE_UPDATE',
+            actorId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            details: `Update panel **${updated.title}** (\`${panelId}\`) — ${Object.keys(updates).join(', ')}`,
+            guildId: interaction.guild.id
+        });
+        return safeEditReply(interaction, {
+            content:
+                `✅ Panel **${updated.title}** updated!${rendered}\n\n` +
+                `🎨 Type: **${updated.type === 'select' ? 'Select Menu' : 'Buttons'}** · ` +
+                `🔒 Mode: **${updated.exclusive ? 'Exclusive (1 role)' : 'Multi'}** · ` +
+                `🎭 ${updated.roles.length} role(s)`
+        });
     }
 
     // ====================================================

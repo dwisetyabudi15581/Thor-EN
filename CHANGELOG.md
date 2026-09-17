@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.26.0] — 2026-09-17
+
+### Changed — 🌐 FULL WEB CONTROL, ROUND 2 — EVERY REMAINING SLASH COMMAND NOW HAS A DASHBOARD TWIN
+
+Owner's request: *"Audit all commands again — like /set-product-role, and editing a self-role panel doesn't exist yet. Audit everything so ALL commands can be fully controlled from the web dashboard."* A full re-audit of all 93 commands against the web modules + DASH API found **8 remaining gaps** (v3.24.4's audit covered moderation/reset/send-message but missed the product auto-role, self-role panel editing, ticket panel management, and giveaway/poll lifecycle). All 8 are closed — every command now has a web equivalent (registry grows to **94** with the new `/selfrole-update`).
+
+**The 8 closed gaps:**
+
+- 🟠 **Product auto-role on the web (parity with /set-product-role, /remove-product-role, /list-product-roles)** — every product card in Tickets & Products now has an "Auto-role on purchase" role picker + an "Auto-remove after (days)" field. The mapping was already preserved by the API since v3.19.0; the UI simply never showed or let you edit it. A live hint explains when the role is granted (🔑 Set Key / 📦 Deliver Order / ✅ Order Success) and whether it's permanent or auto-expiring.
+- 🟠 **Self-role panel EDITING (parity with the NEW /selfrole-update command + the web "Manage" form)** — the biggest hole: `selfRoleManager.updatePanel()` existed as dead code with NO command, NO endpoint, and NO UI. Now: a new `/selfrole-update panel_id title/description/type/exclusive` slash command (edits a live panel in place, re-renders the message, audit-logged), a `PUT /guilds/:id/selfroles/:panelId` endpoint (title/description/type/exclusive, guild-IDOR guarded), and a per-panel "Manage" editor on the web. A panel no longer has to be deleted + recreated to change its title or switch buttons ⇄ dropdown.
+- 🟠 **Add/remove roles on a LIVE self-role panel (parity with /selfrole-add & /selfrole-remove)** — the endpoints existed since v3.19.0 but the web UI never exposed them. Each panel now shows its roles as chips (× removes instantly), plus a full add-role form: role picker, label, emoji, **button color**, **dropdown description**, and the conditional **"Requires role"** gate (`requiresRoleId` — also newly accepted by the API endpoint, matching the slash command's hidden `requires_role` option).
+- 🟠 **Ticket panel management on the web (parity with /update-panel, /refresh-panel, /delete-panel, /list-panels, /setup-ticket-panel)** — a new "Installed Ticket Panels" section in Tickets & Products: install a panel (channel + category chips + dropdown toggle — full form, not just the Quick Start step), restyle it (title/body/color/image/thumbnail/footer with the same validation + storage-key mapping as the modal, empty = clear override), refresh it (re-render with the latest categories/products + empty-category warnings), or delete it (message + metadata).
+- 🟠 **Giveaway end & reroll from the web (parity with /giveaway end & reroll)** — "End now" on running giveaways (picks winners, edits the message, announces + DMs, exactly the slash command's `processGiveawayEnd` path with the same `withUserLock` + scheduler in-flight guard so a web end and a Discord end can never double-pick) and 🎲 Reroll on finished ones (new winner from non-winners, announce + DM + stats).
+- 🟠 **Poll close from the web (parity with /poll close)** — "Close" on open polls: stops voting, renders the final result bars + disables the buttons in the channel message (the same `updatePollMessage` behavior).
+- 🟢 **`/selfrole-update` help documentation** — added to the 🎭 Roles & Self-Roles category (compact + full guide) while keeping the All-Commands embed inside the 5.800-char budget (5799/5800, all 20 categories still load).
+- 🟢 **Endpoint docs + tests** — the DASH API header now documents all 9 new routes, and `tests/unit/dashParityV326.test.js` adds **10 new tests** (endpoint round-trips: panel edit/re-render, gated role add/remove, giveaway end double-guard 409, reroll persistence, poll close 409, panel style edit + clear + refresh + delete, product roleId/days round-trip, registry/router/manager contracts). Total suite: **803 tests, all passing**.
+
+**Explicitly N/A by design (documented for completeness):** `/help` (the dashboard IS the help), `/config-show` (the Overview + every module shows the config), `/edit-message` (the General module's textareas are the modal's better twin), `/embed-list` & `/embed-cancel` (the web sends embeds directly — no sessions exist to list or cancel), `/rank` & `/my-stats` & `/afk` (per-member personal views; the admin sides — /afk-list, /afk-clear, leaderboards — are all on the web).
+
+**Verification:** `npm test` → 803/803 (was 793; +10 new parity tests, count assertions in 5 files updated 93→94), `npx tsc --noEmit` clean, ESLint 0 errors, `npm run build` (dashboard standalone) complete. One bug caught by the new contract tests during development: `updatePanel` was destructured from `_shared` before being exported (now fixed) — the sharedExports guard proved its worth again.
+
 ## [3.25.0] — 2026-09-17
 
 ### Changed — 🧭 SIDEBAR NAVIGATION — SIDE MENU ON EVERY SCREEN, BUILT FOR MOBILE & DESKTOP

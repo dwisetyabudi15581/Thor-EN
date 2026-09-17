@@ -370,7 +370,7 @@ const DEFAULT_CATEGORIES: TicketCategory[] = [
   { id: "midman", label: "Midman / Escrow", emoji: "🤝", style: "Success", requiresKey: false },
 ];
 
-export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps) {
+export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: ModuleFormProps) {
   const c = draft.config;
   const cats = c.ticketCategories;
   const products = c.products;
@@ -675,6 +675,41 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
                   </button>
                 </div>
               </div>
+              {/* v3.26.0: /set-product-role parity — auto-role + auto-expire per product. */}
+              <div className="mt-3 grid gap-3 border-t border-zinc-800/60 pt-3 sm:grid-cols-[1fr_150px]">
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Auto-role on purchase (set-product-role)
+                  </p>
+                  <RoleSelect
+                    value={p.roleId ?? null}
+                    onChange={(v) => updateProduct(idx, { roleId: v ?? undefined, days: v ? (p.days ?? 30) : undefined })}
+                    roles={meta.roles}
+                    placeholder="— none —"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Auto-remove after (days)
+                  </p>
+                  <TextInput
+                    value={p.roleId ? String(p.days ?? 0) : ""}
+                    onChange={(v) => {
+                      const n = Math.max(0, Math.min(3650, Number.parseInt(v.replace(/[^0-9]/g, ""), 10) || 0));
+                      updateProduct(idx, { days: n });
+                    }}
+                    placeholder={p.roleId ? "0 = permanent" : "pick a role first"}
+                    disabled={!p.roleId}
+                  />
+                </div>
+              </div>
+              {p.roleId ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                  {roleLabel(meta.roles, p.roleId)} is granted automatically when an admin clicks{" "}
+                  <span className="text-zinc-400">🔑 Set Key / 📦 Deliver Order / ✅ Order Success</span> in the ticket
+                  {(p.days ?? 0) > 0 ? ` — auto-removed after ${(p.days ?? 0).toLocaleString()} days` : " — permanent"}.
+                </p>
+              ) : null}
               <div className="mt-3 flex items-center justify-end border-t border-zinc-800/60 pt-3">
                 <Button
                   size="icon"
@@ -694,7 +729,306 @@ export function TicketsModule({ draft, meta, setConfig, toast }: ModuleFormProps
           ))}
         </div>
       </section>
+
+      {/* v3.26.0: installed ticket panels — install / edit style / refresh / delete
+          (parity with /setup-ticket-panel /update-panel /refresh-panel /delete-panel). */}
+      {call && refresh ? (
+        <TicketPanelsSection draft={draft} meta={meta} call={call} refresh={refresh} toast={toast} />
+      ) : null}
     </div>
+  );
+}
+
+/* ============================================================
+ * v3.26.0: Ticket panel management (parity with /setup-ticket-panel
+ * /update-panel, /refresh-panel, /delete-panel, /list-panels).
+ * Direct actions (call → refresh) — not part of the draft.
+ * ============================================================ */
+
+function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
+  draft: DashboardPayload;
+  meta: GuildMeta;
+  call: (action: string, method: "POST" | "PUT" | "DELETE", body?: unknown) => Promise<Record<string, unknown>>;
+  refresh: () => Promise<void>;
+  toast: (msg: string, tone?: "ok" | "err") => void;
+}) {
+  const panels = draft.panels ?? [];
+  const [installOpen, setInstallOpen] = useState(false);
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [useDropdown, setUseDropdown] = useState(false);
+  const [pickedCats, setPickedCats] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  // Which panel has its edit form open (panel id), plus its working copy.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [edit, setEdit] = useState({
+    title: "", body: "", color: "", image: "", thumbnail: "", footer: "",
+  });
+  const cats = draft.config.ticketCategories;
+
+  function toggleCat(id: string) {
+    setPickedCats((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  }
+
+  async function install() {
+    if (!channelId) {
+      toast("Pick the channel where the panel will be sent.", "err");
+      return;
+    }
+    if (pickedCats.length === 0) {
+      toast("Pick at least 1 category for the panel.", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await call("panels", "POST", {
+        channelId,
+        categoryIds: pickedCats,
+        useDropdown,
+        ...(title.trim() ? { title: title.trim() } : {}),
+      });
+      setInstallOpen(false);
+      setChannelId(null);
+      setTitle("");
+      setPickedCats([]);
+      setUseDropdown(false);
+      await refresh();
+      toast("Ticket panel installed.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to install the panel.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openEdit(p: { id: string }) {
+    if (editId === p.id) {
+      setEditId(null);
+      return;
+    }
+    // Prefill from the payload (the slim shape carries title; the rest
+    // starts empty = "keep current / fall back to global").
+    const found = panels.find((x) => x.id === p.id);
+    setEdit({
+      title: found?.title ?? "",
+      body: "",
+      color: "",
+      image: "",
+      thumbnail: "",
+      footer: "",
+    });
+    setEditId(p.id);
+  }
+
+  async function saveEdit(id: string) {
+    setBusy(true);
+    try {
+      // Only send the fields the admin actually typed in — empty = clear
+      // only when it had a value before... simplest contract: send every
+      // field the form exposes, empty string clears the override.
+      await call(`panels/${id}`, "PUT", {
+        title: edit.title,
+        body: edit.body,
+        color: edit.color,
+        image: edit.image,
+        thumbnail: edit.thumbnail,
+        footer: edit.footer,
+      });
+      setEditId(null);
+      await refresh();
+      toast("Panel updated.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to update the panel.", "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshPanel(id: string) {
+    try {
+      const res = (await call(`panels/${id}/refresh`, "POST", {})) as { emptyCategoryWarnings?: string[] };
+      await refresh();
+      const empty = res?.emptyCategoryWarnings ?? [];
+      toast(empty.length > 0 ? `Panel refreshed — ${empty.length} category(ies) without products.` : "Panel refreshed.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to refresh the panel.", "err");
+    }
+  }
+
+  async function removePanel(id: string) {
+    if (!window.confirm("Delete this ticket panel?\nThe channel message is deleted too (when possible).")) return;
+    try {
+      await call(`panels/${id}`, "DELETE");
+      await refresh();
+      toast("Panel deleted.");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Failed to delete the panel.", "err");
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-100">Installed Ticket Panels ({panels.length})</h3>
+          <p className="mt-1 text-xs text-zinc-500">
+            Full parity with /setup-ticket-panel · /update-panel · /refresh-panel · /delete-panel — install, restyle, re-render, or delete the live panel message.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setInstallOpen((o) => !o)}
+          className="shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          {installOpen ? "Close" : <><Plus className="h-4 w-4" aria-hidden="true" /> Install Panel</>}
+        </Button>
+      </div>
+
+      {installOpen ? (
+        <div className="mt-4 space-y-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="min-w-0">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Target channel</p>
+              <ChannelSelect value={channelId} onChange={setChannelId} channels={meta.channels} placeholder="Pick a channel…" />
+            </div>
+            <div className="min-w-0">
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Panel title (optional)</p>
+              <TextInput value={title} onChange={setTitle} placeholder="Default: global ticket title" />
+            </div>
+            <div className="flex items-end">
+              <div className="w-full">
+                <Toggle checked={useDropdown} onChange={setUseDropdown} label="Dropdown" desc="Select menu instead of buttons" />
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              Categories on this panel ({pickedCats.length} picked — empty = all)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {cats.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => toggleCat(cat.id)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                    pickedCats.includes(cat.id)
+                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {cat.emoji} {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <Button onClick={install} disabled={busy} className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300">
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Install Panel
+            </Button>
+            <Button variant="ghost" onClick={() => setInstallOpen(false)} className="text-zinc-400 hover:text-zinc-100">
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-5 space-y-3">
+        {panels.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            No ticket panels installed yet.
+          </p>
+        ) : null}
+        {panels.map((p) => (
+          <div key={p.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium text-zinc-200">{p.title || "Default ticket panel"}</p>
+              <Pill>{p.useDropdown ? "dropdown" : "buttons"}</Pill>
+              <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
+              <span className="text-[11px] text-zinc-600">· {p.categoryIds.length} categories</span>
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => openEdit(p)}
+                className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                {editId === p.id ? "Close editor" : "Edit style"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void refreshPanel(p.id)}
+                className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                title="Re-render the panel message with the latest categories & products"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
+              </Button>
+              <span className="flex-1" />
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => void removePanel(p.id)}
+                className="h-8 w-8 text-zinc-500 hover:bg-red-950/30 hover:text-red-400"
+                title="Delete panel + message"
+              >
+                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              </Button>
+            </div>
+            {editId === p.id ? (
+              <div className="mt-3 space-y-3 border-t border-zinc-800/60 pt-3">
+                <p className="text-[11px] leading-relaxed text-zinc-500">
+                  Empty a field to clear the override — the panel falls back to the global ticket settings. Supports{" "}
+                  <code className="text-amber-300/80">{"{price_list}"}</code>{" "}
+                  <code className="text-amber-300/80">{"{categories_list}"}</code> in the body.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Title</p>
+                    <TextInput value={edit.title} onChange={(v) => setEdit({ ...edit, title: v })} placeholder="Panel title override" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Color (hex)</p>
+                    <TextInput value={edit.color} onChange={(v) => setEdit({ ...edit, color: v })} placeholder="#e67e22" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Image URL</p>
+                    <TextInput value={edit.image} onChange={(v) => setEdit({ ...edit, image: v })} placeholder="https://… (large banner)" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Thumbnail URL</p>
+                    <TextInput value={edit.thumbnail} onChange={(v) => setEdit({ ...edit, thumbnail: v })} placeholder="https://… (small corner)" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Footer text</p>
+                    <TextInput value={edit.footer} onChange={(v) => setEdit({ ...edit, footer: v })} placeholder="Footer override" />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Body</p>
+                  <TextArea value={edit.body} onChange={(v) => setEdit({ ...edit, body: v })} rows={3} placeholder="Panel body override (supports templates)" />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => void saveEdit(p.id)}
+                    disabled={busy}
+                    className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Save Panel Style
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditId(null)} className="text-zinc-400 hover:text-zinc-100">
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
