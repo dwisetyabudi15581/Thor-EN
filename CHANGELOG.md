@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.1.0] — 2026-09-23
+
+### Changed — 🏗️ REPOSITORY SPLIT: THOR-EN (BOT) + THOR-EN-DASHBOARD (WEB) — TWO SEPARATE REPOSITORIES
+
+Per the owner's directive, the v4.0.0 two-module monorepo was split into **two fully separate repositories** using **CUT & MOVE** (no cloning, no duplication): **`Thor-EN`** (this repository — the Discord bot ONLY) and **`Thor-EN-Dashboard`** (a brand-new repository — the entire web dashboard). The separation is now at the repository level, exactly as requested: a change to the dashboard UI can never disturb the bot's codebase, process, or deployment — and vice versa. Each repository has its own `package.json` with ONLY its own dependencies, its own `.env.example`, its own CI, its own pm2 app, and its own setup script. The two connect **only** through the DASH API (HTTP + the shared `DASH_API_TOKEN`), and the dashboard keeps its own `DATABASE_URL` (SQLite — dashboard login users). Zero feature logic was touched — every line of bot code moved with `git mv` (full history preserved).
+
+**Thor-EN (this repository) — now the BOT ONLY:**
+
+- 🟠 **`bot/` flattened to the repo root.** Everything under `bot/` (moved there in v4.0.0) moved back up one level with `git mv`: `index.js`, `src/`, `tests/` (897 tests), `scripts/`, `eslint.config.js`, `.prettierrc.json`, `.env.example`, `package.json`, `package-lock.json`, and the runtime `data/` + `backups/` folders. All internal relative resolutions (`../../package.json`, `../../data`, `../../src` in tests) stay valid because the whole subtree moved together — verified by the full green test suite from the new (root) home. The repo root now contains **only** the bot core and its data layer — no web files of any kind.
+- 🟠 **`package.json` = bot dependencies ONLY.** `discord.js`, `dotenv` (+ dev tooling: eslint, prettier, nodemon). Zero frontend/web libraries — `next`, `react`, `tailwind`, `prisma`, `lucide-react`, etc. all live exclusively in the Thor-EN-Dashboard repository now.
+- 🟡 **Root scripts are bot-only.** `./setup.sh` (Node ≥ 18 check, `npm install`, `.env` from the example — plus a pointer to the dashboard repo), `./start.sh` (`exec npm start`), `./dev.sh` (nodemon), and `ecosystem.config.cjs` (pm2 app `thor-bot`, `cwd: __dirname` — the repo root). The old orchestrator root `package.json` (with `dash:*` scripts) was removed together with the whole dashboard half.
+- 🟡 **CI = one bot job.** `.github/workflows/ci.yml` keeps lint + the 897 unit tests on Node 18/20/22 with no `working-directory` (flat layout); the dashboard build job moved to the Thor-EN-Dashboard repository's own CI.
+- 🟢 **`.gitignore` rewritten for the flat bot layout** — runtime data under `data/` (per-guild configs, custom commands, corrupt-file quarantine), `backups/`, `.env*`; all `bot/`- and `dashboard/`-prefixed patterns removed.
+
+**Thor-EN-Dashboard (the new repository — born by CUT & MOVE):**
+
+- 🟠 **The entire `dashboard/` folder was physically moved** (one `mv`, zero copies) out of this repo into the new repository — Next.js app, OAuth2 strategy, API routes, UI components, Prisma schema (`DATABASE_URL`), mock sandbox, and smoke scripts. Its `package.json` keeps **only web dependencies** — no `discord.js`, no bot handlers. It gains its own `README.md`, `CHANGELOG.md` (fresh — starting at v4.1.0; the full project history stays here), `LICENSE` (MIT, same holder), `setup.sh`, `ecosystem.config.cjs` (pm2 app `thor-dash`), and `.github/workflows/ci.yml` (production build).
+- 🟢 The working-tree history of the dashboard files remains visible in THIS repository's git history (pre-v4.1.0 commits) — nothing was rewritten or lost; the files simply live in exactly one repository now.
+
+**Environment & the connection contract:**
+
+- 🟠 **One `.env` per repository, cross-referenced.** This repo's `.env.example` scopes itself to the bot (`DISCORD_TOKEN`, `GUILD_ID`, `DASH_API_HOST/PORT/TOKEN`); the dashboard repo's scopes itself to the web (`DATABASE_URL`, `SESSION_SECRET`, `DISCORD_CLIENT_ID/SECRET`, `PUBLIC_ORIGIN` → OAuth callback URL, `ADMIN_DISCORD_IDS`, `DASH_API_URL/TOKEN`). Both call out the **only** values that must match: the `DASH_API_*` pair — the bridge between the repositories.
+- 🟢 **Docs rewritten for the split.** Root `README.md` (bot-only repo: architecture diagram across the two repos, quick start, env table, connection section, flat structure tree), `DEPLOY.md` (production guide cloning BOTH repositories, per-repo pm2 apps, updated backup paths `~/Thor-EN/data/` + `~/Thor-EN-Dashboard/db/`, a new "Migrating to the v4.1.0 layout" section covering v3.x AND v4.0.x clones, Termux section updated), `docs/README.md` index, and `docs/ADMIN_GUIDE.md`'s layout note (bot paths are at the repo root again — `cd Thor-EN && npm start`, `.env`, `data/`).
+
+**Compatibility & migration:** data formats, the DASH API contract, slash commands, configs, and the dashboard UI are all byte-identical to v4.0.0 — only the repository layout changed. Existing installs migrating from v3.x/v4.0.x move `data/` (or `bot/data/`) → the Thor-EN repo's `data/`, and their dashboard folder/db → the Thor-EN-Dashboard repo (exact steps in DEPLOY.md). Version jumps 4.0.0 → **4.1.0** in both repositories' `package.json` + lock files.
+
+**Tests:** no new tests (no logic changed) — the same 897/897 must pass from the repo root, which itself proves the flat bot repo is self-contained. Verification: full bot test suite green from the root, bot lint clean, dashboard production build green from the new standalone repository.
+
 ## [4.0.0] — 2026-09-23
 
 ### Changed — 🏗️ MAJOR: RESTRUCTURE — BOT & DASHBOARD AS TWO INDEPENDENT MODULES (SEPARATION OF CONCERNS)

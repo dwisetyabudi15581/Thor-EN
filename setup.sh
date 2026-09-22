@@ -1,60 +1,47 @@
 #!/usr/bin/env bash
-# setup.sh — install ALL Thor dependencies (bot + web dashboard) in one run.
+# setup.sh — install the Thor BOT's dependencies (THIS repository only).
 #
 # Usage:  ./setup.sh        (run from the repo root, right after cloning)
 #
-# What it does:
-#   1. Checks Node.js (needs >= 20; the bot runs on 18+, the dashboard needs 20+)
-#   2. npm install for the BOT (bot/ folder — its own package.json)
-#   3. npm install + prisma generate for the DASHBOARD (dashboard/ folder)
-#   4. Creates bot/.env and dashboard/.env from the example files if missing
-#
-# v4.0.0: the two modules are fully independent (separation of concerns) —
-# each folder has its own package.json and can be lifted into its own repo
-# as-is. They are connected ONLY by the DASH API (HTTP + shared token).
+# v4.1.0: THIS REPOSITORY IS THE BOT ONLY. The web dashboard is a SEPARATE
+# repository — Thor-EN-Dashboard — with its own setup.sh:
+#   https://github.com/dwisetyabudi15581/Thor-EN-Dashboard
+# The two connect ONLY through the DASH API (HTTP + the shared
+# DASH_API_TOKEN — see .env.example in both repositories).
 set -euo pipefail
 cd "$(dirname "$0")"
 
-echo "==> [1/4] Checking Node.js..."
+echo "==> [1/3] Checking Node.js..."
 if ! command -v node >/dev/null 2>&1; then
-  echo "!! Node.js is not installed. Install it first (needs >= 20):"
+  echo "!! Node.js is not installed. Install it first (needs >= 18):"
   echo "   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
   echo "   sudo apt install -y nodejs"
   exit 1
 fi
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo "!! Your Node.js is v$(node -v) — the web dashboard needs >= 20. Please upgrade."
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "!! Your Node.js is v$(node -v) — the bot needs >= 18. Please upgrade."
   exit 1
 fi
 echo "    Node $(node -v) OK"
 
-echo "==> [2/4] Installing BOT dependencies (bot/)..."
-(cd bot && npm install --no-audit --no-fund)
+echo "==> [2/3] Installing BOT dependencies..."
+npm install --no-audit --no-fund
 
-echo "==> [3/4] Installing WEB DASHBOARD dependencies (dashboard/)..."
-(cd dashboard && npm install --no-audit --no-fund && npx prisma generate)
-
-echo "==> [4/4] Preparing .env files..."
-if [ ! -f bot/.env ]; then
-  cp bot/.env.example bot/.env
-  echo "    bot/.env created from the example — DON'T FORGET to fill it in (DISCORD_TOKEN, DASH_API_TOKEN, ...)"
-fi
-if [ ! -f dashboard/.env ]; then
-  cp dashboard/.env.example dashboard/.env
-  echo "    dashboard/.env created from the example — fill in DISCORD_CLIENT_ID/SECRET"
-  echo "    + DASH_API_TOKEN (MUST be exactly the same as in bot/.env)"
+echo "==> [3/3] Preparing .env..."
+if [ ! -f .env ]; then
+  cp .env.example .env
+  echo "    .env created from the example — DON'T FORGET to fill it in (DISCORD_TOKEN, DASH_API_TOKEN, ...)"
 fi
 
 echo
 echo "Done! Next steps:"
-echo "  1. Fill in bot/.env          (bot token + DASH_API_TOKEN)"
-echo "  2. Fill in dashboard/.env    (Discord OAuth + the same DASH_API_TOKEN)"
-echo "  3. ./start.sh                (production: bot + dashboard in one run)"
-echo "     ./dev.sh                  (development: nodemon + next dev)"
+echo "  1. Fill in .env      (bot token + DASH_API_TOKEN)"
+echo "  2. npm start         (or ./start.sh)"
 echo ""
-echo "Each module also runs standalone:"
-echo "  cd bot && npm start          (Discord bot only)"
-echo "  cd dashboard && npm start    (web dashboard only)"
+echo "  Web dashboard? It is a SEPARATE repository now (v4.1.0):"
+echo "    git clone https://github.com/dwisetyabudi15581/Thor-EN-Dashboard.git"
+echo "    cd Thor-EN-Dashboard && ./setup.sh"
+echo "    (its .env needs the SAME DASH_API_TOKEN as this repo's .env)"
 echo ""
-echo "See DEPLOY.md for the full guide (VPS + domain + HTTPS + pm2)."
+echo "See DEPLOY.md for the full production guide (VPS + pm2 + domain + HTTPS)."

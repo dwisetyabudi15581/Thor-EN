@@ -1,20 +1,22 @@
-# 📖 Admin Guide — Thor Bot v4.0.0
+# 📖 Admin Guide — Thor Bot v4.1.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
 > 📜 Full history of all versions: [CHANGELOG.md](../CHANGELOG.md) · A summary of the latest versions is in [Section 11](#11-version-history).
 
-> 📁 **v4.0.0 layout note — where things moved.** The repo is now split into two
-> independent modules: the bot code lives in **`bot/`** and the web dashboard in
-> **`dashboard/`** (each with its own `package.json` and `.env`). For day-to-day
-> admin work described in this guide, the practical changes are:
-> - bot commands: `cd bot && npm install / npm start` (was: repo root)
-> - bot `.env`: **`bot/.env`** (was: root `.env`)
-> - server data: **`bot/data/`** (was: root `data/`) — e.g. `bot/data/config/<guildId>.json`
-> - backups: **`bot/backups/`**
-> - the orchestration scripts (`./setup.sh`, `./start.sh`, `./dev.sh`, pm2) still run from the repo root and handle both modules.
+> 📁 **v4.1.0 layout note — where things live now.** The project was split into
+> **two separate repositories**: this repository (**Thor-EN**) is the **Discord
+> bot ONLY** (flat layout — the bot code sits directly at the repo root), and
+> the web dashboard moved to its own repository
+> (**[Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)**).
+> For day-to-day admin work described in this guide, the practical points are:
+> - bot commands: `npm install / npm start` (run from this repo's root)
+> - bot `.env`: **`.env`** at the repo root
+> - server data: **`data/`** — e.g. `data/config/<guildId>.json`
+> - backups: **`backups/`**
+> - the dashboard: clone and run it from the Thor-EN-Dashboard repository (its `.env` must use the SAME `DASH_API_TOKEN` as this repo's `.env`).
 >
-> Everything below works exactly as written otherwise; older `data/` and `npm` paths in the historical sections refer to the pre-v4.0.0 layout.
+> Everything below works exactly as written otherwise; older `bot/`-prefixed paths in the historical sections refer to the v4.0.0 layout, and older root paths to pre-v4.0.0.
 
 ---
 

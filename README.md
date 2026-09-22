@@ -1,181 +1,159 @@
-# ⚡ Thor-EN — Discord Bot + Web Dashboard (ONE system, TWO independent modules)
+# ⚡ Thor-EN — Discord Bot (bot-only repository)
 
-An All-in-One Discord community bot **and** its web dashboard — configured from Discord via slash commands, from the browser via the dashboard, or both (they write to **one shared data source** and can never conflict). Built for shop servers, gaming, content creators, and general communities alike.
+An All-in-One Discord **community bot** — 93 slash commands covering tickets, shop transactions, moderation, anti-spam, leveling, giveaways, and much more — for shop servers, gaming, content creators, and general communities. Everything is configured directly from Discord via slash commands, **or** from the web dashboard (the separate [Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard) repository) — both write to **one shared data source**, so they can never conflict.
 
-> **v4.0.0** — the repo is now organized as **two fully independent modules** (separation of concerns): [`bot/`](./bot/README.md) (the Discord bot) and [`dashboard/`](./dashboard/README.md) (the Next.js web app). Each has its own `package.json`, its own `.env`, and can be lifted into its own repository as-is. They are connected **only** through the bot's DASH API (HTTP + shared token) — a UI change can never break the bot's process, and vice versa.
+> **v4.1.0 — REPOSITORY SPLIT.** This repository contains the **Discord bot ONLY**: the entry point, command handlers, event listeners, the JSON persistence layer (`data/`), and the built-in DASH API server. The web dashboard was **cut & moved** into its own repository: **[Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** (Next.js + OAuth2 + `DATABASE_URL`). The two connect **only** through the DASH API (HTTP + shared token) — a UI change can never break the bot's process, and vice versa. Full history of both halves (v3.x – v4.1.0) stays in this repo's [CHANGELOG](./CHANGELOG.md).
 >
-> 93 slash commands (+ unlimited custom commands from the web) · 897 unit tests · discord.js v14 · Next.js 16 + Prisma · Node.js 20+ · single-server / public mode · **100% FREE — every feature unlocked**
+> 93 slash commands (+ unlimited custom commands made on the web) · 897 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode · **100% FREE — every feature unlocked**
 >
-> 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** · 🤖 **[Bot module docs](./bot/README.md)** · 🌐 **[Dashboard module docs](./dashboard/README.md)** · 🚀 **[Deployment guide (production)](./DEPLOY.md)** · 📜 **[Changelog](./CHANGELOG.md)**
+> 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** · 🌐 **[Web dashboard repository](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** · 🚀 **[Deployment guide (production)](./DEPLOY.md)** · 📜 **[Changelog](./CHANGELOG.md)**
 
 ---
 
-## 🏗️ Architecture (v4.0.0)
+## 🏗️ Architecture (v4.1.0 — two repositories, one system)
 
 ```
-                     Internet
-                        │
-                 domain.com :443
-                 (Caddy — automatic HTTPS)
-                        │
-                 Next.js Dashboard :3000          ← dashboard/ (own package.json)
-                 (Discord OAuth2 login,           · frontend UI + API routes
-                  3-tier RBAC: Admin/Staff/Member) · Prisma SQLite (dashboard users)
-                        │  http://127.0.0.1:8788 + DASH_API_TOKEN
-                        │  (the ONLY coupling point between the modules)
-                        ▼
-                 Thor bot (node index.js)         ← bot/ (own package.json)
-                 └─ DASH API :8788 (localhost)     · discord.js client
-                 └─ bot/data/ ← ONE data source    · 93 slash commands, 20 events
-                    (config/<guildId>.json,        · JSON persistence (22 managers)
-                     tickets, warns, levels, …)    · SAME 3-tier RBAC resolver
+ Thor-EN  (THIS repo — the bot)          Thor-EN-Dashboard  (separate repo — the web)
+ ──────────────────────────────          ─────────────────────────────────────────────
+ node index.js                           Next.js :3000 (Discord OAuth2 login)
+ ├─ discord.js client                    ├─ 3-tier RBAC: Admin/Staff/Member
+ ├─ 93 slash commands, 20 events         ├─ Prisma SQLite (dashboard users — DATABASE_URL)
+ ├─ data/  ← ONE data source             │
+ │  (config/<guildId>.json,              │
+ │   tickets, warns, levels, …)          │
+ └─ DASH API :8788 (localhost)  ◄────────┘  http://127.0.0.1:8788 + DASH_API_TOKEN
+                                           (the ONLY coupling point between the repos)
 ```
 
-- **Two ways to configure the bot** — slash commands in Discord **or** the web dashboard — both validated by the bot against the same data source.
+- **Two ways to configure the bot** — slash commands in Discord **or** the web dashboard — both validated by the bot against the same data source (the bot's `data/` folder, reached through the DASH API).
 - **Live two-way sync (v3.29.0)** — the dashboard auto-refreshes every 15 s; Discord events (member joins, channel/role deletions, guild lifecycle) surface on the web without a manual refresh.
 - **One access system (v3.30.0)** — the same 3-tier resolver (Super Admin / Moderator-Staff / Member) guards slash commands, ticket buttons, and every dashboard route.
 - **Instant hot-apply** — every config change from the web applies to the running bot without a restart.
 
 ---
 
-## 🚀 Quick start
+## ✨ Key Features
+
+- **🎫 Tickets & Transactions** — multi-category & multi-panel ticket panels (full CRUD from Discord), automatic custom categories, key-based products (**🔑 Set Key**) and non-key products (**📦 Deliver Order**), automatic invoice + transcript.
+- **🤝 Midman / Escrow** — 3-party escrow deals (_rekber_) with a Deal Board state machine, 3-step creation form, dual consent, member management, additive fee.
+- **🔑 Products & VIP** — key-driven VIP roles using the MAX EXTEND model, auto-expiry scheduled, keys always masked in the audit log.
+- **🛡️ Anti-Spam & Auto-Mod** — spam detection, mass-mention blocking, link blocking with whitelists, flexible per-word filter with whole-word matching.
+- **⚔️ Moderation** — `/timeout` `/purge` `/kick` `/ban` `/warn` with two-way hierarchy guards, warn escalation (3→1h mute, 5→24h, 7→kick), full server log, 3-tier RBAC (Super Admin / Staff / Member).
+- **💬 Auto-Responder & AFK** — keyword triggers (contains/exact match modes), per-user cooldown, AFK auto-reply & auto-clear.
+- **📊 Leveling & Stats** — XP + role rewards, live counter channels (`/serverstats`), leaderboards, boosters with auto role.
+- **🎭 And more** — verification, self-role panels, temp voice with control panel, giveaways, polls, scheduled announcements, embed builder, backups, 63-action audit log.
+
+---
+
+## 🚀 Quick start (the bot)
 
 ```bash
-# 1. Clone the repo
-git clone https://github.com/dwisetyabudi15581/Thor-EN-v2.git
-cd Thor-EN-v2
+# 1. Clone THIS repository
+git clone https://github.com/dwisetyabudi15581/Thor-EN.git
+cd Thor-EN
 
-# 2. Install BOTH modules (bot/ + dashboard/ + both .env files from examples)
+# 2. Install + prepare .env
 ./setup.sh
 
-# 3. Fill in the environment — each module has its OWN .env
-nano bot/.env          # DISCORD_TOKEN + GUILD_ID + DASH_API_TOKEN
-nano dashboard/.env    # Discord OAuth + SESSION_SECRET + the SAME DASH_API_TOKEN
+# 3. Fill in the environment
+nano .env            # DISCORD_TOKEN + GUILD_ID (+ DASH_API_TOKEN for the dashboard)
 
-# 4. Run the whole system
-./start.sh             # production: bot + dashboard in one run (Ctrl+C stops both)
-./dev.sh               # development: nodemon (bot) + next dev (dashboard)
+# 4. Run the bot
+npm start            # or: ./start.sh   (dev mode: ./dev.sh or npm run dev)
 ```
 
-> 📱 **Android phone (Termux)?** The whole system runs on a phone too — see the Termux section in [DEPLOY.md](./DEPLOY.md). For a 24/7 production server, a VPS is recommended (the main DEPLOY.md flow).
-
-Each module also runs **standalone** (useful when developing only one side):
+**Want the web dashboard too?** It is a separate repository (v4.1.0):
 
 ```bash
-cd bot && npm start            # the Discord bot only
-cd dashboard && npm start      # the web dashboard only (shows "Bot offline" without the bot)
+git clone https://github.com/dwisetyabudi15581/Thor-EN-Dashboard.git
+cd Thor-EN-Dashboard && ./setup.sh     # then fill its .env (DATABASE_URL, OAuth, ...)
 ```
+
+> The **only** value that must match between the two `.env` files is the `DASH_API_TOKEN` pair — see [How the two repositories connect](#-how-the-two-repositories-connect) below.
+
+### Prerequisites
+
+- Node.js v18+ (v20+ if you also run the dashboard)
+- A Discord bot token ([how to get one](https://discord.com/developers/applications))
+- **2 Privileged Intents** enabled in the Developer Portal (**Bot** tab):
+    - ✅ **Server Members Intent** — welcome/goodbye + auto-role
+    - ✅ **Message Content Intent** — **REQUIRED** for auto-responder, word/link anti-spam, AFK replies
+- The bot invited with: `Manage Roles`, `Manage Channels`, `Send Messages`, `Embed Links`, `View Audit Log`, `Moderate Members`, `Move Members` — and its role placed **above** every role it manages
+
+### Environment (`.env`)
+
+| Variable                          | Required | Description                                                                                                                                                                        |
+| --------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_TOKEN`                   | ✅       | The bot token from the Developer Portal                                                                                                                                            |
+| `GUILD_ID`                        | —        | One server = one line. **Set** = single-server mode (instant commands, other servers ignored). **Empty** = public mode (global commands, per-server configs at `data/config/<guildId>.json`) |
+| `DASH_API_HOST` / `DASH_API_PORT` | —        | The DASH API bind address (default `127.0.0.1:8788`) — only needed when the web dashboard is used                                                                                  |
+| `DASH_API_TOKEN`                  | —        | Shared secret for the DASH API — **must match** `DASH_API_TOKEN` in the Thor-EN-Dashboard repository's `.env`                                                                       |
+
+Full annotated template: [`.env.example`](./.env.example).
+
+---
+
+## 🔌 How the two repositories connect
+
+```
+Thor-EN-Dashboard repo (Next.js, its own package.json & DATABASE_URL)
+    │  HTTP + DASH_API_TOKEN (the ONLY coupling point)
+    ▼
+Thor-EN repo ── DASH API (src/infra/dashServer.js, 127.0.0.1:8788)
+    │             reads/writes the JSON persistence below + live gateway cache
+    └── data/  ← ONE data source (config/<guildId>.json, tickets, warns, …)
+```
+
+- **Where the data lives:** all server configuration & runtime data (tickets, warns, levels, products, …) is stored by the bot in `data/` (JSON persistence, atomic writes). The dashboard's own `DATABASE_URL` (SQLite in the Thor-EN-Dashboard repo) stores only its login users — the two can never conflict.
+- The dashboard never touches the bot's `data/` files directly — **every** read/write is validated by the bot (section whitelist, type checks, anti-prototype-pollution) and the acting user is recorded (audit).
+- Both sides of the bridge are documented in each repository's `.env.example`; the **only** values that must match are `DASH_API_*`.
+- UI changes in the dashboard repo can never break the bot's process — and vice versa: each repository deploys/restarts on its own.
 
 ---
 
 ## 📁 Project structure
 
 ```
-Thor-EN-v2/
-├── bot/                          # 🤖 MODULE 1 — Discord Bot (independent)
-│   ├── index.js                  #   entry point (event-driven)
-│   ├── src/                      #   commands · interactions · data · services · ui · infra
-│   │   └── infra/dashServer.js   #   the DASH API (the bridge to the dashboard)
-│   ├── data/                     #   runtime JSON persistence (gitignored)
-│   ├── tests/unit/               #   897 unit tests (node:test)
-│   ├── package.json              #   ONLY bot deps (discord.js, dotenv)
-│   └── .env.example              #   DISCORD_TOKEN · GUILD_ID · DASH_API_*
-├── dashboard/                    # 🌐 MODULE 2 — Web Dashboard (independent)
-│   ├── src/                      #   Next.js app (pages, API routes, components)
-│   ├── prisma/                   #   dashboard user DB schema (SQLite)
-│   ├── db/                       #   SQLite database file (gitignored)
-│   ├── package.json              #   ONLY web deps (next, react, tailwind, prisma, …)
-│   └── .env.example              #   DATABASE_URL · SESSION_SECRET · DISCORD_CLIENT_* · DASH_API_*
-├── docs/                         # shared documentation (ADMIN_GUIDE + index)
-├── setup.sh · start.sh · dev.sh  # orchestration: install & run BOTH modules
-├── ecosystem.config.cjs          # pm2: thor-bot (bot/) + thor-dash (dashboard/) 24/7
-├── .github/workflows/ci.yml      # CI: bot lint+tests (18/20/22) + dashboard build
-├── package.json                  # root orchestrator (no deps — convenience scripts)
-├── DEPLOY.md · CHANGELOG.md · LICENSE
-└── .gitignore
+Thor-EN/                      # 🤖 THE BOT REPOSITORY (v4.1.0 — flat, bot-only)
+├── index.js                  #   entry point (event-driven, slim)
+├── src/
+│   ├── bot/events/           #   Discord event handlers (20 events)
+│   ├── commands/             #   slash command handlers (per-domain)
+│   ├── interactions/         #   button/select/modal handlers (per-domain)
+│   ├── data/                 #   JSON persistence layer — the "database models" (22 managers)
+│   ├── services/             #   business logic (scheduler, role engine, …)
+│   ├── ui/                   #   embed/panel builders, help catalog
+│   └── infra/                #   dashServer (DASH API), safeWrite, permissions
+│                             #    (3-tier RBAC resolver), auditLog, configOrphans
+├── data/                     #   runtime JSON files (gitignored — server data)
+├── tests/unit/               #   897 unit tests (node:test, sandboxed)
+├── scripts/                  #   dev tools (registry validation, embed measures)
+├── docs/                     #   ADMIN_GUIDE.md + docs index
+├── setup.sh · start.sh · dev.sh · ecosystem.config.cjs (pm2)
+├── .github/workflows/ci.yml  #   lint + tests (Node 18/20/22)
+└── package.json              #   ONLY bot dependencies (discord.js, dotenv)
 ```
-
-**Ready to split into two repos** — `bot/` and `dashboard/` are self-contained (dependencies, env templates, scripts, tests). Copy either folder out and it works; the only contract to preserve is the matching `DASH_API_*` pair.
-
----
-
-## 🔐 Environment variables — who needs what
-
-| Variable                                      | Module       | Notes                                                                                                    |
-| --------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------- |
-| `DISCORD_TOKEN`                               | 🤖 bot       | The bot's credential (Developer Portal → Bot)                                                            |
-| `GUILD_ID`                                    | 🤖 bot       | One line = one server. Empty = public mode                                                               |
-| `DASH_API_HOST` / `DASH_API_PORT`             | 🤖 bot       | DASH API bind address (default `127.0.0.1:8788`)                                                         |
-| `DASH_API_URL`                                | 🌐 dashboard | Where to find the bot's DASH API (`http://127.0.0.1:8788`)                                               |
-| `DASH_API_TOKEN`                              | 🤖 **+** 🌐  | **MUST be identical in both .env files** — the bridge secret (`openssl rand -hex 32`)                    |
-| `DATABASE_URL`                                | 🌐 dashboard | SQLite for dashboard users (`file:db/custom.db`) — the bot's data is NOT here (see architecture)         |
-| `SESSION_SECRET`                              | 🌐 dashboard | Login cookie signing key (`openssl rand -hex 32`, separate value)                                        |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | 🌐 dashboard | OAuth2 credentials (same application as the bot)                                                         |
-| `PUBLIC_ORIGIN`                               | 🌐 dashboard | Production domain; the OAuth callback URL is built from it: `https://<domain>/api/auth/discord/callback` |
-| `ADMIN_DISCORD_IDS`                           | 🌐 dashboard | Discord IDs that become dashboard admins                                                                 |
-| `DEMO_MODE` / `NEXT_PUBLIC_INVITE_URL`        | 🌐 dashboard | Demo login toggle / invite link override                                                                 |
-
-Annotated templates: [`bot/.env.example`](./bot/.env.example) · [`dashboard/.env.example`](./dashboard/.env.example)
-
----
-
-## ✨ Feature highlights
-
-**Web dashboard** ([details](./dashboard/README.md)) — Discord-style dark UI with live bot status header (online/ping/guilds), server switcher, Overview with summary cards + **instant module quick-toggles**, pixel-honest welcome/embed live previews, Access Control table (3-tier RBAC), 22 configuration modules, custom command builder, embed builder, backups, moderation with history, and a member profile view — all live-synced every 15 s.
-
-**Tickets & transactions** — multi-category ticket panels with full CRUD, key-based and deliver-order flows, automatic invoices + transcripts, and **midman/escrow** 3-party deals with a state machine and dual consent.
-
-**Moderation & safety** — timeout/purge/kick/ban/warn with hierarchy guards and warn escalation, anti-spam (spam, mass-mention, links, per-word filter), full server log, 63-action audit log with masked keys.
-
-**Engagement** — leveling with role rewards, live counter channels, boosters with auto-role, auto-responder (contains/exact), AFK, self-role panels, temp voice, giveaways, polls, scheduled announcements, verification.
-
-Full feature list with per-feature details: [bot/README.md](./bot/README.md).
 
 ---
 
 ## 🧪 Development
 
-From the repo root (orchestrator scripts):
+| Script           | Description                                                 |
+| ---------------- | ----------------------------------------------------------- |
+| `npm start`      | Run the bot                                                 |
+| `npm run dev`    | Run with nodemon (auto-restart)                             |
+| `npm test`       | Run all unit tests (897, sandboxed — safe on a live server) |
+| `npm run lint`   | ESLint check                                                |
+| `npm run format` | Prettier format                                             |
 
-| Script               | Description                                             |
-| -------------------- | ------------------------------------------------------- |
-| `./setup.sh`         | Install bot + dashboard + prepare both .env files       |
-| `./start.sh`         | Production: bot + dashboard together                    |
-| `./dev.sh`           | Development: nodemon + next dev together                |
-| `npm run bot:test`   | Bot unit tests (897, sandboxed — safe on a live server) |
-| `npm run bot:lint`   | Bot ESLint check                                        |
-| `npm run dash:build` | Dashboard production build                              |
-| `npm run dash:mock`  | Dashboard + a mock DASH API (demo data, no bot needed)  |
-
-Or work inside each module like any standalone project (`cd bot && npm test` / `cd dashboard && npm run build`). CI runs bot lint + tests (Node 18/20/22) **and** the dashboard production build on every push.
+Tests use the `node:test` runner built into Node.js — no extra dependencies. CI (GitHub Actions) runs lint + tests on every push for Node 18/20/22.
 
 ---
 
-## 🛡️ Security
+## 🛡️ Security notes
 
-- **Secrets only in `.env`** — both files are gitignored; the token is never committed.
-- **The DASH API is localhost-only and off by default** — it does not start without `DASH_API_TOKEN`.
-- **Every dashboard write is validated inside the bot** — section whitelist, type checks, anti-prototype-pollution, actor recorded; privilege-escalation guards protect the access lists themselves.
-- **Atomic writes + corrupt-file quarantine** — no data loss on crash or power loss.
-- **Public-mode isolation** — per-guild config files mean one server's admin can never touch another's settings.
+- **Discord token** lives only in `.env` (gitignored).
+- **Atomic writes** — every JSON file goes through `safeWriteJSON` (tmp+rename); corrupt files are quarantined as `.corrupt-<ts>`, never silently overwritten.
+- **Public mode isolation** — per-guild configs mean server A's admin can never overwrite server B's settings.
 
----
-
-## 🆘 Troubleshooting (quick)
-
-| Symptom                         | Fix                                                                                   |
-| ------------------------------- | ------------------------------------------------------------------------------------- |
-| Bot won't come online           | Check `DISCORD_TOKEN` in `bot/.env`; the bot must be invited to the `GUILD_ID` server |
-| Slash commands missing          | Wrong `GUILD_ID` (server ID, not user ID); empty = global, ~1 h propagation — normal  |
-| "Bot offline" in the dashboard  | `DASH_API_TOKEN` mismatch between `bot/.env` and `dashboard/.env`, or the bot is down |
-| Web saves have no effect        | Same token-mismatch cause — the bot rejects unauthenticated writes                    |
-| Auto-responder / anti-spam dead | **Message Content Intent** not enabled in the Developer Portal                        |
-| Welcome message not appearing   | Run `/test-welcome tipe:welcome` — it diagnoses every link in the chain               |
-
-Full guides: [docs/ADMIN_GUIDE.md → Section 9](./docs/ADMIN_GUIDE.md) · [DEPLOY.md → troubleshooting](./DEPLOY.md).
-
----
-
-## 📝 License
-
-MIT — free to use, modify, and distribute. See [LICENSE](./LICENSE).
+Full admin guide: [docs/ADMIN_GUIDE.md](./docs/ADMIN_GUIDE.md) · Deployment: [DEPLOY.md](./DEPLOY.md) · Web dashboard: [Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard) · License: [LICENSE](./LICENSE)
