@@ -124,7 +124,7 @@ const tempVoiceManager = require('../data/tempVoiceManager');
 const serverstatsManager = require('../data/serverstatsManager');
 
 // === Infra ===
-const { isAdmin: checkIsAdmin, invalidateAdminRoleCache } = require('../infra/permissions');
+const { isAdmin: checkIsAdmin, isStaff: checkIsStaff, invalidateAdminRoleCache } = require('../infra/permissions');
 // v3.10.0 multi-guild: resolveGuildId is used by every command domain to
 // get the guild ID from the interaction before reading/writing per-guild config.
 const { resolveGuildId } = require('../infra/guild');
@@ -232,6 +232,7 @@ module.exports = {
     buildGlobalControlPanel,
     // infra
     checkIsAdmin,
+    checkIsStaff,
     invalidateAdminRoleCache,
     resolveGuildId,
     logAudit,

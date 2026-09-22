@@ -16,19 +16,26 @@
 //   DELETE tempvoice                             → DELETE /guilds/:id/tempvoice
 //
 // Security:
-//   1. Session login (currentUser) + LIVE ManageGuild/owner verification
-//      against Discord (guild-access) — users cannot write to other servers.
-//   2. The body is read, the logged-in user's `actor: { id, tag }` is
-//      injected (bot-side audit), then forwarded to the DASH API on
-//      localhost with the secret token.
+//   1. Session login (currentUser) + LIVE tier resolution (guild-access):
+//      v3.30.0 RBAC — tier 3 (owner/ManageGuild/bot admin) may write
+//      everything; tier 2 (staff) may only call the moderation whitelist;
+//      tier 1 (member) is read-only → 403.
+//   2. The body is read, the logged-in user's `actor: { id, tag, tier }` is
+//      injected (bot-side audit + defense-in-depth tier re-check), then
+//      forwarded to the DASH API on localhost with the secret token.
 //   3. The bot re-validates EVERY field (section whitelist + types) —
 //      the web is never trusted about the shape of data.
 
 import { currentUser, json, jsonError } from "@/lib/api-auth";
 import { botApi, BotOfflineError, BotApiError } from "@/lib/bot-api";
-import { checkGuildAccess } from "@/lib/guild-access";
+import { resolveGuildAccess } from "@/lib/guild-access";
 
 type Ctx = { params: Promise<{ guildId: string; action: string[] }> };
+
+// v3.30.0 RBAC: the STAFF tier's write whitelist — the daily moderation
+// actions, mirroring STAFF_COMMANDS on the Discord side (router gate).
+// Everything else (config, products, keys, panels, giveaways...) is tier 3.
+const STAFF_ACTIONS = new Set(["moderate", "purge", "warn", "warns/remove", "warns/clear"]);
 
 async function handle(req: Request, ctx: Ctx, method: "POST" | "PUT" | "DELETE") {
   const user = await currentUser(req);
@@ -39,10 +46,22 @@ async function handle(req: Request, ctx: Ctx, method: "POST" | "PUT" | "DELETE")
   const actionPath = action.join("/");
   if (!/^[a-zA-Z0-9_\/-]{1,80}$/.test(actionPath)) return jsonError("Invalid action.", 400);
 
-  const access = await checkGuildAccess(user.id, guildId);
+  // v3.30.0: three-tier resolution (OAuth manageable → bot access endpoint).
+  const access = await resolveGuildAccess(user.id, user.discordId, guildId);
   if (!access.ok) return jsonError(access.error, access.status);
 
-  // Read the JSON body (if any) + inject the actor.
+  if (access.tier === 1) {
+    return jsonError("Members have a read-only profile view — ask an admin for staff access to moderate.", 403);
+  }
+  if (access.tier === 2 && !STAFF_ACTIONS.has(actionPath)) {
+    return jsonError(
+      "Staff access covers moderation actions only (warn, kick, ban, timeout, purge). Ask an admin for the rest.",
+      403
+    );
+  }
+
+  // Read the JSON body (if any) + inject the actor (with its tier — the bot
+  // re-checks tiers it can resolve itself, defense-in-depth).
   let body: Record<string, unknown> = {};
   if (method !== "DELETE" && req.headers.get("content-type")?.includes("application/json")) {
     try {
@@ -58,7 +77,7 @@ async function handle(req: Request, ctx: Ctx, method: "POST" | "PUT" | "DELETE")
   try {
     const data = await botApi(target, {
       method,
-      body: method === "DELETE" ? undefined : { ...body, actor: { id: user.discordId, tag: user.username } },
+      body: method === "DELETE" ? undefined : { ...body, actor: { id: user.discordId, tag: user.username, tier: access.tier } },
     });
     return json(data);
   } catch (err) {

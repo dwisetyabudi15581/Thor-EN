@@ -79,7 +79,7 @@ function getCommands() {
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (admin / midman / booster)',
+            description: 'Set roles (admin / staff / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -93,6 +93,10 @@ function getCommands() {
                         // a self-role panel; new-member marker = /set-autorole
                         // + the removeOnNewRole toggle).
                         { name: 'Admin', value: 'admin' },
+                        // v3.30.0 RBAC: staff (moderator) role — members holding
+                        // it get the STAFF tier: daily moderation commands on
+                        // Discord AND the dashboard's Moderation module.
+                        { name: 'Staff (Moderator access)', value: 'staff' },
                         // v3.9.32: midman/escrow role — handles 3-party escrow deals.
                         { name: 'Midman (Escrow)', value: 'midman' },
                         // v3.9.59: booster role — granted automatically when a
@@ -574,7 +578,7 @@ function getCommands() {
         // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Remove a role from the config (admin / midman / booster)',
+            description: 'Remove a role from the config (admin / staff / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -586,6 +590,9 @@ function getCommands() {
                         // v3.23.0: 'verified' & 'unverified' DIHAPUS — konsepnya
                         // sudah dibersihkan otomatis dari config lama.
                         { name: 'Admin', value: 'admin' },
+                        // v3.30.0 RBAC: remove the staff (moderator) role —
+                        // members who held it lose the STAFF tier instantly.
+                        { name: 'Staff (Moderator access)', value: 'staff' },
                         // v3.9.32: remove the midman role from the config.
                         { name: 'Midman (Escrow)', value: 'midman' },
                         // v3.9.59: remove the booster role from config (roles
@@ -1105,10 +1112,14 @@ function getCommands() {
         // === WARN SYSTEM ===
         // P2-3 FIX: defaultMemberPermissions aligned with the isAdmin check (ManageGuild).
         // Before: ModerateMembers → moderators could see the command but got denied when running it.
+        // v3.30.0 RBAC: staff (tier 2) may warn too — the command is now VISIBLE to
+        // everyone on Discord and enforced by the bot's router (STAFF_COMMANDS),
+        // exactly like the other moderation commands below. Members without the
+        // staff role/permissions get a clear ephemeral denial.
         {
             name: 'warn',
             description: 'Warn a member (auto-action: 3=mute 1h, 5=mute 1d, 7=kick)',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            defaultMemberPermissions: null,
             options: [
                 { type: 6, name: 'user', description: 'The member to warn', required: true },
                 { type: 3, name: 'reason', description: 'Warning reason (supports \\n newline)', required: true }
@@ -1136,15 +1147,20 @@ function getCommands() {
             options: [{ type: 6, name: 'user', description: 'The user whose warnings to clear', required: true }]
         },
 
-        // === MODERATION (v3.9.43) ===
-        // Router: usable by admins OR members with the matching Discord
-        // permission (ModerateMembers/KickMembers/BanMembers/ManageMessages) —
-        // see MODERATION_COMMANDS in src/commands/index.js. Role hierarchy
-        // guards still run in the handler (role must be higher than the target's).
+        // === MODERATION (v3.9.43, v3.30.0 RBAC) ===
+        // Router: usable by admins OR staff (access.staffRoleIds/staffUserIds)
+        // OR members with the matching Discord permission
+        // (ModerateMembers/KickMembers/BanMembers/ManageMessages) — see
+        // MODERATION_COMMANDS / STAFF_COMMANDS in src/commands/index.js.
+        // v3.30.0: defaultMemberPermissions is now null (visible to all) —
+        // staff granted via the bot's own role system would be BLOCKED by
+        // Discord before the command ever reached the router otherwise.
+        // Enforcement lives 100% in the bot router; role hierarchy guards
+        // still run in the handler (role must be higher than the target's).
         {
             name: 'timeout',
             description: 'Temporarily mute a member (max 28 days) — recorded in their history',
-            defaultMemberPermissions: PermissionFlagsBits.ModerateMembers,
+            defaultMemberPermissions: null,
             options: [
                 { type: 6, name: 'user', description: 'The member to mute', required: true },
                 {
@@ -1161,7 +1177,7 @@ function getCommands() {
         {
             name: 'untimeout',
             description: 'Lift a member\'s timeout (mute) early',
-            defaultMemberPermissions: PermissionFlagsBits.ModerateMembers,
+            defaultMemberPermissions: null,
             options: [
                 { type: 6, name: 'user', description: 'The member whose timeout is lifted', required: true },
                 { type: 3, name: 'reason', description: 'Reason for lifting it', required: false }
@@ -1170,7 +1186,7 @@ function getCommands() {
         {
             name: 'purge',
             description: 'Bulk delete messages in a channel (1-100, only <14 days old)',
-            defaultMemberPermissions: PermissionFlagsBits.ManageMessages,
+            defaultMemberPermissions: null,
             options: [
                 {
                     type: 4,
@@ -1186,7 +1202,7 @@ function getCommands() {
         {
             name: 'kick',
             description: 'Remove a member from the server (recorded in their history)',
-            defaultMemberPermissions: PermissionFlagsBits.KickMembers,
+            defaultMemberPermissions: null,
             options: [
                 { type: 6, name: 'user', description: 'The member to kick', required: true },
                 { type: 3, name: 'reason', description: 'Reason (sent to the member via DM)', required: false }
@@ -1195,7 +1211,7 @@ function getCommands() {
         {
             name: 'ban',
             description: 'Ban a member + optionally delete 0-7 days of messages (recorded)',
-            defaultMemberPermissions: PermissionFlagsBits.BanMembers,
+            defaultMemberPermissions: null,
             options: [
                 { type: 6, name: 'user', description: 'The member to ban', required: true },
                 {
@@ -1212,7 +1228,7 @@ function getCommands() {
         {
             name: 'unban',
             description: 'Revoke a ban by User ID (user need not be in the server)',
-            defaultMemberPermissions: PermissionFlagsBits.BanMembers,
+            defaultMemberPermissions: null,
             options: [
                 { type: 3, name: 'user_id', description: 'User ID, 17-20 digits (Developer Mode → Copy User ID)', required: true },
                 { type: 3, name: 'reason', description: 'Reason for the unban', required: false }

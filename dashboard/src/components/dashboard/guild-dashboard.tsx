@@ -22,6 +22,7 @@ import {
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
   ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon, Send,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
@@ -46,6 +47,10 @@ import {
 } from "./modules/module-tools";
 // v3.25.0: sidebar navigation — one menu shared by the desktop sidebar & the mobile drawer.
 import { SideNav } from "./side-nav";
+// v3.30.0 RBAC: the Access Control module (admin tier only) + the MEMBER
+// tier's personal profile view.
+import { AccessControlModule } from "./modules/module-access";
+import { MemberView } from "./member-view";
 
 type ToastState = { msg: string; tone: "ok" | "err"; id: number } | null;
 
@@ -59,13 +64,17 @@ type ModuleId =
   // v3.24.0
   | "stats" | "afk"
   // v3.24.4
-  | "send-message";
+  | "send-message"
+  // v3.30.0 RBAC
+  | "access";
 
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
   // v3.21.0: mirrors the 🚀 Quick Start category (/help) — setup forms right from the web.
   { id: "quickstart", label: "Quick Start", icon: Rocket, group: "Server" },
   { id: "general", label: "General", icon: Settings2, group: "Server" },
+  // v3.30.0 RBAC: manage the three access tiers (admin/staff roles & users).
+  { id: "access", label: "Access Control", icon: ShieldCheck, group: "Server" },
   { id: "commands", label: "Command Manager", icon: Terminal, group: "Server" },
   { id: "backup", label: "Backup", icon: Archive, group: "Server" },
   // v3.24.0: Statistics — leaderboards + boosters (parity with /stats /leaderboard /boosters).
@@ -95,6 +104,8 @@ const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
   overview: { title: "Overview", desc: "A status snapshot of every module on this server." },
   quickstart: { title: "Quick Start", desc: "Set up your server from scratch via a 6-step checklist — roles (pick or paste the ID), products, ticket & verification panels, log channel. Every form is applied by the bot to the server instantly, exactly like the 🚀 category in /help." },
   general: { title: "General Settings", desc: "Key roles, system channels, automatic messages, and embed colors." },
+  // v3.30.0 RBAC
+  access: { title: "Access Control", desc: "The three access tiers — Super Admin, Moderator/Staff, Member — shared by Discord commands and this dashboard. Manage admin & staff roles and per-user access; grants apply instantly (no restart)." },
   tickets: { title: "Tickets & Products", desc: "Ticket panel, categories, and the product/price list." },
   automod: { title: "AutoMod", desc: "Anti-spam, link & word blocking, mention limits." },
   leveling: { title: "Leveling", desc: "XP, level-up announcements, and role rewards." },
@@ -141,6 +152,12 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // v3.21.0: Quick Start auto-landing — once per visit only.
   const landingChecked = useRef(false);
+  // v3.30.0 RBAC: the caller's tier from the bot payload (3 admin / 2 staff).
+  // Absent (an older bot) → treated as 3 (the pre-RBAC behavior).
+  const [tier, setTier] = useState<number>(3);
+  // v3.30.0 RBAC: tier 1 (member) → swap the whole shell for the personal
+  // MemberView (it loads its own data + handles promotion/demotion).
+  const [memberMode, setMemberMode] = useState(false);
 
   // Draft + dirty tracking
   const [draft, setDraft] = useState<DashboardPayload | null>(null);
@@ -221,6 +238,18 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
         return;
       }
       const data = (await res.json()) as DashboardPayload & { meta: GuildMeta };
+    // v3.30.0 RBAC: the member tier gets the personal profile instead of the
+    // server dashboard — MemberView takes over the whole screen (it also
+    // handles the reverse: a promoted member is routed back here).
+    const dataTier = (data as { tier?: number }).tier ?? 3;
+    if (dataTier === 1) {
+      if (seq !== loadSeqRef.current) return;
+      setTier(1);
+      setMemberMode(true);
+      setLoading(false);
+      return;
+    }
+    setTier(dataTier);
     // v3.23.1: defensive normalization — older bots send `automod: null` for
     // guilds that never configured AutoMod, which crashed the Overview &
     // AutoMod pages in the browser. This fallback guarantees the payload is
@@ -295,7 +324,9 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     // admin role & no products) are taken straight to the setup checklist.
     // Once per visit — later refreshes/saves never override the user's
     // chosen module.
-    if (!landingChecked.current) {
+    // v3.30.0: admins only — the staff payload subset has no config.roles,
+    // and staff land on the Moderation module anyway.
+    if (!landingChecked.current && dataTier === 3) {
       landingChecked.current = true;
       if (!data.config.roles?.admin && (data.config.products?.length ?? 0) === 0) {
         setModule("quickstart");
@@ -539,6 +570,17 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     [draft, meta, call, refresh, showToast]
   );
 
+  // v3.30.0 RBAC: staff see ONLY the moderation module (their payload subset
+  // has no data for anything else — the module list must match).
+  // Derived state (not an effect): the EFFECTIVE module falls back to
+  // Moderation whenever the tier is staff, even if `module` still holds a
+  // pre-demotion selection.
+  const visibleModules = useMemo(
+    () => (tier === 2 ? MODULES.filter((m) => m.id === "moderation") : MODULES),
+    [tier]
+  );
+  const effectiveModule: ModuleId = tier === 2 ? "moderation" : module;
+
   // ---- Render ----
   if (loading) {
     return (
@@ -547,6 +589,11 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
         <p className="text-sm text-zinc-400">Loading server data…</p>
       </div>
     );
+  }
+
+  // v3.30.0 RBAC: the member tier — personal, read-only profile view.
+  if (memberMode) {
+    return <MemberView guildId={guildId} />;
   }
 
   if (loadError || !payload || !draft || !meta) {
@@ -568,16 +615,16 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     );
   }
 
-  const currentDesc = MODULE_DESC[module];
-  const currentModule = MODULES.find((m) => m.id === module);
+  const currentDesc = MODULE_DESC[effectiveModule];
+  const currentModule = visibleModules.find((m) => m.id === effectiveModule);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-zinc-950 text-zinc-100">
       {/* Desktop sidebar — permanent, full height (v3.25.0) */}
       <aside className="hidden w-64 shrink-0 border-r border-zinc-900/80 lg:block">
         <SideNav
-          modules={MODULES}
-          current={module}
+          modules={visibleModules}
+          current={effectiveModule}
           onSelect={(id) => setModule(id as ModuleId)}
           guildId={guildId}
           meta={meta}
@@ -612,7 +659,13 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           )}
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-sm font-semibold text-zinc-100">{meta.name}</p>
-            <p className="truncate text-[10px] text-zinc-500">{currentModule?.label ?? ""}</p>
+            <p className="truncate text-[10px] text-zinc-500">
+              {tier === 2 ? (
+                <span className="text-sky-300">Staff · moderation access</span>
+              ) : (
+                currentModule?.label ?? ""
+              )}
+            </p>
           </div>
           <Button
             variant="ghost"
@@ -629,6 +682,19 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
         {/* Content — scrolls independently of the sidebar */}
         <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto w-full max-w-6xl px-4 pb-32 pt-5 md:px-8 md:pt-7">
+            {/* v3.30.0 RBAC: the staff banner — what this tier can do here. */}
+            {tier === 2 ? (
+              <div className="mb-5 flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+                <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-medium text-sky-200">Staff access — moderation tools.</p>
+                  <p className="mt-1 text-xs leading-relaxed text-sky-200/70">
+                    You can warn, kick, ban, timeout and purge from here — exactly like your Discord staff commands,
+                    with the same guards and the same history. Ask a server admin for access to the other modules.
+                  </p>
+                </div>
+              </div>
+            ) : null}
             <div className="mb-5">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400/80">
                 {currentModule?.group}
@@ -637,10 +703,12 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
               <p className="mt-1 text-sm leading-relaxed text-zinc-400">{currentDesc.desc}</p>
             </div>
 
-            {module === "overview" ? <ModuleOverview draft={draft} meta={meta} /> : null}
+            {module === "overview" && tier === 3 ? <ModuleOverview draft={draft} meta={meta} /> : null}
             {/* v3.21.0: Quick Start — all actions are immediate (call → refresh). */}
             {module === "quickstart" && actionProps ? <QuickStartModule {...actionProps} goTo={(m) => setModule(m as ModuleId)} /> : null}
             {module === "general" && formProps ? <GeneralModule {...formProps} /> : null}
+            {/* v3.30.0 RBAC: the three-tier access management (admin only). */}
+            {module === "access" && formProps ? <AccessControlModule {...formProps} /> : null}
             {module === "tickets" && formProps ? <TicketsModule {...formProps} /> : null}
             {module === "automod" && formProps ? <AutoModModule {...formProps} /> : null}
             {module === "leveling" && formProps ? <LevelingModule {...formProps} /> : null}
@@ -691,8 +759,8 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           }`}
         >
           <SideNav
-            modules={MODULES}
-            current={module}
+            modules={visibleModules}
+            current={effectiveModule}
             onSelect={(id) => {
               setModule(id as ModuleId);
               setNavOpen(false);

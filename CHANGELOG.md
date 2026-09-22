@@ -4,6 +4,46 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.30.0] — 2026-09-23
+
+### Added — 🛡️ TAHAP 2: RBAC — SINKRON ADMIN & ACCESS CONTROL (BOT ⇄ DATABASE ⇄ DASHBOARD)
+
+One access system for the whole product, as ONE unified system (per the owner's directive): the SAME tier resolver answers "what can this user do?" on Discord slash commands, on ticket buttons, AND on every dashboard request — one source of truth (the guild's config in the bot's database), resolved against the LIVE gateway member state, so the web and Discord can never disagree.
+
+**The three tiers (config.access + live Discord state):**
+
+- **3 · Super Admin / Owner** — full access everywhere: every command, every dashboard module. Granted automatically by Discord Administrator / Manage Server / ownership, plus the configurable lists below.
+- **2 · Moderator / Staff** — daily moderation, on Discord AND the web: `/timeout` `/untimeout` `/kick` `/ban` `/unban` `/purge` `/warn`, closing tickets, and the dashboard's Moderation module (warn/kick/ban/timeout/purge with the same guards and history as Discord). Granted by `access.staffRoleIds`, `access.staffUserIds`, or any Discord moderation bit (ModerateMembers/BanMembers/KickMembers/ManageMessages — the pre-RBAC behavior, kept for compatibility).
+- **1 · Member** — public commands only; on the dashboard they see their OWN profile (read-only): activity stats, level + rank, warnings, moderation history, AFK status — the same data as `/my-stats`, `/rank`, `/warn-list`, from the same database.
+
+**Bot side (src/infra/permissions.js — the resolver, shared by everything):**
+
+- 🔴 **Staff without Discord permissions can finally moderate.** The moderation commands were locked behind Discord permission bits — a staff role granted by the bot itself was useless. `defaultMemberPermissions` for timeout/untimeout/purge/kick/ban/unban/warn is now `null` (visible to all, the Dyno/MEE6 pattern) with enforcement moved 100% into the bot's router (`STAFF_COMMANDS`): admin → everything, staff → the moderation pack + `warn`, member → public commands, with a clear ephemeral denial. `/warn` joins the moderation pack (it was Discord-admin-only before — the most daily of daily moderation actions). The router deny message now explains the tiers.
+- 🟠 **Ticket guards follow the tiers** — closing tickets (the button + both confirmation flows) is now STAFF work (tier 2+); the money-side actions (set-key, deliver order) stay admin-only on purpose.
+- 🟢 `/set-role` + `/remove-role` grow a `staff` choice (`/set-role staff @role`) — the quick Discord path that writes `access.staffRoleIds` (the dashboard manages the full multi-role list). The reply explains what staff can do.
+- 🟢 **Hot grants, zero restart** — the access config is cached 30 s per guild, and every write path (`setField`, the DASH API config route, backup restore) invalidates it immediately: a role granted from the dashboard is live on the very next command/access check. Member roles are always read live from the gateway cache, so Discord-side role changes reflect within one cache refresh.
+
+**DASH API (dashServer.js) — the web's authoritative tier answers:**
+
+- 🟠 `GET /guilds/:id/access/:userId` — the tier + the sources that granted it, resolved from the live member state (cache → one best-effort fetch). Tier 0 = "not a member" — never a grant.
+- 🟠 `GET /guilds/:id/dashboard?actor=<discordId>` — **tier-filtered payload**: staff get a strict moderation SUBSET (warns, modlogs, server snapshot, read-only access lists) — config, products, keys, panels, giveaways simply don't ship to the browser (least privilege: not hidden, ABSENT); members get 403 + are routed to their profile endpoint; unknown actors keep the full payload (backward compatibility for old proxies and the sandbox mock). The bot re-resolves the actor's tier itself — the proxy's claim is never blindly trusted.
+- 🟠 `GET /guilds/:id/member/:userId` — the member tier's own profile (stats/level/rank/warns/modlogs/AFK/boost/join dates). Read-only by construction — there is no member write route.
+- 🟠 `GET /users/:userId/guilds` — every bot guild where the user is a member, with their tier: feeds the dashboard's server picker so staff/member servers appear alongside the manageable ones.
+- 🔴 **Privilege escalation guard** — `access.*` config changes require a TIER-3 actor, re-resolved live by the bot: a staff member can never grant themselves admin through the API (defense in depth on top of the proxy gate; unknown actors keep the old behavior for the sandbox mock).
+- 🟢 `config.access` validator (adminRoleIds/staffRoleIds/adminUserIds/staffUserIds — arrays of snowflakes, ≤ 20, no duplicates) with cache invalidation on write.
+
+**Dashboard (the web half of the contract):**
+
+- 🟠 **`resolveGuildAccess()`** (guild-access.ts) — every `/api/guilds/**` route now resolves a TIER instead of a boolean: OAuth manageable (owner/ManageGuild) → tier 3; otherwise the bot's access endpoint decides (staff/member). "no-token" sessions no longer hard-fail — the bot can still resolve staff/member tiers by membership.
+- 🟠 **The write proxy enforces the tiers** — tier 3 writes everything; tier 2 only the moderation whitelist (moderate/purge/warn/warns-remove/warns-clear); tier 1 is read-only (403 with a clear message). The actor's tier rides along in the body (`actor: { id, tag, tier }`) for the bot's defense-in-depth re-check.
+- 🟠 **Server picker shows ALL your servers** — the OAuth-manageable list is now a UNION with the bot's member-guild list (`/users/:id/guilds`), each card carrying an Admin/Staff/Member badge. Bot offline → exactly the old OAuth-only list.
+- 🟢 **New Access Control module** (Server group, admin only) — manage admin/staff roles via pickers (multi-role chip lists) and per-user grants by ID, with the three-tier legend explaining exactly how access resolves (incl. the legacy `/set-role admin` role, shown read-only). Saves through the standard SaveBar → PUT config `access.*` → the bot invalidates its cache → **grants apply instantly, no restart, no re-login**.
+- 🟢 **Staff dashboard** — staff land on a Moderation-only experience: staff banner, single-module sidebar (derived state — a mid-session demotion falls back automatically), the 15 s live-sync poll keeps their moderation data fresh.
+- 🟢 **MemberView** — the member tier's personal profile page (stats cards, level progress + rank, warnings, moderation history, AFK/boost/join status), read-only by construction. A promoted member is routed back into the full dashboard on their next load; a demoted admin/staff falls into it automatically.
+- 🟢 The sandbox mock (mock-dash-api.mjs) implements the new endpoints: demo-admin sees everything, **demo-member gets the real MemberView** — the tier system is now explorable in demo mode.
+
+**Tests:** 40 new (total 891) — tests/unit/accessTiersV330.test.js (16: the full resolution ladder, admin-beats-staff, defensive garbage config, no-guild/DM safety, HOT invalidation via setField) and tests/unit/dashAccessV330.test.js (24: access/member/users-guilds endpoints, staff subset vs admin full payload, member 403, unknown-actor compatibility, validator rejections, privilege-escalation guard both ways, hot grant visible on the next call, token auth still required).
+
 ## [3.29.0] — 2026-09-23
 
 ### Added — 🔄 TAHAP 1: LIVE TWO-WAY SYNC (BOT ⇄ DATABASE ⇄ DASHBOARD)

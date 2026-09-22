@@ -474,7 +474,10 @@ function setField(guildId, dotPath, value) {
 
     // v3.9.2: invalidate the permissions cache when the admin role changes,
     // so the change takes effect immediately without waiting for the 30-second TTL.
-    if (keys[0] === 'roles' && keys[1] === 'admin') {
+    // v3.30.0: also invalidate on access.* changes (RBAC staff/admin lists) —
+    // tier grants from /set-role staff or the dashboard Access Control module
+    // apply INSTANTLY (hot reload, no bot restart).
+    if ((keys[0] === 'roles' && keys[1] === 'admin') || keys[0] === 'access') {
         try {
             const { invalidateAdminRoleCache } = require('../infra/permissions');
             invalidateAdminRoleCache();

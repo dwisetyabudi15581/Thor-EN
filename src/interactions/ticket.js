@@ -38,7 +38,7 @@ const {
     TextInputBuilder,
     TextInputStyle
 } = require('discord.js');
-const { getConfig, resolveGuildId, safeEditReply, logAudit, checkIsAdmin } = require('../commands/_shared');
+const { getConfig, resolveGuildId, safeEditReply, logAudit, checkIsAdmin, checkIsStaff } = require('../commands/_shared');
 const {
     createTicket,
     closeTicket,
@@ -327,8 +327,10 @@ module.exports = async function (interaction) {
     // === TICKET: CLOSE TICKET (ADMIN) ===
     // ====================================================
     if (interaction.isButton() && interaction.customId === 'ticket_close') {
-        const isAdmin = checkIsAdmin(interaction.member);
-        if (!isAdmin) {
+        // v3.30.0 RBAC: closing tickets is daily STAFF work (tier 2+). The
+        // money-side actions (set-key / deliver order) stay admin-only.
+        const mayClose = checkIsStaff(interaction.member);
+        if (!mayClose) {
             return interaction.reply({
                 content: '❌ Only Admin/Staff can close this ticket!',
                 flags: MessageFlags.Ephemeral
@@ -532,7 +534,8 @@ module.exports = async function (interaction) {
         // check (safe only because the row was ephemeral — not because of a server-side
         // check). closeTicket deletes whatever channel it is given, so a forged/legacy
         // customId could delete a non-ticket channel.
-        if (!checkIsAdmin(interaction.member)) {
+        // v3.30.0 RBAC: staff (tier 2+) may close tickets too.
+        if (!checkIsStaff(interaction.member)) {
             return interaction.reply({
                 content: '❌ Only Admin/Staff can close tickets!',
                 flags: MessageFlags.Ephemeral
@@ -632,7 +635,8 @@ module.exports = async function (interaction) {
         //     This button was previously miswired to `ticket_close_abort` (a
         //     user-reported bug: "close without completing" only cancelled the closing).
         // v3.9.24 FIX: re-check admin + validate the ticket (same as ticket_close_success).
-        if (!checkIsAdmin(interaction.member)) {
+        // v3.30.0 RBAC: staff (tier 2+) may close tickets too.
+        if (!checkIsStaff(interaction.member)) {
             return interaction.reply({
                 content: '❌ Only Admin/Staff can close tickets!',
                 flags: MessageFlags.Ephemeral

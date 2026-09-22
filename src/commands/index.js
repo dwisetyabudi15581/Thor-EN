@@ -42,7 +42,7 @@
  */
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
-const { isAdmin: checkIsAdmin } = require('../infra/permissions');
+const { isAdmin: checkIsAdmin, isStaff: checkIsStaff } = require('../infra/permissions');
 
 // === Domain handlers ===
 // Each file exports a single async function (interaction) → void.
@@ -300,16 +300,28 @@ const MODERATION_COMMANDS = {
     unban: PermissionFlagsBits.BanMembers
 };
 
+// v3.30.0 RBAC: the STAFF tier's daily-moderation command set. Staff =
+// config.access.staffRoleIds/staffUserIds OR any Discord mod permission —
+// resolved by isStaff() from the LIVE gateway member state. 'warn' joins the
+// moderation pack here (it was Discord-admin-only before), because warning
+// is the most daily of daily moderation actions. Everything else stays
+// admin-only (config, products, keys, panels...).
+const STAFF_COMMANDS = new Set([...Object.keys(MODERATION_COMMANDS), 'warn']);
+
 /**
  * Main router — called from index.js on InteractionCreate (chatInputCommand).
  */
 async function routeCommand(interaction) {
     if (!interaction.isChatInputCommand()) return;
 
-    // === PERMISSION CHECK ===
+    // === PERMISSION CHECK (v3.30.0: three tiers) ===
+    //   admin  (tier 3)          → every command
+    //   staff  (tier 2)          → the daily moderation pack (STAFF_COMMANDS)
+    //   member (tier 1)          → PUBLIC_COMMANDS only
     const modPerm = MODERATION_COMMANDS[interaction.commandName];
     const allowedModerator =
-        modPerm && interaction.member?.permissions?.has(modPerm);
+        (modPerm && interaction.member?.permissions?.has(modPerm)) ||
+        (STAFF_COMMANDS.has(interaction.commandName) && checkIsStaff(interaction.member));
     // v3.20.0: custom commands are PUBLIC by default (server info made by
     // an admin for everyone to use — exactly custom commands model).
     // Cheap lookup: read-through cache in customCommandManager.
@@ -324,7 +336,7 @@ async function routeCommand(interaction) {
     ) {
         return interaction.reply({
             content:
-                '🚫 **Access Denied.**\n\nSlash commands can only be used by **Admin/Staff**.\n\nIf you believe this is a mistake, contact a server admin.',
+                '🚫 **Access Denied.**\n\nThis command needs **Admin** or **Staff** access.\n\nStaff can use daily moderation commands (timeout, kick, ban, unban, purge, warn). If you believe this is a mistake, contact a server admin.',
             flags: MessageFlags.Ephemeral
         });
     }

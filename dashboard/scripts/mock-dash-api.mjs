@@ -528,6 +528,25 @@ const server = http.createServer(async (req, res) => {
     return send(200, { ok: true, adopted: list.length });
   }
 
+  // --- v3.30.0 RBAC stubs (demo sandbox) ---
+  // The real bot resolves tiers from config.access + live member state; the
+  // mock keeps it simple: "demo-member" is a MEMBER (tier 1 — the personal
+  // profile view), everyone else is an admin (tier 3, the full dashboard).
+  if (req.method === "GET" && parts[0] === "users" && parts.length === 3 && parts[2] === "guilds") {
+    const tier = parts[1] === "demo-member" ? 1 : 3;
+    return send(200, {
+      guilds: [...guilds.values()].map(({ meta }) => ({
+        id: meta.id,
+        name: meta.name,
+        icon: meta.icon,
+        memberCount: meta.memberCount,
+        ownerId: null,
+        tier,
+        tierLabel: tier === 1 ? "member" : "admin",
+      })),
+    });
+  }
+
   if (parts[0] !== "guilds") return send(404, { error: "Endpoint not found" });
 
   if (req.method === "GET" && parts.length === 1) {
@@ -541,12 +560,47 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && rest[0] === "meta") {
     return entry ? send(200, entry.meta) : send(404, { error: "The bot is not in this server" });
   }
+
+  // v3.30.0 RBAC stubs — access tier + the member profile.
+  // The real bot resolves tiers from config.access + live member state; the
+  // mock keeps it simple: "demo-member" is a MEMBER (tier 1 — the personal
+  // profile view), everyone else is an admin (tier 3, the full dashboard).
+  if (req.method === "GET" && rest[0] === "access" && rest.length === 2) {
+    if (!entry) return send(404, { error: "The bot is not in this server" });
+    if (rest[1] === "demo-member") return send(200, { tier: 1, label: "member", sources: ["mock:demo-member"] });
+    return send(200, { tier: 3, label: "admin", sources: ["mock:demo-admin"] });
+  }
+  if (req.method === "GET" && rest[0] === "member" && rest.length === 2) {
+    if (!entry) return send(404, { error: "The bot is not in this server" });
+    const userId = rest[1];
+    const now = Date.now();
+    return send(200, {
+      tier: 1,
+      userId,
+      tag: userId === "demo-member" ? "Demo Member" : `MockUser#${userId.slice(0, 4)}`,
+      joinedAt: now - 1000 * 60 * 60 * 24 * 90,
+      boostingSince: userId === "demo-member" ? now - 1000 * 60 * 60 * 24 * 12 : null,
+      stats: { messages: 1284, vipPurchases: 2, totalSpent: 150000, giveawaysWon: 1 },
+      level: { level: 5, xp: 320, totalXp: 2750, xpToNext: 500, rank: 12 },
+      warns: [
+        { id: "w_mock_1", reason: "Spamming #general", warnedBy: "demo-admin", warnedByTag: "Demo Admin", guildId, userId, createdAt: now - 1000 * 60 * 60 * 24 * 3, actionTaken: null },
+      ],
+      warnCount: 1,
+      modlogs: [
+        { id: "m_mock_1", type: "timeout", reason: "Spamming #general (auto)", durationMs: 3600000, moderatorId: "demo-admin", moderatorTag: "Demo Admin", guildId, userId, createdAt: now - 1000 * 60 * 60 * 24 * 3 },
+      ],
+      afk: null,
+    });
+  }
   if (req.method === "GET" && rest[0] === "dashboard") {
     if (!entry) return send(404, { error: "The bot is not in this server" });
+    // The proxy already routes tier-1 users to /member; staff filtering is
+    // the real bot's job — the mock always ships the full demo payload.
     // v3.20.0: custom commands join the Command Manager list (domain
     // 'custom') — same as the real bot's payload (dashServer.js).
     const payload = {
       ...entry.data,
+      tier: 3,
       commands: {
         ...entry.data.commands,
         list: [

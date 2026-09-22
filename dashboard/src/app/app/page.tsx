@@ -29,6 +29,8 @@ type GuildItem = {
   icon: string | null;
   owner: boolean;
   botIn: boolean;
+  // v3.30.0 RBAC: the user's tier in this server (3 admin / 2 staff / 1 member).
+  tier?: number;
 };
 
 type GuildsResponse = {
@@ -200,7 +202,8 @@ export default function ServerPickerPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-50">Your Servers</h1>
             <p className="mt-1.5 text-sm text-zinc-400">
-              Only servers where you have the <span className="text-zinc-300">Manage Server</span> permission are shown here.
+              Servers you manage, where you are <span className="text-zinc-300">staff</span>, or where you are a member
+              — your access level is shown on each card.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -303,6 +306,14 @@ export default function ServerPickerPage() {
                       Bot active
                     </p>
                   </div>
+                  {/* v3.30.0 RBAC: the access tier badge */}
+                  {g.tier === 2 ? (
+                    <Badge className="shrink-0 bg-sky-500/15 text-sky-300 border-sky-500/30 text-[10px]">Staff</Badge>
+                  ) : g.tier === 1 ? (
+                    <Badge className="shrink-0 bg-zinc-800/80 text-zinc-400 border-zinc-700 text-[10px]">Member</Badge>
+                  ) : (
+                    <Badge className="shrink-0 bg-amber-400/15 text-amber-300 border-amber-400/30 text-[10px]">Admin</Badge>
+                  )}
                   <Settings2 className="h-4 w-4 shrink-0 text-zinc-600 transition-colors group-hover:text-amber-400" aria-hidden="true" />
                 </button>
               ))}

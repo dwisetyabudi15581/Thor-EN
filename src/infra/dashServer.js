@@ -25,6 +25,14 @@
  *   GET    /guilds                              → list of guilds the bot is in
  *   GET    /guilds/:id/meta                     → channels + roles (for web pickers)
  *   GET    /guilds/:id/dashboard                → ALL module data in one pull
+ *   GET    /guilds/:id/dashboard?actor=<userId> → tier-filtered payload (v3.30.0:
+ *                                             staff get the moderation subset,
+ *                                             resolved from the LIVE member state)
+ *   GET    /guilds/:id/access/:userId           → the user's RBAC tier + sources (v3.30.0)
+ *   GET    /guilds/:id/member/:userId           → a member's own profile view (v3.30.0:
+ *                                             stats/level/rank/warns/modlogs — the MEMBER tier's data)
+ *   GET    /users/:userId/guilds                → guilds where the user is a member + tier (v3.30.0:
+ *                                             feeds the dashboard sidebar for staff/member servers)
  *   PUT    /guilds/:id/config                   → { updates: { dotPath: value } }
  *   PUT    /guilds/:id/automod                  → merge a partial automod config
  *   POST   /guilds/:id/responders               → add an auto-responder
@@ -112,6 +120,10 @@ const {
 } = require('./moderationGuards');
 const { buildBoostAddEmbed, buildBoostRemoveEmbed } = require('../bot/boostHandler');
 const { logAudit } = require('./auditLog');
+// v3.30.0 RBAC: the shared three-tier resolver (config.access lists + live
+// Discord permissions) — the SAME source of truth the slash-command router
+// and the ticket guards use, so web and Discord can never diverge.
+const { resolveAccessTier, TIER, invalidateAdminRoleCache } = require('./permissions');
 // v3.26.0: full parity for giveaway end/reroll + poll close from the web —
 // the SAME locks + announce helpers the slash commands use, so a web end
 // and a Discord end can never double-pick winners.
@@ -172,6 +184,24 @@ const SECTION_VALIDATORS = {
         if (!/^[a-z][a-zA-Z0-9_-]{0,39}$/.test(key)) return { ok: false, error: `Invalid role key name: ${key}` };
         if (!isSnowflakeOrNull(value)) return { ok: false, error: `roles.${key} must be a Discord ID or null` };
         return { ok: true, value: value || null };
+    },
+    // v3.30.0 RBAC: config.access — the role/user ID lists behind the three
+    // tiers (managed by the dashboard Access Control module and /set-role staff).
+    // Each list is set as a whole array (dotPath "access.<list>"). Admin-tier
+    // escalation protection: only tier-3 actors may change access.* (checked
+    // in the PUT config route — a staff member can never grant themselves admin).
+    access: (key, value) => {
+        const KNOWN = ['adminRoleIds', 'staffRoleIds', 'adminUserIds', 'staffUserIds'];
+        if (!KNOWN.includes(key)) return { ok: false, error: `access.${key} is unknown (expected one of: ${KNOWN.join(', ')})` };
+        if (!Array.isArray(value)) return { ok: false, error: `access.${key} must be an array of Discord IDs` };
+        if (value.length > 20) return { ok: false, error: `access.${key} accepts at most 20 entries` };
+        const seen = new Set();
+        for (const id of value) {
+            if (typeof id !== 'string' || !SNOWFLAKE_RE.test(id)) return { ok: false, error: `access.${key} must contain Discord IDs (found: ${JSON.stringify(id)})` };
+            if (seen.has(id)) return { ok: false, error: `access.${key} contains a duplicate: ${id}` };
+            seen.add(id);
+        }
+        return { ok: true, value: [...value] };
     },
     channels: (key, value) => {
         if (!/^[a-z][a-zA-Z0-9_-]{0,39}$/.test(key)) return { ok: false, error: `Invalid channel key name: ${key}` };
@@ -720,6 +750,105 @@ function createDashHandler({ client, token, log = () => {} }) {
         };
     }
 
+    // ============================================================
+    // === v3.30.0 RBAC helpers ====================================
+    // ============================================================
+
+    /**
+     * Resolve a user's RBAC tier inside a guild from the LIVE gateway state
+     * (member cache first, one best-effort fetch if uncached). Returns
+     * { tier: 0 } when the user is not a member of that guild (or the guild
+     * is unknown) — tier 0 means "unknown / not a member", NEVER "member".
+     */
+    async function resolveMemberTier(guild, userId) {
+        if (!guild || !userId) return { tier: 0, label: 'unknown', sources: [] };
+        let member = guild.members?.cache?.get?.(userId) || null;
+        if (!member && typeof guild.members?.fetch === 'function') {
+            try {
+                member = await guild.members.fetch(userId);
+            } catch (_) {
+                member = null; // not a member (or Discord hiccup) — treated as unknown
+            }
+        }
+        if (!member) return { tier: 0, label: 'unknown', sources: [] };
+        const { tier, label, sources } = resolveAccessTier(member);
+        return {
+            tier,
+            label,
+            sources,
+            tag: member.user?.tag ?? null,
+            joinedAt: member.joinedTimestamp ?? null,
+            boostingSince: member.premiumSinceTimestamp ?? null
+        };
+    }
+
+    /**
+     * The STAFF (tier 2) dashboard payload — a strict SUBSET of the full
+     * payload: only what the Moderation module + a server snapshot need.
+     * Config, products, keys, panels and other admin modules are simply not
+     * shipped to the browser (least privilege — not hidden, ABSENT).
+     */
+    function staffDashboardPayload(guildId) {
+        const config = getConfig(guildId);
+        return {
+            tier: TIER.STAFF,
+            // The access lists ride along read-only so the UI can render the
+            // "your access" banner; writing them is admin-only (PUT config guard).
+            config: {
+                access: {
+                    adminRoleIds: Array.isArray(config?.access?.adminRoleIds) ? config.access.adminRoleIds : [],
+                    staffRoleIds: Array.isArray(config?.access?.staffRoleIds) ? config.access.staffRoleIds : [],
+                    adminUserIds: Array.isArray(config?.access?.adminUserIds) ? config.access.adminUserIds : [],
+                    staffUserIds: Array.isArray(config?.access?.staffUserIds) ? config.access.staffUserIds : []
+                }
+            },
+            warns: warnManager.getGuildWarns(guildId, 50),
+            modlogs: modLogManager.getGuildModLogs(guildId, 50),
+            stats: { server: statsManager.getServerStats(guildId) }
+        };
+    }
+
+    /**
+     * The MEMBER (tier 1) profile payload — the member's OWN data only.
+     * This is what a regular member sees when they open the dashboard:
+     * their stats, level + rank, warns and moderation history.
+     */
+    function memberProfilePayload(guildId, userId, resolved) {
+        const stats = statsManager.getStats(guildId, userId);
+        const level = levelManager.getUser(guildId, userId);
+        const top = levelManager.getTopUsers(guildId, 500);
+        const rank = top.findIndex((e) => e.userId === userId) + 1;
+        const warns = warnManager.getWarns(guildId, userId);
+        const modlogs = modLogManager.getModLogs(guildId, userId);
+        const afk = afkManager.getAFK(guildId, userId);
+        return {
+            tier: TIER.MEMBER,
+            userId,
+            tag: resolved?.tag ?? null,
+            joinedAt: resolved?.joinedAt ?? null,
+            boostingSince: resolved?.boostingSince ?? null,
+            stats: {
+                messages: stats?.messages || 0,
+                vipPurchases: stats?.vipPurchases || 0,
+                totalSpent: stats?.totalSpent || 0,
+                giveawaysWon: stats?.giveawaysWon || 0
+            },
+            level: {
+                level: level?.level || 0,
+                xp: level?.xp || 0,
+                totalXp: level?.totalXp || 0,
+                xpToNext: levelManager.xpToNextLevel ? levelManager.xpToNextLevel(level?.level || 0) : null,
+                rank: rank > 0 ? rank : null
+            },
+            warns: Array.isArray(warns) ? warns.slice(0, 25) : [],
+            warnCount: Array.isArray(warns) ? warns.length : 0,
+            modlogs: Array.isArray(modlogs) ? modlogs.slice(0, 25) : [],
+            afk: afk && typeof afk === 'object'
+                ? { since: afk.since ?? afk.setAt ?? null, note: afk.note ?? afk.message ?? null }
+                : null
+        };
+    }
+
     /** Re-render the panel message after its roles changed (best-effort). */
     async function reRenderPanel(panelId) {
         const panel = selfRoleManager.getPanel(panelId);
@@ -767,6 +896,35 @@ function createDashHandler({ client, token, log = () => {} }) {
                 return sendJson(res, 200, { guilds: guildSummaries() });
             }
 
+            // ---- GET /users/:userId/guilds (v3.30.0 RBAC) ----
+            // Every bot guild where this user is a member, with their tier —
+            // feeds the dashboard sidebar so staff/member servers appear
+            // alongside the manageable ones. Member resolution is best-effort
+            // per guild (cache first, one fetch) — guilds where the user is
+            // absent (fetch failed / left) are simply not listed.
+            if (method === 'GET' && parts[0] === 'users' && parts.length === 3 && parts[2] === 'guilds') {
+                const userId = parts[1];
+                if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId' });
+                if (!client?.guilds?.cache) return sendJson(res, 200, { guilds: [] });
+                const guildList = [...client.guilds.cache.values()].slice(0, 25);
+                const entries = await Promise.all(
+                    guildList.map(async (g) => {
+                        const resolved = await resolveMemberTier(g, userId);
+                        if (resolved.tier === 0) return null;
+                        return {
+                            id: g.id,
+                            name: g.name,
+                            icon: g.icon ?? null,
+                            memberCount: typeof g.memberCount === 'number' ? g.memberCount : null,
+                            ownerId: g.ownerId ?? null,
+                            tier: resolved.tier,
+                            tierLabel: resolved.label
+                        };
+                    })
+                );
+                return sendJson(res, 200, { guilds: entries.filter(Boolean) });
+            }
+
             // ---- /guilds/:id/... ----
             if (parts[0] === 'guilds' && parts.length >= 2) {
                 const guildId = parts[1];
@@ -780,11 +938,69 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return sendJson(res, 200, guildMeta(g));
                 }
 
+                // ---- GET /guilds/:id/access/:userId (v3.30.0 RBAC) ----
+                // The authoritative tier answer for a user in this guild —
+                // the dashboard's resolveGuildAccess() calls THIS, so the web
+                // and the bot always agree (config lists + live Discord state).
+                if (method === 'GET' && rest[0] === 'access' && rest.length === 2) {
+                    const userId = rest[1];
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId' });
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const resolved = await resolveMemberTier(g, userId);
+                    if (resolved.tier === 0) {
+                        return sendJson(res, 200, { tier: 0, label: 'not-member', sources: [] });
+                    }
+                    return sendJson(res, 200, {
+                        tier: resolved.tier,
+                        label: resolved.label,
+                        sources: resolved.sources,
+                        tag: resolved.tag ?? null
+                    });
+                }
+
+                // ---- GET /guilds/:id/member/:userId (v3.30.0 RBAC) ----
+                // The MEMBER tier's own profile (stats/level/rank/warns/modlogs).
+                // Read-only by construction — there is no member write route.
+                if (method === 'GET' && rest[0] === 'member' && rest.length === 2) {
+                    const userId = rest[1];
+                    if (!SNOWFLAKE_RE.test(userId)) return sendJson(res, 400, { error: 'Invalid userId' });
+                    if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
+                    const resolved = await resolveMemberTier(g, userId);
+                    if (resolved.tier === 0) {
+                        return sendJson(res, 404, { error: 'This user is not a member of this server' });
+                    }
+                    return sendJson(res, 200, memberProfilePayload(guildId, userId, resolved));
+                }
+
                 // GET dashboard — module data is readable even while the guild
                 // cache is still cold (config does not depend on the Discord cache).
+                // v3.30.0 RBAC: `?actor=<discordId>` makes the payload TIER-AWARE —
+                // the tier is re-resolved here from the live member state (the
+                // dashboard proxy's claim is never blindly trusted):
+                //   tier 3 (admin)  → the full payload
+                //   tier 2 (staff)  → the moderation subset (least privilege)
+                //   tier 1 (member) → 403 — members use /guilds/:id/member/:userId
+                //   tier 0 (unknown/not a member) → full payload (backward
+                //   compatibility for old proxies & the sandbox mock, which
+                //   enforce access on their side).
                 if (method === 'GET' && rest[0] === 'dashboard') {
                     if (!g) return sendJson(res, 404, { error: 'The bot is not in this server' });
-                    return sendJson(res, 200, dashboardPayload(guildId));
+                    const actorId = url.searchParams.get('actor');
+                    let tier = TIER.ADMIN;
+                    if (actorId && SNOWFLAKE_RE.test(actorId)) {
+                        const resolved = await resolveMemberTier(g, actorId);
+                        if (resolved.tier > 0) tier = resolved.tier;
+                    }
+                    if (tier === TIER.MEMBER) {
+                        return sendJson(res, 403, {
+                            error: 'Members get a personal profile view, not the server dashboard.',
+                            tier: TIER.MEMBER
+                        });
+                    }
+                    if (tier === TIER.STAFF) {
+                        return sendJson(res, 200, staffDashboardPayload(guildId));
+                    }
+                    return sendJson(res, 200, { ...dashboardPayload(guildId), tier: TIER.ADMIN });
                 }
 
                 // ---- PUT /guilds/:id/config ----
@@ -803,13 +1019,33 @@ function createDashHandler({ client, token, log = () => {} }) {
                     if (errors.length > 0) {
                         return sendJson(res, 422, { error: 'Validation failed', details: errors });
                     }
+
+                    // v3.30.0 RBAC — privilege escalation guard: access.* may only
+                    // be changed by a TIER-3 actor. The actor's tier is re-resolved
+                    // from the live member state (never trusted from the body).
+                    // Tier 0 (not a member / mock demo actor) keeps the old
+                    // behavior — the dashboard proxy already gated the request.
+                    if (applied.some((p) => p.startsWith('access.'))) {
+                        const actorId = typeof body?.actor?.id === 'string' ? body.actor.id : null;
+                        if (actorId && SNOWFLAKE_RE.test(actorId)) {
+                            const resolved = await resolveMemberTier(getGuild(guildId), actorId);
+                            if (resolved.tier > 0 && resolved.tier < TIER.ADMIN) {
+                                log(`[dash] DENIED access.* update in ${guildId} by ${body?.actor?.tag || actorId} (tier ${resolved.tier})`);
+                                return sendJson(res, 403, {
+                                    error: 'Only server admins (tier 3) can change Access Control settings.'
+                                });
+                            }
+                        }
+                    }
+
                     saveConfig(guildId, config);
 
                     // Invalidate the permission cache if the admin role changed
                     // (the setField pattern).
-                    if (applied.some((p) => p.startsWith('roles.admin'))) {
+                    // v3.30.0: access.* changes invalidate too — tier grants from
+                    // the Access Control module apply INSTANTLY (hot reload).
+                    if (applied.some((p) => p.startsWith('roles.admin') || p.startsWith('access.'))) {
                         try {
-                            const { invalidateAdminRoleCache } = require('./permissions');
                             invalidateAdminRoleCache();
                         } catch (_) { /* not loaded yet — ignore */ }
                     }

@@ -1,13 +1,19 @@
-// GET /api/guilds/[guildId]/dashboard — the full payload of all modules for
-// the server dashboard (config, automod, responders, selfroles, tempvoice,
-// announces, serverstats) + guild meta (channels/roles for pickers).
+// GET /api/guilds/[guildId]/dashboard — the per-server dashboard payload.
 //
-// Access: the user MUST be owner / ManageGuild on that server (verified
-// live against Discord, see lib/guild-access.ts).
+// v3.30.0 RBAC — the payload follows the caller's tier:
+//   tier 3 (admin)  → the FULL payload (+ meta), exactly as before.
+//   tier 2 (staff)  → the moderation subset (the bot filters server-side —
+//                     least privilege: config/keys/products simply don't ship).
+//   tier 1 (member) → { tier: 1, member: <own profile> } — the UI renders the
+//                     personal MemberView instead of the server dashboard.
+//
+// Tier resolution: resolveGuildAccess() (OAuth manageable OR the bot's
+// access endpoint). The bot re-resolves the tier from `?actor=` itself —
+// both sides must agree before sensitive data is shipped.
 
 import { currentUser, json, jsonError } from "@/lib/api-auth";
 import { botApi, BotApiError, BotOfflineError } from "@/lib/bot-api";
-import { checkGuildAccess } from "@/lib/guild-access";
+import { resolveGuildAccess } from "@/lib/guild-access";
 import type { DashboardPayload, GuildMeta } from "@/lib/bot-api";
 
 export async function GET(req: Request, { params }: { params: Promise<{ guildId: string }> }) {
@@ -17,17 +23,31 @@ export async function GET(req: Request, { params }: { params: Promise<{ guildId:
   const { guildId } = await params;
   if (!/^\d{5,25}$/.test(guildId)) return jsonError("Invalid server ID.", 400);
 
-  const access = await checkGuildAccess(user.id, guildId);
+  const access = await resolveGuildAccess(user.id, user.discordId, guildId);
   if (!access.ok) {
     return jsonError(access.error, access.status);
   }
 
   try {
+    // v3.30.0: members get their own profile, not the server payload.
+    if (access.tier === 1) {
+      const [member, meta] = await Promise.all([
+        botApi<Record<string, unknown>>(`/guilds/${guildId}/member/${user.discordId}`),
+        // Meta is public Discord data (guild name/icon/channel names) — the
+        // member view shows the server header. A meta failure is tolerated.
+        botApi<GuildMeta>(`/guilds/${guildId}/meta`).catch(() => null),
+      ]);
+      return json({ tier: 1, member, meta, botOnline: true });
+    }
+
+    // Staff & admin: the actor param lets the bot re-resolve the tier itself
+    // (defense-in-depth) and filter the payload for tier 2.
+    const actorParam = user.discordId ? `?actor=${encodeURIComponent(user.discordId)}` : "";
     const [payload, meta] = await Promise.all([
-      botApi<DashboardPayload>(`/guilds/${guildId}/dashboard`),
+      botApi<DashboardPayload & { tier?: number }>(`/guilds/${guildId}/dashboard${actorParam}`),
       botApi<GuildMeta>(`/guilds/${guildId}/meta`),
     ]);
-    return json({ ...payload, meta, botOnline: true });
+    return json({ ...payload, tier: payload.tier ?? access.tier, meta, botOnline: true });
   } catch (err) {
     if (err instanceof BotOfflineError) {
       return jsonError("The bot is not connected — check the bot status, then try again.", 503);

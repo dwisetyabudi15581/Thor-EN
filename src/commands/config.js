@@ -377,6 +377,27 @@ module.exports = async function (interaction) {
             });
         }
 
+        // v3.30.0 RBAC: 'staff' lives in config.access.staffRoleIds (a LIST —
+        // the dashboard Access Control module can manage several; /set-role
+        // staff sets the list to this single role, the quick Discord path).
+        // Legacy roles/midman/booster keep the classic config.roles.<tipe>.
+        if (tipe === 'staff') {
+            setField(guildId, 'access.staffRoleIds', [role.id]);
+            await logAudit(interaction.client, {
+                action: 'SET_ROLE',
+                actorId: interaction.user.id,
+                actorTag: interaction.user.tag,
+                details: `Role **staff** set to ${role.name} (\`${role.id}\`)`,
+                guildId: interaction.guild.id
+            });
+            return safeEditReply(interaction, {
+                content:
+                    `✅ Role **staff** set to ${role} (\`${role.id}\`)\n\n🛡️ Members with this role are now **Staff (Moderator)** — they can use ` +
+                    '`/timeout` `/untimeout` `/kick` `/ban` `/unban` `/purge` `/warn` and the dashboard\'s Moderation module.\n' +
+                    'The change is effective immediately (no restart).\n\n💡 To manage MULTIPLE staff/admin roles and per-user access, open **Access Control** in the web dashboard.'
+            });
+        }
+
         setField(guildId, `roles.${tipe}`, role.id);
         await logAudit(interaction.client, {
             action: 'SET_ROLE',
@@ -741,6 +762,32 @@ module.exports = async function (interaction) {
     if (interaction.commandName === 'remove-role') {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const tipe = interaction.options.getString('tipe');
+
+        // v3.30.0 RBAC: 'staff' is a list under config.access — its removal
+        // clears the whole list (the single-role quick path mirrors /set-role
+        // staff). The cache invalidation inside setField applies it instantly.
+        if (tipe === 'staff') {
+            const access = config.access || {};
+            const currentList = Array.isArray(access.staffRoleIds) ? access.staffRoleIds : [];
+            if (currentList.length === 0) {
+                return safeEditReply(interaction, {
+                    content: 'ℹ️ The **staff** role isn\'t set anyway — nothing to remove.'
+                });
+            }
+            setField(guildId, 'access.staffRoleIds', []);
+            await logAudit(interaction.client, {
+                action: 'REMOVE_ROLE',
+                actorId: interaction.user.id,
+                actorTag: interaction.user.tag,
+                details: `Removed role **staff** from config (previously: ${currentList.map((id) => `<@&${id}>`).join(' ')})`,
+                guildId: interaction.guild.id
+            });
+            return safeEditReply(interaction, {
+                content:
+                    '✅ Role **staff** removed from config.\n\n🛡️ Members who only had the staff role lose Staff (Moderator) access immediately.\n\n💡 To set it again, use: `/set-role staff @role`'
+            });
+        }
+
         const current = config.roles[tipe];
         if (!current) {
             return safeEditReply(interaction, {

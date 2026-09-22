@@ -73,9 +73,13 @@ export async function botApi<T = unknown>(pathname: string, opts: BotApiOptions 
     // unexpected message shape (e.g. "Failed to parse URL from /health") must
     // not leak an internal error to the browser when the bot is simply down.
     const causeCode = (err as { cause?: { code?: string } })?.cause?.code;
+    // v3.30.0: catch variables are `unknown` — read the name via a typed cast
+    // instead of `err?.name` (a stray tsc --noEmit error that had been living
+    // here since v3.28.3; Next's bundler never surfaced it).
+    const errName = (err as { name?: string })?.name;
     const isOffline =
       err instanceof BotOfflineError ||
-      err?.name === "AbortError" ||
+      errName === "AbortError" ||
       causeCode === "ECONNREFUSED" ||
       causeCode === "ENOTFOUND" ||
       causeCode === "ECONNRESET" ||
@@ -161,6 +165,14 @@ export type GuildConfig = {
   levelRoles: LevelRole[];
   midman: { feeMode: "percent" | "flat"; feeValue: number; category: string };
   products: Product[];
+  // v3.30.0 RBAC: the three-tier access lists (Access Control module /
+  // /set-role staff). Absent on older bots — always read via optional access.
+  access?: {
+    adminRoleIds?: string[];
+    staffRoleIds?: string[];
+    adminUserIds?: string[];
+    staffUserIds?: string[];
+  };
 };
 
 export type WordRule = { word: string; action: string | null; addedBy?: string; addedAt?: number };
@@ -383,6 +395,25 @@ export type DashboardPayload = {
   afk?: AfkRow[];
   midmanDeals?: MidmanDealInfo[];
   boosters?: BoostersSection;
+  // v3.30.0 RBAC: the caller's tier as resolved by the bot (3=admin full
+  // payload, 2=staff moderation subset). Absent = an older bot → treat as 3.
+  tier?: number;
+};
+
+// v3.30.0 RBAC: the MEMBER tier's personal profile — what a regular member
+// sees on the dashboard instead of the server configuration.
+export type MemberProfile = {
+  tier: 1;
+  userId: string;
+  tag: string | null;
+  joinedAt: number | null;
+  boostingSince: number | null;
+  stats: { messages: number; vipPurchases: number; totalSpent: number; giveawaysWon: number };
+  level: { level: number; xp: number; totalXp: number; xpToNext: number | null; rank: number | null };
+  warns: WarnRecord[];
+  warnCount: number;
+  modlogs: ModLogRecord[];
+  afk: { since: number | null; note: string | null } | null;
 };
 
 // v3.24.0: server statistics + leaderboards (parity with /stats & /leaderboard).
