@@ -40,6 +40,10 @@ type BotApiOptions = {
 /** Call the bot DASH API. Throws BotOfflineError when unreachable. */
 export async function botApi<T = unknown>(pathname: string, opts: BotApiOptions = {}): Promise<T> {
   const { method = "GET", body, timeoutMs = 8000 } = opts;
+  // v3.28.3: an unconfigured DASH_API_URL makes fetch() throw a cryptic
+  // "Failed to parse URL" — classify it as offline up front (the same state
+  // the rest of the code already handles gracefully).
+  if (!cfg.dashApiUrl) throw new BotOfflineError();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -64,12 +68,28 @@ export async function botApi<T = unknown>(pathname: string, opts: BotApiOptions 
     return data as T;
   } catch (err) {
     if (err instanceof BotApiError) throw err;
-    // abort / fetch failure / connection refused → bot offline
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("fetch failed") || msg.includes("ECONNREFUSED") || msg.includes("abort") || msg.includes("aborted")) {
-      throw new BotOfflineError();
-    }
-    throw new BotApiError(msg, 500);
+    // v3.28.3: classify offline by the error's STRUCTURE (cause code / abort
+    // name / offline message), not just fragile message substrings — an
+    // unexpected message shape (e.g. "Failed to parse URL from /health") must
+    // not leak an internal error to the browser when the bot is simply down.
+    const causeCode = (err as { cause?: { code?: string } })?.cause?.code;
+    const isOffline =
+      err instanceof BotOfflineError ||
+      err?.name === "AbortError" ||
+      causeCode === "ECONNREFUSED" ||
+      causeCode === "ENOTFOUND" ||
+      causeCode === "ECONNRESET" ||
+      causeCode === "ETIMEDOUT" ||
+      causeCode === "EHOSTUNREACH" ||
+      causeCode === "EAI_AGAIN" ||
+      (err instanceof Error &&
+        (err.message.includes("fetch failed") ||
+          err.message.includes("ECONNREFUSED") ||
+          err.message.includes("abort") ||
+          err.message.includes("aborted") ||
+          err.message.includes("Failed to parse URL")));
+    if (isOffline) throw new BotOfflineError();
+    throw new BotApiError(err instanceof Error ? err.message : String(err), 500);
   } finally {
     clearTimeout(timer);
   }
@@ -327,6 +347,12 @@ export type TicketPanelInfo = {
   categoryIds: string[];
   useDropdown: boolean;
   createdAt: number | null;
+  /** v3.28.3: presence flags — which style overrides exist on this panel (values stay bot-side to keep the payload slim). */
+  hasBody?: boolean;
+  hasColor?: boolean;
+  hasImage?: boolean;
+  hasThumbnail?: boolean;
+  hasFooter?: boolean;
 };
 
 export type DashboardPayload = {

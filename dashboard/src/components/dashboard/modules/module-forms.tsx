@@ -378,15 +378,32 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
   const missingDefaults = DEFAULT_CATEGORIES.filter((d) => !cats.some((cat) => cat.id === d.id));
 
   function updateCat(idx: number, patch: Partial<TicketCategory>) {
-    const next = cats.map((cat, i) => (i === idx ? { ...cat, ...patch } : cat));
+    const cat = cats[idx];
+    // v3.28.3: editing a category's ID now remaps its products (same rule as
+    // removeCat) — the bot already re-files products on save, so the draft
+    // now matches what will actually be stored (no silent divergence).
+    const idChanged = patch.id !== undefined && patch.id !== cat.id;
+    const next = cats.map((c, i) => (i === idx ? { ...c, ...patch } : c));
     setConfig("ticketCategories", next);
+    if (idChanged && cat) {
+      const nextProducts = products.map((p) => (p.category === cat.id ? { ...p, category: patch.id as string } : p));
+      setConfig("products", nextProducts);
+    }
+  }
+  // v3.28.3: full-timestamp + random suffix, checked for collisions — the old
+  // 4-digit id (Date.now().toString(36).slice(-4)) repeated every ~28 minutes
+  // and a colliding category id blocked the whole save with a cryptic 422.
+  function newCatId(): string {
+    let id = `cat${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    while (cats.some((c) => c.id === id)) id = `cat${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    return id;
   }
   function addCat() {
     if (cats.length >= 25) {
       toast("Maximum of 25 categories (Discord limit).", "err");
       return;
     }
-    const id = `cat${Date.now().toString(36).slice(-4)}`;
+    const id = newCatId();
     setConfig("ticketCategories", [...cats, { id, label: "New Category", emoji: "🎫", style: "Primary", requiresKey: false }]);
   }
   function restoreDefault(def: TicketCategory) {
@@ -457,9 +474,15 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
       return;
     }
     const cat = cats[0]?.id ?? "transaction";
+    // v3.28.3: collision-checked value (see newCatId) — the Discord side
+    // rejects duplicate values, the web must not silently create them.
+    let value = `prd${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    while (products.some((p) => p.value === value)) {
+      value = `prd${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    }
     setConfig("products", [
       ...products,
-      { label: "New Product", value: `prd${Date.now().toString(36).slice(-4)}`, price: "10,000 IDR", category: cat, requiresKey: true },
+      { label: "New Product", value, price: "10,000 IDR", category: cat, requiresKey: true },
     ]);
   }
 
@@ -764,6 +787,12 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
   const [edit, setEdit] = useState({
     title: "", body: "", color: "", image: "", thumbnail: "", footer: "",
   });
+  // v3.28.3: which style fields the admin actually touched. The slim panel
+  // payload only carries `title` + presence flags — sending an untouched
+  // empty field used to CLEAR overrides the form never showed (set via
+  // /update-panel on Discord). Now only touched fields are sent; a touched
+  // field left empty means "clear this override" (explicit intent).
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const cats = draft.config.ticketCategories;
 
   function toggleCat(id: string) {
@@ -806,8 +835,9 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
       setEditId(null);
       return;
     }
-    // Prefill from the payload (the slim shape carries title; the rest
-    // starts empty = "keep current / fall back to global").
+    // Prefill the title from the payload (the only style value the slim
+    // shape carries); the other fields start empty + untouched = "keep the
+    // panel's current value" (see `touched`).
     const found = panels.find((x) => x.id === p.id);
     setEdit({
       title: found?.title ?? "",
@@ -817,22 +847,30 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
       thumbnail: "",
       footer: "",
     });
+    setTouched({});
     setEditId(p.id);
+  }
+
+  function setEditField(field: "body" | "color" | "image" | "thumbnail" | "footer", value: string) {
+    setEdit((e) => ({ ...e, [field]: value }));
+    setTouched((t) => ({ ...t, [field]: true }));
   }
 
   async function saveEdit(id: string) {
     setBusy(true);
     try {
-      // Only send the fields the admin actually typed in — empty = clear
-      // only when it had a value before... simplest contract: send every
-      // field the form exposes, empty string clears the override.
+      // v3.28.3: title round-trips (prefilled from the payload — sending it
+      // back unchanged is a no-op); every OTHER field is only sent when the
+      // admin actually touched it. Untouched empty fields no longer wipe
+      // overrides that were set from Discord (/update-panel) — the form
+      // never showed them, so it must not clear them.
       await call(`panels/${id}`, "PUT", {
         title: edit.title,
-        body: edit.body,
-        color: edit.color,
-        image: edit.image,
-        thumbnail: edit.thumbnail,
-        footer: edit.footer,
+        ...(touched.body ? { body: edit.body } : {}),
+        ...(touched.color ? { color: edit.color } : {}),
+        ...(touched.image ? { image: edit.image } : {}),
+        ...(touched.thumbnail ? { thumbnail: edit.thumbnail } : {}),
+        ...(touched.footer ? { footer: edit.footer } : {}),
       });
       setEditId(null);
       await refresh();
@@ -904,7 +942,7 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
           </div>
           <div>
             <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-              Categories on this panel ({pickedCats.length} picked — empty = all)
+              Categories on this panel ({pickedCats.length} picked — pick at least 1)
             </p>
             <div className="flex flex-wrap gap-1.5">
               {cats.map((cat) => (
@@ -980,35 +1018,53 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
             {editId === p.id ? (
               <div className="mt-3 space-y-3 border-t border-zinc-800/60 pt-3">
                 <p className="text-[11px] leading-relaxed text-zinc-500">
-                  Empty a field to clear the override — the panel falls back to the global ticket settings. Supports{" "}
+                  Leave a field untouched to keep its current value. Type a value to set the override — clear the text of a
+                  <span className="text-amber-300/80"> touched</span> field to remove it. The body supports{" "}
                   <code className="text-amber-300/80">{"{price_list}"}</code>{" "}
-                  <code className="text-amber-300/80">{"{categories_list}"}</code> in the body.
+                  <code className="text-amber-300/80">{"{categories_list}"}</code>.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="min-w-0">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Title</p>
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Title
+                    </p>
                     <TextInput value={edit.title} onChange={(v) => setEdit({ ...edit, title: v })} placeholder="Panel title override" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Color (hex)</p>
-                    <TextInput value={edit.color} onChange={(v) => setEdit({ ...edit, color: v })} placeholder="#e67e22" />
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Color (hex)
+                      {p.hasColor ? <Pill tone="amber">override set</Pill> : null}
+                    </p>
+                    <TextInput value={edit.color} onChange={(v) => setEditField("color", v)} placeholder="#e67e22" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Image URL</p>
-                    <TextInput value={edit.image} onChange={(v) => setEdit({ ...edit, image: v })} placeholder="https://… (large banner)" />
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Image URL
+                      {p.hasImage ? <Pill tone="amber">override set</Pill> : null}
+                    </p>
+                    <TextInput value={edit.image} onChange={(v) => setEditField("image", v)} placeholder="https://… (large banner)" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Thumbnail URL</p>
-                    <TextInput value={edit.thumbnail} onChange={(v) => setEdit({ ...edit, thumbnail: v })} placeholder="https://… (small corner)" />
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Thumbnail URL
+                      {p.hasThumbnail ? <Pill tone="amber">override set</Pill> : null}
+                    </p>
+                    <TextInput value={edit.thumbnail} onChange={(v) => setEditField("thumbnail", v)} placeholder="https://… (small corner)" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Footer text</p>
-                    <TextInput value={edit.footer} onChange={(v) => setEdit({ ...edit, footer: v })} placeholder="Footer override" />
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                      Footer text
+                      {p.hasFooter ? <Pill tone="amber">override set</Pill> : null}
+                    </p>
+                    <TextInput value={edit.footer} onChange={(v) => setEditField("footer", v)} placeholder="Footer override" />
                   </div>
                 </div>
                 <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Body</p>
-                  <TextArea value={edit.body} onChange={(v) => setEdit({ ...edit, body: v })} rows={3} placeholder="Panel body override (supports templates)" />
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    Body
+                    {p.hasBody ? <Pill tone="amber">override set</Pill> : null}
+                  </p>
+                  <TextArea value={edit.body} onChange={(v) => setEditField("body", v)} rows={3} placeholder="Panel body override (supports templates)" />
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

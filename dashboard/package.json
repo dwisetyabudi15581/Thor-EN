@@ -1,6 +1,6 @@
 {
   "name": "thor-dashboard",
-  "version": "3.28.2",
+  "version": "3.28.3",
   "private": true,
   "description": "Dashboard web Thor Bot — kendali server Discord ala  (Next.js 16 + Prisma SQLite)",
   "scripts": {

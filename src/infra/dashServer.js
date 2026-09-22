@@ -645,7 +645,9 @@ function createDashHandler({ client, token, log = () => {} }) {
                 .slice(0, 100),
             // v3.21.0: installed ticket panels — used by the Quick Start module
             // as the checklist status (the "install ticket panel" step).
-            // Slim shape so the payload stays light (a panel body can be 4000 chars).
+            // Slim shape so the payload stays light (a panel body can be 4000 chars)
+            // — v3.28.3 adds hasBody/hasColor/… presence flags so the web style
+            // editor knows which overrides exist without shipping their values.
             panels: panelManager
                 .getPanelsByGuild(guildId)
                 .slice(0, 50)
@@ -656,7 +658,12 @@ function createDashHandler({ client, token, log = () => {} }) {
                     title: p.title,
                     categoryIds: Array.isArray(p.categoryIds) ? p.categoryIds : [],
                     useDropdown: !!p.useDropdown,
-                    createdAt: p.createdAt || null
+                    createdAt: p.createdAt || null,
+                    hasBody: p.body != null && String(p.body).trim() !== '',
+                    hasColor: p.color != null,
+                    hasImage: !!p.imageUrl,
+                    hasThumbnail: !!p.thumbnailUrl,
+                    hasFooter: !!(p.footerText && String(p.footerText).trim() !== '')
                 })),
             // v3.24.0: full feature parity — the web Statistics module now
             // reads the SAME data as /stats, /leaderboard, /boosters,
@@ -2604,11 +2611,9 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return sendJson(res, 200, { ok: true, deleted: deletable.length, skippedOld });
                 }
 
-                // ---- v3.22.0: POST /guilds/:id/verify-panel REMOVED ----
-                // The dedicated verification feature was deleted — "verified"
-                // is now a role on a self-role panel (install via the ticket
-                // panel pattern or /setup-selfrole). Old dashboard builds that
-                // still call this endpoint get the generic 404 below.
+                // ---- v3.28.0: POST /guilds/:id/verify-panel is LIVE (line ~1125) ----
+                // (A v3.22.0-era comment here wrongly claimed the endpoint was
+                // removed; it was RE-ADDED in v3.28.0 with /setup-verify parity.)
             }
 
             return sendJson(res, 404, { error: 'Endpoint not found' });

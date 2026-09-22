@@ -19,6 +19,14 @@ export function appOrigin(req: Request): string {
 
   const url = new URL(req.url);
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
-  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+  // v3.28.3: EXACT hostname match — the old prefix check let
+  // "localhost.evil.com" pass as local (and forced the http scheme).
+  let hostname = host;
+  try {
+    hostname = new URL(`http://${host}`).hostname;
+  } catch {
+    // fall through with the raw value
+  }
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
   return `${isLocal ? "http" : "https"}://${host}`;
 }

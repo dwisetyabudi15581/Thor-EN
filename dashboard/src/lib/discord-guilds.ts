@@ -16,6 +16,22 @@ import { cfg } from "./config";
 
 const MANAGE_GUILD = 0x20;
 
+// v3.28.3: every Discord.com fetch now goes through a timeout wrapper — a
+// hung connection (blackholed route) previously hung /api/guilds, every
+// guild-scoped request (via checkGuildAccess) and the OAuth callback
+// indefinitely. 8s matches the botApi default.
+const DISCORD_FETCH_TIMEOUT_MS = 8000;
+
+async function discordFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DISCORD_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal, cache: "no-store" });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export type UserGuild = {
   id: string;
   name: string;
@@ -35,9 +51,8 @@ type DiscordGuildEntry = {
 type TokenRow = { id: string; accessToken: string | null; refreshToken: string | null; tokenExpiresAt: Date | null };
 
 async function fetchUserGuilds(accessToken: string): Promise<DiscordGuildEntry[]> {
-  const res = await fetch("https://discord.com/api/users/@me/guilds", {
+  const res = await discordFetch("https://discord.com/api/users/@me/guilds", {
     headers: { authorization: `Bearer ${accessToken}` },
-    cache: "no-store",
   });
   if (!res.ok) {
     throw Object.assign(new Error(`discord_guilds_${res.status}`), { status: res.status });
@@ -47,7 +62,7 @@ async function fetchUserGuilds(accessToken: string): Promise<DiscordGuildEntry[]
 
 /** Refresh the access token via the refresh_token grant; update the DB. Returns the new token. */
 async function refreshAccessToken(userId: string, refreshToken: string): Promise<string> {
-  const res = await fetch("https://discord.com/api/oauth2/token", {
+  const res = await discordFetch("https://discord.com/api/oauth2/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -106,7 +121,15 @@ export async function getManageableGuilds(userId: string): Promise<GuildListResu
     // 401 = the access token died before its expiry → try one more refresh.
     if (status === 401 && row.refreshToken) {
       try {
-        const fresh = await refreshAccessToken(userId, row.refreshToken);
+        // v3.28.3: re-read the row before retrying — the first refresh may
+        // have already ROTATED the refresh token in the DB; retrying with the
+        // stale snapshot could invalidate a token that is actually valid.
+        const freshRow = await db.user.findUnique({
+          where: { id: userId },
+          select: { refreshToken: true },
+        });
+        const currentRefresh = freshRow?.refreshToken ?? row.refreshToken;
+        const fresh = await refreshAccessToken(userId, currentRefresh);
         entries = await fetchUserGuilds(fresh);
       } catch {
         return { ok: false, reason: "relogin" };

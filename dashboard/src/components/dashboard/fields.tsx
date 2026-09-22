@@ -4,7 +4,7 @@
 // All fields are dark-editorial (zinc + amber accent) and are reused by
 // module-forms.tsx so the 12 modules never build UI from scratch.
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { BotChannel, BotRole } from "@/lib/bot-api";
 
 /* ---------------- Shells ---------------- */
@@ -120,7 +120,7 @@ export function Select({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; disabled?: boolean }>;
   placeholder?: string;
   id?: string;
 }) {
@@ -133,7 +133,7 @@ export function Select({
     >
       {placeholder ? <option value="">{placeholder}</option> : null}
       {options.map((o) => (
-        <option key={o.value} value={o.value}>
+        <option key={o.value} value={o.value} disabled={o.disabled === true}>
           {o.label}
         </option>
       ))}
@@ -153,15 +153,22 @@ export function ChannelSelect({
 }) {
   const text = channels.filter((c) => c.type === 0 || c.type === 5);
   const voice = channels.filter((c) => c.type !== 0 && c.type !== 5);
-  const opts = [
+  // A channel that no longer exists stays visible (an explicit option) so the
+  // old state doesn't "silently disappear" (same policy as MentionSelect).
+  const ghost = value && !channels.some((c) => c.id === value);
+  const opts: Array<{ value: string; label: string; disabled?: boolean }> = [
     { value: "", label: placeholder },
+    ...(ghost && value ? [{ value, label: `Deleted channel (#${value.slice(0, 8)}…)` }] : []),
     ...text.map((c) => ({ value: c.id, label: `# ${c.name}` })),
-    ...(voice.length ? [{ value: "__voice__", label: "— Voice —", disabled: true as const }] : []),
+    ...(voice.length ? [{ value: "__voice__", label: "— Voice —", disabled: true }] : []),
   ];
   return (
     <Select
       value={value ?? ""}
-      onChange={(v) => onChange(v || null)}
+      onChange={(v) => {
+        if (v === "__voice__") return; // group separator must never become a value
+        onChange(v || null);
+      }}
       options={opts}
     />
   );
@@ -175,12 +182,16 @@ export function RoleSelect({
   roles: BotRole[];
   placeholder?: string;
 }) {
+  // A role that no longer exists stays visible (an explicit option) so the
+  // old state doesn't "silently disappear" (same policy as MentionSelect).
+  const ghost = value && !roles.some((r) => r.id === value);
   return (
     <Select
       value={value ?? ""}
       onChange={(v) => onChange(v || null)}
       options={[
         { value: "", label: placeholder },
+        ...(ghost && value ? [{ value, label: `Deleted role (${value.slice(0, 8)}…)` }] : []),
         ...roles.map((r) => ({ value: r.id, label: r.name })),
       ]}
     />
@@ -227,6 +238,23 @@ export function MentionSelect({
 
 export function ColorInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const hex = `#${value.toString(16).padStart(6, "0")}`;
+  // v3.28.3: local string state — the text field is typable (intermediate
+  // values like "f0" or "" no longer snap back). It commits on Enter/blur and
+  // resyncs whenever the numeric value changes elsewhere (the color swatch),
+  // using the React-recommended "adjust state during render" pattern (no
+  // setState-in-effect cascading renders).
+  const [text, setText] = useState(hex);
+  const [focused, setFocused] = useState(false);
+  const [renderedHex, setRenderedHex] = useState(hex);
+  if (hex !== renderedHex) {
+    setRenderedHex(hex);
+    if (!focused) setText(hex);
+  }
+  const commit = () => {
+    const v = text.replace("#", "").trim();
+    if (/^[0-9a-fA-F]{6}$/.test(v)) onChange(parseInt(v, 16));
+    else setText(hex); // invalid → snap back to the current value
+  };
   return (
     <div className="flex items-center gap-2">
       <input
@@ -237,10 +265,22 @@ export function ColorInput({ value, onChange }: { value: number; onChange: (v: n
         aria-label="Pick a color"
       />
       <input
-        value={hex}
-        onChange={(e) => {
-          const v = e.target.value.replace("#", "");
-          if (/^[0-9a-fA-F]{6}$/.test(v)) onChange(parseInt(v, 16));
+        value={focused ? text : hex}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => {
+          setFocused(true);
+          setText(hex);
+        }}
+        onBlur={() => {
+          setFocused(false);
+          commit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+            (e.target as HTMLInputElement).blur();
+          }
         }}
         className={`${inputCls} font-mono text-xs`}
       />

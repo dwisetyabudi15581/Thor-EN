@@ -233,13 +233,21 @@ export function QuickStartModule({
       toast("Label, value, and price are all required.", "err");
       return;
     }
+    // v3.28.3: duplicate-value guard — /add-product on Discord rejects a
+    // duplicate value (it is the modal customId + lookup key); the web path
+    // used to create exactly that state silently.
+    const value = prdValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (products.some((p) => p.value === value)) {
+      toast(`A product with value "${value}" already exists — values must be unique.`, "err");
+      return;
+    }
     setBusy("product");
     try {
       const next = [
         ...products,
         {
           label: prdLabel.trim(),
-          value: prdValue.trim().toLowerCase().replace(/[^a-z0-9_-]/g, ""),
+          value,
           price: prdPrice.trim(),
           category: prdCat,
           requiresKey: prdKey,

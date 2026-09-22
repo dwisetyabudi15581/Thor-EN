@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.28.3] — 2026-09-23
+
+### Fixed — 🛡️ DASHBOARD HARDENING: THE SILENT DATA-LOSS & FORGERY SWEEP
+
+A full re-read and debug of the repo from scratch (bot 829 tests green, dashboard build green — the bugs were all in the *quiet* paths). Theme of this release: **nothing the admin typed should ever be lost silently, and nothing unsigned should ever be trusted.**
+
+**Draft integrity — the headline fix:**
+
+- 🔴 **Module CRUD no longer wipes unsaved edits** — every `refresh()` after a responder/selfrole/announce/giveaway/… action used to reset the draft + dirty state, so editing General → adding one responder silently threw away the General edits (directly contradicting the dashboard's own guarantee #1: *"No change is ever lost silently"*). Refreshes from module actions and from `save()` now RE-APPLY the pending edits onto the fresh payload (`load({ preserveDraft: true })`); only a *confirmed* manual Refresh discards, exactly as its warning says.
+- 🟠 **Edits typed while a Save is in flight survive** — `save()` snapshots what it sends, then clears exactly the keys that were saved (a key re-edited during the save with a new value stays dirty). The post-save reload keeps them instead of wiping the dirty state.
+- 🟠 **Out-of-order loads can no longer win** — every `load()` takes a sequence number; a superseded response (double-click on Try Again, refresh racing a save) is dropped instead of overwriting newer data with older data.
+- 🟠 **A failed background refresh no longer nukes the dashboard** — when good data is already on screen, a 503/bot-kicked/network error now shows a toast + keeps the last-known data (and any dirty draft) instead of replacing everything with the fatal error screen. Permission loss (403) stays a hard stop.
+- 🟠 **"Failed to save" no longer lies** — if the PUTs succeed but the reload fails, the toast no longer claims the save failed (the changes ARE saved); network-level rejections in `load()` are caught instead of escaping as unhandled rejections.
+
+**Web editor correctness:**
+
+- 🔴 **`Select` now forwards `disabled`** — the "— Voice —" group separator in every channel picker was a *selectable, savable option*: picking it blocked config saves with a cryptic 422 (`channels.welcome must be a Discord ID`) and — worse — **persisted as a garbage `linkAllowedChannels` entry** in AutoMod (that validator accepts any string). The separator is now actually disabled and can never become a value.
+- 🔴 **Ticket-panel "Edit style" no longer wipes overrides it never showed** — the slim panels payload only carries `title`, but the editor PUT *every* field, and the bot treats `""` as "clear override": opening the editor and pressing Save silently erased any `body/color/image/thumbnail/footer` set via `/update-panel` on Discord. The bot's panels payload now ships **presence flags** (`hasBody/hasColor/hasImage/hasThumbnail/hasFooter` — values stay bot-side, payload stays slim), the editor shows "override set" badges, and the PUT body only contains the fields the admin actually touched (a touched field left empty = explicit clear).
+- 🟠 **`ColorInput` hex field is typable** — the old controlled input snapped back on every intermediate value (`f0`, backspace…); only full 6-hex pastes worked. Now: local text state, commits on Enter/blur, resyncs when the swatch changes the value.
+- 🟡 **Deleted channels/roles stay visible** in `ChannelSelect`/`RoleSelect` as an explicit "Deleted …" option (the same ghost policy `MentionSelect` already had) instead of rendering blank as if unset.
+- 🟡 **Quick Start duplicate-product guard** — `/add-product` on Discord rejects a duplicate `value` (it is the modal customId + lookup key); the web path used to create exactly that state silently. Now rejected up front with a clear message.
+- 🟡 **Editing a category's ID remaps its products** (same rule as deleting one) — the bot already re-files products on save; the draft now matches what will actually be stored. Auto-generated ids (`cat…`/`prd…`) use the full timestamp + a random suffix and are collision-checked (the old 4-digit id repeated every ~28 minutes).
+
+**Security & robustness:**
+
+- 🔴 **Session forgery guard extended** — an empty `SESSION_SECRET` used to fail closed only when *Discord OAuth* was configured. But sessions are equally forgeable (empty HMAC key = publicly computable) when **`DASH_API_TOKEN` is set and the bot is live** — the very plausible "OAuth unconfigured / .env lost on Termux, bot running" configuration. The guard now fires for either.
+- 🟠 **OAuth callback is failure-tolerant** — the token-exchange → profile → DB-upsert chain had no try/catch: a transient network error, a non-JSON error body, or a SQLite lock (read-only FS on Termux) produced a raw 500 mid-login. Everything now lands on the graceful `/?error=…` redirect; the state cookie is cleared on every failure path (it used to linger 600s), and the CSRF state comparison is timing-safe.
+- 🟠 **Every Discord.com fetch has an 8s timeout** — a hung connection used to hang `/api/guilds`, every guild-scoped request (via the access check) and the OAuth callback indefinitely. Also: the token-refresh retry re-reads the DB row first, so a rotated refresh token is never retried with the stale pre-rotation snapshot.
+- 🟠 **`/api/guilds` reports "bot offline" only when the bot is actually offline** — `/health` (no token) and `/guilds` (token) ran under `Promise.all`; a `DASH_API_TOKEN` mismatch — the #1 setup mistake — rejected both and the UI claimed the bot was down while it was up. Now `Promise.allSettled`: `botOnline` derives from `/health` alone, and the `/guilds` failure is logged with a "is DASH_API_TOKEN correct?" hint.
+- 🟡 **Dashboard GET route passes bot statuses through** (404 "bot not in this server" no longer masquerades as 502) — the same contract the write proxy already used, so the UI can tell "bot kicked" apart from "gateway down".
+- 🟡 **Offline classification is structural** — `botApi` now inspects `err.cause.code` / `AbortError` instead of fragile message substrings, and an unconfigured `DASH_API_URL` is classified offline up front instead of leaking "Failed to parse URL from /health" to the browser.
+- 🟡 **`appOrigin` localhost check is exact** — `localhost.evil.com` no longer passes the old `startsWith("localhost")` prefix check.
+- 🟢 Housekeeping: the stale v3.22-era comment claiming `POST /verify-panel` was removed (it was re-added in v3.28.0) is corrected; the toast timer is cleared on unmount; `discard()` builds the same draft shape as `load()`; the Quick Start "empty = all" categories hint now says "pick at least 1" (matching the actual validation).
+- 🟢 Tests: **834 (from 829)** — new `dashPanelsStyleV3283.test.js` (5 tests): partial-body PUT semantics (title-only edit preserves unseen overrides; explicit empty clears only that field) + presence flags in the slim payload (set, and flip back to false when cleared).
+
 ## [3.28.2] — 2026-09-18
 
 ### Changed — 🎨 VERIFICATION PANEL: THE CLASSIC LOOK IS BACK — PLAIN GREEN EMBED, LIKE THE OLD `/setup-verify`

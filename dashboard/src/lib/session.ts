@@ -46,9 +46,16 @@ function sign(data: string): string {
   // and publicly computable — anyone could forge { uid, exp, p:{isAdmin:true} }
   // and take over ANY account (the DB row is loaded by uid). Demo mode (OAuth
   // unconfigured, no real credentials to protect) may keep using the empty secret.
-  if (!cfg.sessionSecret && isDiscordOAuthReady()) {
+  //
+  // v3.28.3 SECURITY FIX: the guard now ALSO fires when the bot's DASH API token
+  // is configured. A live DASH_API_TOKEN means real writes flow through the
+  // dashboard (and DB rows may carry stored Discord access tokens from earlier
+  // OAuth logins) — an empty secret is forgeable exactly then. The old guard
+  // keyed only on OAuth readiness, leaving this very plausible configuration
+  // (OAuth unconfigured / .env lost on Termux, bot running) unprotected.
+  if (!cfg.sessionSecret && (isDiscordOAuthReady() || cfg.dashApiToken)) {
     throw new Error(
-      "SESSION_SECRET is empty while Discord OAuth is configured — refusing to sign session tokens (they would be forgeable). Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" and set it in dashboard/.env"
+      "SESSION_SECRET is empty while Discord OAuth or the bot DASH API is configured — refusing to sign session tokens (they would be forgeable). Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" and set it in dashboard/.env"
     );
   }
   return crypto.createHmac("sha256", cfg.sessionSecret).update(data).digest("base64url");

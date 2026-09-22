@@ -153,6 +153,18 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const drawerPanelRef = useRef<HTMLDivElement | null>(null);
   const navWasOpen = useRef(false);
+  // v3.28.3: refs mirroring the pending-edit state + payload, so load() can
+  // read the CURRENT values without stale-closure races (see load below).
+  const configUpdatesRef = useRef<Record<string, unknown>>({});
+  const automodPatchRef = useRef<Partial<AutoModConfig>>({});
+  const payloadRef = useRef<DashboardPayload | null>(null);
+  const loadSeqRef = useRef(0);
+
+  useEffect(() => { configUpdatesRef.current = configUpdates; }, [configUpdates]);
+  useEffect(() => { automodPatchRef.current = automodPatch; }, [automodPatch]);
+  useEffect(() => { payloadRef.current = payload; }, [payload]);
+  // v3.28.3: clear the pending toast timer when the dashboard unmounts.
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   const openNav = useCallback(() => {
     navWasOpen.current = true;
@@ -165,29 +177,46 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     toastTimer.current = setTimeout(() => setToast(null), 3800);
   }, []);
 
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/guilds/${guildId}/dashboard?_=${Date.now()}`, { cache: "no-store" });
-    if (res.status === 401) {
-      router.replace("/");
-      return;
-    }
-    if (res.status === 403) {
-      setLoadError("You don't have permission to manage this server.");
-      setLoading(false);
-      return;
-    }
-    if (res.status === 503) {
-      setLoadError("The bot is not connected — make sure it's running, then reload.");
-      setLoading(false);
-      return;
-    }
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-      setLoadError(data?.error ?? `Failed to load the dashboard (${res.status}).`);
-      setLoading(false);
-      return;
-    }
-    const data = (await res.json()) as DashboardPayload & { meta: GuildMeta };
+  const load = useCallback(async (opts?: { preserveDraft?: boolean }) => {
+    // v3.28.3: every load gets a sequence number — if a newer load starts
+    // before this one finishes, this response is silently dropped (an older
+    // response can never overwrite newer data; double-clicks are harmless).
+    const seq = ++loadSeqRef.current;
+    // v3.28.3: a failed refresh keeps the data on screen when the dashboard
+    // already shows something (toast + last-known data) instead of replacing
+    // the whole screen — and any dirty draft — with a fatal error.
+    const softFail = (msg: string) => {
+      if (payloadRef.current) {
+        showToast(`${msg} Showing the last loaded data.`, "err");
+      } else {
+        setLoadError(msg);
+        setLoading(false);
+      }
+    };
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/dashboard?_=${Date.now()}`, { cache: "no-store" });
+      if (seq !== loadSeqRef.current) return;
+      if (res.status === 401) {
+        router.replace("/");
+        return;
+      }
+      if (res.status === 403) {
+        // Permission loss is a hard stop — never soft.
+        setLoadError("You don't have permission to manage this server.");
+        setLoading(false);
+        return;
+      }
+      if (res.status === 503) {
+        softFail("The bot is not connected — make sure it's running, then reload.");
+        return;
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (seq !== loadSeqRef.current) return;
+        softFail(data?.error ?? `Failed to load the dashboard (${res.status}).`);
+        return;
+      }
+      const data = (await res.json()) as DashboardPayload & { meta: GuildMeta };
     // v3.23.1: defensive normalization — older bots send `automod: null` for
     // guilds that never configured AutoMod, which crashed the Overview &
     // AutoMod pages in the browser. This fallback guarantees the payload is
@@ -227,12 +256,35 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     if (!data.boosters || !Array.isArray(data.boosters.live) || !Array.isArray(data.boosters.recent)) {
       data.boosters = { live: [], recent: [] };
     }
+    if (seq !== loadSeqRef.current) return;
     setPayload(data);
     setMeta(data.meta);
-    // Draft = in-memory copy; dirty state resets (a fresh draft always comes from the bot).
-    setDraft({ ...data, meta: undefined } as DashboardPayload);
-    setConfigUpdates({});
-    setAutomodPatch({});
+    // v3.28.3: refreshes triggered by module CRUD actions and by save() pass
+    // preserveDraft — unsaved edits are RE-APPLIED onto the fresh data instead
+    // of being silently wiped (the old behavior contradicted guarantee #1:
+    // "No change is ever lost silently"). A plain load() (initial mount, a
+    // confirmed manual refresh) still yields a clean draft.
+    const pending = configUpdatesRef.current;
+    const pendingAutomod = automodPatchRef.current;
+    const hasPending = Object.keys(pending).length > 0 || Object.keys(pendingAutomod).length > 0;
+    let nextDraft = { ...data, meta: undefined } as DashboardPayload;
+    if (opts?.preserveDraft && hasPending) {
+      nextDraft = structuredClone(nextDraft);
+      for (const [p, v] of Object.entries(pending)) {
+        // The autorole wire update is a whole array; the draft path is the
+        // roleIds member (v3.24.1 draft/wire split).
+        setPath(nextDraft.config as unknown as Record<string, unknown>, p === "autorole" && Array.isArray(v) ? "autorole.roleIds" : p, v);
+      }
+      if (Object.keys(pendingAutomod).length > 0) {
+        nextDraft.automod = { ...nextDraft.automod, ...pendingAutomod };
+      }
+    } else {
+      configUpdatesRef.current = {};
+      automodPatchRef.current = {};
+      setConfigUpdates({});
+      setAutomodPatch({});
+    }
+    setDraft(nextDraft);
     setLoadError(null);
 
     // v3.21.0: Quick Start auto-landing — servers that aren't set up yet (no
@@ -245,7 +297,13 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
         setModule("quickstart");
       }
     }
-  }, [guildId, router]);
+    } catch {
+      // Network-level rejection (fetch threw / body parse failed) — never an
+      // unhandled rejection, never a silent failure.
+      if (seq !== loadSeqRef.current) return;
+      softFail("Network error — could not reach the dashboard API.");
+    }
+  }, [guildId, router, showToast]);
 
   useEffect(() => {
     void load().finally(() => setLoading(false));
@@ -306,7 +364,9 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   );
 
   const refresh = useCallback(async () => {
-    await load();
+    // v3.28.3: module CRUD refreshes preserve the draft — unsaved edits in
+    // OTHER modules survive (they used to be wiped silently).
+    await load({ preserveDraft: true });
   }, [load]);
 
   // ---- Save ----
@@ -345,25 +405,52 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
   async function save() {
     setSaving(true);
+    // v3.28.3: snapshot what is being sent NOW — edits typed while the PUTs
+    // are in flight must survive the post-save reload (they used to be
+    // wiped by load() clearing the dirty state).
+    const sentConfig = { ...configUpdates };
+    const sentAutomod = { ...automodPatch };
     try {
-      if (Object.keys(configUpdates).length > 0) {
-        await call("config", "PUT", { updates: configUpdates });
+      if (Object.keys(sentConfig).length > 0) {
+        await call("config", "PUT", { updates: sentConfig });
       }
-      if (Object.keys(automodPatch).length > 0) {
-        await call("automod", "PUT", automodPatch);
+      if (Object.keys(sentAutomod).length > 0) {
+        await call("automod", "PUT", sentAutomod);
       }
-      await load();
-      showToast("Changes saved — effective in the bot immediately.");
     } catch (e) {
+      // Save failed — the draft stays dirty so the user can retry (the
+      // payload was never reset; bot business errors are shown as-is).
       showToast(e instanceof Error ? e.message : "Failed to save.", "err");
+      return;
     } finally {
       setSaving(false);
     }
+    // The PUTs succeeded — clear exactly the keys that were saved. A key
+    // re-edited during the save (new value ≠ sent value) stays dirty.
+    setConfigUpdates((u) => {
+      const next = { ...u };
+      for (const [k, v] of Object.entries(sentConfig)) {
+        if (k in next && JSON.stringify(next[k]) === JSON.stringify(v)) delete next[k];
+      }
+      return next;
+    });
+    setAutomodPatch((p) => {
+      const next = { ...p };
+      for (const [k, v] of Object.entries(sentAutomod)) {
+        if (k in next && JSON.stringify((next as Record<string, unknown>)[k]) === JSON.stringify(v)) delete (next as Record<string, unknown>)[k];
+      }
+      return next;
+    });
+    // Reload the latest data, keeping any edits made during the save. A
+    // reload failure is reported by load() itself (toast) and does NOT
+    // masquerade as "Failed to save" anymore — the changes ARE saved.
+    await load({ preserveDraft: true });
+    showToast("Changes saved — effective in the bot immediately.");
   }
 
   function discard() {
     if (!payload) return;
-    setDraft({ ...payload });
+    setDraft({ ...payload, meta: undefined } as DashboardPayload);
     setConfigUpdates({});
     setAutomodPatch({});
     showToast("Draft discarded — back to the bot's data.");
@@ -383,7 +470,10 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     if (!confirmIfDirty("refreshing")) return;
     setRefreshing(true);
     try {
-      await refresh();
+      // v3.28.3: the manual Refresh discards the draft ONLY after the user
+      // confirmed the warning above (matches its wording). Module CRUD
+      // refreshes use the draft-preserving refresh() instead.
+      await load();
     } finally {
       setRefreshing(false);
     }

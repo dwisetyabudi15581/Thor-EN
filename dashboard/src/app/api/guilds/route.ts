@@ -39,23 +39,28 @@ export async function GET(req: Request) {
   if (!user) return jsonError("Not logged in.", 401);
 
   // Bot health + bot guild list (parallel, offline-tolerant).
+  // v3.28.3: allSettled — /health is unauthenticated on the bot while
+  // /guilds requires the token. With Promise.all, a token mismatch (the #1
+  // setup mistake) rejected BOTH and the UI reported "bot offline" — the
+  // opposite of the truth. Now botOnline derives from /health alone and a
+  // /guilds failure is logged distinctly.
   let botOnline = false;
   let botVersion: string | undefined;
   let botGuildIds = new Set<string>();
-  try {
-    const [health, guildsRes] = await Promise.all([
-      botApi<{ ok: boolean; version: string }>("/health", { timeoutMs: 4000 }),
-      botApi<{ guilds: BotGuild[] }>("/guilds", { timeoutMs: 4000 }),
-    ]);
-    botOnline = Boolean(health?.ok);
-    botVersion = health?.version;
-    if (Array.isArray(guildsRes?.guilds)) {
-      botGuildIds = new Set(guildsRes.guilds.map((g) => g.id));
-    }
-  } catch (err) {
-    if (!(err instanceof BotOfflineError)) {
-      console.error("[api/guilds] DASH API error:", err instanceof Error ? err.message : err);
-    }
+  const [healthRes, guildsRes] = await Promise.allSettled([
+    botApi<{ ok: boolean; version: string }>("/health", { timeoutMs: 4000 }),
+    botApi<{ guilds: BotGuild[] }>("/guilds", { timeoutMs: 4000 }),
+  ]);
+  if (healthRes.status === "fulfilled") {
+    botOnline = Boolean(healthRes.value?.ok);
+    botVersion = healthRes.value?.version;
+  } else if (!(healthRes.reason instanceof BotOfflineError)) {
+    console.error("[api/guilds] DASH /health error:", healthRes.reason instanceof Error ? healthRes.reason.message : healthRes.reason);
+  }
+  if (guildsRes.status === "fulfilled" && Array.isArray(guildsRes.value?.guilds)) {
+    botGuildIds = new Set(guildsRes.value.guilds.map((g) => g.id));
+  } else if (guildsRes.status === "rejected" && !(guildsRes.reason instanceof BotOfflineError)) {
+    console.error("[api/guilds] DASH /guilds error (is DASH_API_TOKEN correct?):", guildsRes.reason instanceof Error ? guildsRes.reason.message : guildsRes.reason);
   }
 
   const result = await getManageableGuilds(user.id);
