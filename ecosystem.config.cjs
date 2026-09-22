@@ -8,12 +8,15 @@
 //   pm2 status                  // thor-bot + thor-dash must be online
 //   pm2 logs thor-bot           /  pm2 logs thor-dash
 //   pm2 restart all             // restart both
+//
+// v4.0.0: each app runs inside its own module folder (bot/ and dashboard/)
+// with its own package.json — exactly like running two separate services.
 module.exports = {
   apps: [
     {
       name: "thor-bot",
       script: "index.js",
-      cwd: __dirname,
+      cwd: __dirname + "/bot",
       time: true,
       max_memory_restart: "400M",
     },

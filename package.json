@@ -1,35 +1,19 @@
 {
-  "name": "community-bot",
-  "version": "3.31.0",
-  "description": "All-in-One Discord Community Bot \u2014 ticket panel (multi-category), auto-responder, anti-spam, AFK, leveling, key-driven VIP role, self-role, temp voice, giveaway, scheduled announcements, embed builder, backup, warn, stats, poll, midman/escrow (3-party escrow deal, anyone can create a deal via a 3-step form, dual consent, member management inside the deal channel, additive fee) \u2014 fully configurable from Discord OR web dashboard ",
-  "main": "index.js",
+  "name": "thor-en",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Thor-EN monorepo — ONE system, TWO independent modules: the Discord Bot (bot/) and the Web Dashboard (dashboard/), connected through the bot's DASH API (HTTP + shared token) and each with its own package.json. Root scripts orchestrate both; each module can also run standalone and is ready to be split into separate repos.",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "node --test --test-concurrency=1 tests/unit/*.test.js",
-    "test:unit": "node --test tests/unit/*.test.js",
-    "lint": "eslint index.js src/",
-    "lint:fix": "eslint index.js src/ --fix",
-    "format": "prettier --write \"**/*.{js,json,md,yml}\" --ignore-path .gitignore",
-    "format:check": "prettier --check \"**/*.{js,json,md,yml}\" --ignore-path .gitignore",
-    "dash:install": "cd dashboard && npm install && npx prisma generate",
-    "dash:dev": "cd dashboard && npm run dev",
-    "dash:build": "cd dashboard && npm run build",
-    "dash:start": "cd dashboard && npm run start",
-    "dash:mock": "cd dashboard && npm run mock"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "eslint": "^9.0.0",
-    "globals": "^17.11.0",
-    "nodemon": "^3.1.14",
-    "prettier": "^3.0.0"
-  },
-  "dependencies": {
-    "discord.js": "^14.27.0",
-    "dotenv": "^16.4.1"
-  },
-  "engines": {
-    "node": ">=18"
+    "setup": "./setup.sh",
+    "start": "./start.sh",
+    "dev": "./dev.sh",
+    "bot:start": "npm --prefix bot start",
+    "bot:dev": "npm --prefix bot run dev",
+    "bot:test": "npm --prefix bot test",
+    "bot:lint": "npm --prefix bot run lint",
+    "dash:dev": "npm --prefix dashboard run dev",
+    "dash:build": "npm --prefix dashboard run build",
+    "dash:start": "npm --prefix dashboard run start",
+    "dash:mock": "npm --prefix dashboard run mock"
   }
 }

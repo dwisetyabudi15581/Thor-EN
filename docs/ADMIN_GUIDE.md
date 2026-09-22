@@ -1,8 +1,20 @@
-# 📖 Admin Guide — Thor Bot v3.20.0
+# 📖 Admin Guide — Thor Bot v4.0.0
 
 The complete guide for Discord server admins running this bot — suitable both for new admins doing their first setup and for experienced admins as a daily reference.
 
 > 📜 Full history of all versions: [CHANGELOG.md](../CHANGELOG.md) · A summary of the latest versions is in [Section 11](#11-version-history).
+
+> 📁 **v4.0.0 layout note — where things moved.** The repo is now split into two
+> independent modules: the bot code lives in **`bot/`** and the web dashboard in
+> **`dashboard/`** (each with its own `package.json` and `.env`). For day-to-day
+> admin work described in this guide, the practical changes are:
+> - bot commands: `cd bot && npm install / npm start` (was: repo root)
+> - bot `.env`: **`bot/.env`** (was: root `.env`)
+> - server data: **`bot/data/`** (was: root `data/`) — e.g. `bot/data/config/<guildId>.json`
+> - backups: **`bot/backups/`**
+> - the orchestration scripts (`./setup.sh`, `./start.sh`, `./dev.sh`, pm2) still run from the repo root and handle both modules.
+>
+> Everything below works exactly as written otherwise; older `data/` and `npm` paths in the historical sections refer to the pre-v4.0.0 layout.
 
 ---
 
@@ -38,6 +50,7 @@ The complete guide for Discord server admins running this bot — suitable both 
 ### Install
 
 ```bash
+cd bot                 # v4.0.0 — the bot is its own module
 npm install
 cp .env.example .env
 # Edit .env, fill in DISCORD_TOKEN and GUILD_ID

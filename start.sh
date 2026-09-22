@@ -8,6 +8,10 @@
 # - For a 24/7 production server, prefer pm2 (more reliable + auto-restart):
 #     pm2 start ecosystem.config.cjs && pm2 save
 #   See DEPLOY.md.
+#
+# v4.0.0: bot code lives in bot/ (its own package.json); the dashboard in
+# dashboard/. This script only orchestrates the two — each one can also be
+# started by hand inside its own folder.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -33,8 +37,8 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "==> Starting the Thor bot..."
-node index.js & pids+=("$!")
+echo "==> Starting the Thor bot (bot/)..."
+(cd bot && npm start) & pids+=("$!")
 
 echo "==> Starting the web dashboard (http://localhost:3000)..."
 (cd dashboard && npm run start) & pids+=("$!")

@@ -5,6 +5,11 @@
 #   - Fails the syntax check
 #   - Fails unit tests
 #   - Breaks the behavior of existing functions
+#   - Breaks the dashboard production build
+#
+# v4.0.0: the repo is split into two independent modules —
+#   bot/       → lint + unit tests (Node 18/20/22)
+#   dashboard/ → production build (Node 22)
 # ============================================
 
 name: CI
@@ -16,8 +21,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Lint + Test
+  bot:
+    name: Bot — Lint + Test
     runs-on: ubuntu-latest
 
     strategy:
@@ -33,24 +38,51 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
+          cache-dependency-path: bot/package-lock.json
 
-      - name: 📦 Install dependencies
+      - name: 📦 Install bot dependencies
         run: npm ci
+        working-directory: bot
 
       - name: 🔍 Lint (ESLint)
         run: npm run lint
+        working-directory: bot
         continue-on-error: true # soft-fail for now; will be made strict once the codebase is clean
 
       - name: 🧪 Run tests
         run: npm test
+        working-directory: bot
 
       - name: 📊 Upload coverage artifact (if any)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-node-${{ matrix.node-version }}
+          name: bot-test-results-node-${{ matrix.node-version }}
           path: |
             coverage/
             .nyc_output/
           if-no-files-found: ignore
           retention-days: 7
+
+  dashboard:
+    name: Dashboard — Production build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: 📦 Install dashboard dependencies
+        run: npm ci
+        working-directory: dashboard
+
+      - name: 🏗️ Build (prisma generate + next build)
+        run: npm run build
+        working-directory: dashboard

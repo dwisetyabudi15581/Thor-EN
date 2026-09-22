@@ -3,10 +3,15 @@
 # + web dashboard (next dev, hot-reload) running together.
 #
 # Usage:  ./dev.sh
+#
+# v4.0.0: bot code lives in bot/, the dashboard in dashboard/ — this script
+# only orchestrates the two. Each module can also be developed standalone:
+#   cd bot && npm run dev          # bot only
+#   cd dashboard && npm run dev    # dashboard only
 set -euo pipefail
 cd "$(dirname "$0")"
 
-[ -f .env ] || { echo "!! .env not found — run ./setup.sh first."; exit 1; }
+[ -f bot/.env ] || { echo "!! bot/.env not found — run ./setup.sh first."; exit 1; }
 [ -f dashboard/.env ] || cp dashboard/.env.example dashboard/.env
 
 pids=()
@@ -21,8 +26,8 @@ trap cleanup EXIT INT TERM
 echo "==> Dashboard dev (next dev) at http://localhost:3000..."
 (cd dashboard && npm run dev) & pids+=("$!")
 
-echo "==> Bot dev (nodemon index.js)..."
-npx nodemon index.js & pids+=("$!")
+echo "==> Bot dev (nodemon, bot/)..."
+(cd bot && npm run dev) & pids+=("$!")
 
 echo
 echo "Development mode running — press Ctrl+C to stop."

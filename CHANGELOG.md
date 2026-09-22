@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.0.0] — 2026-09-23
+
+### Changed — 🏗️ MAJOR: RESTRUCTURE — BOT & DASHBOARD AS TWO INDEPENDENT MODULES (SEPARATION OF CONCERNS)
+
+The repository is reorganized into **two independent, self-contained modules** per the owner's directive: **`bot/`** (the entire Discord bot — discord.js client, command handlers, event listeners, JSON persistence, the DASH API server) and **`dashboard/`** (the whole web frontend — Next.js app, OAuth2 strategy, API routes, assets). The goal: changes to the dashboard UI can never disturb the bot's process and vice versa; each folder carries its own `package.json`, its own `.env`, and is **ready to be lifted into its own repository as-is** — the only contract between them is the DASH API (HTTP + the shared `DASH_API_TOKEN`). Zero feature logic was touched: every file moved with `git mv` (full history preserved), and the relative-path audit beforehand proved all internal resolutions (`../../package.json` for the version, `../../data` for persistence, `../../src` for test requires) stay valid because each subtree moved **together**.
+
+**The new layout:**
+
+- 🟠 **`bot/` — the Discord bot module.** `index.js`, `src/` (bot/commands/interactions/data/services/ui/infra), `tests/unit/` (897 tests), `scripts/`, `eslint.config.js`, `.prettierrc.json`, and the runtime `data/` + `backups/` folders all live under `bot/`. A dedicated `bot/package.json` (name `thor-bot`) contains **only backend dependencies** (`discord.js`, `dotenv` + dev tooling) — the bot installs and runs standalone: `cd bot && npm install && npm start`. The version source used by `/help` and the DASH `/health` endpoint now resolves to `bot/package.json`.
+- 🟢 **`dashboard/` — the web module (already self-contained by design).** Unchanged location and internals; its `package.json` keeps **only web dependencies** (next, react, tailwind, prisma, lucide-react, …). All its scripts already resolve paths from `process.cwd()`, so the module was untouched code-wise beyond the version bump.
+- 🟢 **Root = pure orchestrator.** The root `package.json` no longer carries any dependency — only convenience scripts (`npm run bot:test`, `npm run dash:build`, `dash:mock`, …) that proxy into the module folders via `npm --prefix`. `./setup.sh` / `./start.sh` / `./dev.sh` / `ecosystem.config.cjs` (pm2: `thor-bot` now runs with `cwd: bot/`) orchestrate both modules and were updated for the new paths. The stale root `package-lock.json` and root `node_modules/` were removed; `bot/package-lock.json` is generated fresh.
+
+**Environment & config separation:**
+
+- 🟠 **One `.env` per module, each fully documented.** `bot/.env.example` now scopes itself explicitly (bot-only: `DISCORD_TOKEN`, `GUILD_ID`, `DASH_API_HOST/PORT/TOKEN`) and `dashboard/.env.example` scopes its own (`DATABASE_URL`, `SESSION_SECRET`, `DISCORD_CLIENT_ID/SECRET`, `PUBLIC_ORIGIN` from which the OAuth callback URL is built, `ADMIN_DISCORD_IDS`, `DASH_API_URL/TOKEN`). Both templates cross-reference each other and call out the **only** values that must match: the `DASH_API_*` pair. `setup.sh` creates `bot/.env` and `dashboard/.env` from the examples.
+- 🟡 **`.gitignore` rewritten for the new layout** — bot runtime data now ignored under `bot/data/` (per-guild configs, custom commands, corrupt-file quarantine) and `bot/backups/`; the legacy pre-v3.9.10 root-file patterns still match at any depth; dashboard artifacts unchanged.
+
+**CI:**
+
+- 🟡 **`.github/workflows/ci.yml` split into two jobs** — `bot` (lint + the 897 unit tests on Node 18/20/22, `working-directory: bot`, npm cache keyed on `bot/package-lock.json`) and a new `dashboard` job (production build `prisma generate` + `next build` on Node 22) so a broken web build can no longer merge silently either.
+
+**Docs (production move):**
+
+- 🟠 **`DEPLOY.md` rewritten production-first** for the owner's move from Termux testing to a real VPS — updated clone URLs, both-module env walkthrough, pm2 as two independent services, updated backup paths (`bot/data/`, `dashboard/db/`), and a new **"Migrating from the v3.x layout"** section (a 5-minute `tar`+`scp` move of `data/` → `bot/data/` plus the optional dashboard user DB) so no live server data is lost in the upgrade.
+- 🟢 **New `bot/README.md`** (module docs: standalone run, prerequisites, env table, the DASH-API connection diagram, module structure, dev scripts) · **root `README.md` rewritten** around the two-module architecture (structure tree, who-needs-which-variable table, standalone vs orchestrated run) · **`dashboard/README.md`** reframed as an independent module (3-tier access + live-sync wording brought up to v3.29–3.31 reality) · **`docs/README.md`** index updated · **`docs/ADMIN_GUIDE.md`** header note maps every old path to its new home (`bot/.env`, `bot/data/`, `bot/backups/`).
+
+**Compatibility & migration:** data formats, the DASH API contract, slash commands, configs, and the dashboard UI are all byte-identical to v3.31.0 — only the folder layout changed. Existing installs migrating from v3.x move `data/` → `bot/data/` and their two `.env` files into `bot/` + `dashboard/` (exact steps in DEPLOY.md). Version jumps 3.31.0 → **4.0.0** (major = breaking layout change) in `bot/package.json`, `dashboard/package.json`, the root orchestrator, and both lock files.
+
+**Tests:** no new tests (no logic changed) — the same 897/897 must pass from their new home `bot/tests/unit/`, which itself proves the module is self-contained. Verification: full bot test suite green from `bot/`, bot lint clean, dashboard production build green, root orchestration scripts syntax-checked.
+
 ## [3.31.0] — 2026-09-23
 
 ### Added — 🎨 TAHAP 3: REWRITE TOTAL UI/UX DASHBOARD (DARK MODE KHAS DISCORD)
