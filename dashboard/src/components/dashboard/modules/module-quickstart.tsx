@@ -67,22 +67,22 @@ function StepCard({
   return (
     <section
       className={`rounded-2xl border p-5 transition-colors md:p-6 ${
-        done ? "border-emerald-500/30 bg-emerald-950/10" : "border-zinc-800/80 bg-zinc-900/30"
+        done ? "border-dgreen/30 bg-dgreen/10" : "border-white/[0.06] bg-dbg-1/30"
       }`}
     >
       <div className="flex items-start gap-3">
         {done ? (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" aria-hidden="true" />
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-dgreen" aria-hidden="true" />
         ) : (
-          <Circle className="mt-0.5 h-5 w-5 shrink-0 text-zinc-600" aria-hidden="true" />
+          <Circle className="mt-0.5 h-5 w-5 shrink-0 text-dtx-4" aria-hidden="true" />
         )}
         <div className="min-w-0 flex-1">
-          <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-zinc-100">
-            <span className="text-zinc-500">{n}.</span>
+          <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-dtx-0">
+            <span className="text-dtx-3">{n}.</span>
             {title}
             {done ? <Pill tone="green">done</Pill> : <Pill>pending</Pill>}
           </h3>
-          <p className="mt-1 text-xs leading-relaxed text-zinc-500">{desc}</p>
+          <p className="mt-1 text-xs leading-relaxed text-dtx-3">{desc}</p>
         </div>
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-2">{children}</div>
@@ -271,25 +271,25 @@ export function QuickStartModule({
   return (
     <div className="space-y-5">
       {/* Progress */}
-      <div className="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-amber-400/10 to-transparent p-5 md:p-6">
+      <div className="rounded-2xl border border-blurple/20 bg-gradient-to-br from-blurple/10 to-transparent p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Set up your server from scratch — all from the web</h3>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+            <h3 className="text-sm font-semibold text-dtx-0">Set up your server from scratch — all from the web</h3>
+            <p className="mt-1 text-xs leading-relaxed text-dtx-3">
               Follow the steps below; every form is applied by the bot to your Discord server
               instantly (no slash commands needed). Exactly like the 🚀 Quick Start category in /help.
             </p>
           </div>
           <div className="text-right">
-            <p className="text-2xl font-bold text-amber-300">
-              {doneCount}<span className="text-sm text-zinc-500">/6</span>
+            <p className="text-2xl font-bold text-blurple-soft">
+              {doneCount}<span className="text-sm text-dtx-3">/6</span>
             </p>
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500">core steps</p>
+            <p className="text-[10px] uppercase tracking-widest text-dtx-3">core steps</p>
           </div>
         </div>
-        <div className="mt-4 h-2 overflow-hidden rounded-full bg-zinc-800" role="progressbar" aria-valuenow={doneCount} aria-valuemin={0} aria-valuemax={6} aria-label="Setup progress">
+        <div className="mt-4 h-2 overflow-hidden rounded-full bg-dbg-3" role="progressbar" aria-valuenow={doneCount} aria-valuemin={0} aria-valuemax={6} aria-label="Setup progress">
           <div
-            className="h-full rounded-full bg-amber-400 transition-all duration-500"
+            className="h-full rounded-full bg-blurple transition-all duration-500"
             style={{ width: `${(doneCount / 6) * 100}%` }}
           />
         </div>
@@ -299,7 +299,7 @@ export function QuickStartModule({
       <StepCard
         n={1}
         title="Bot Admin Role"
-        desc={<>Members holding this role can use every admin command of the bot. Required before installing the ticket panel. ≙ <code className="text-amber-300/80">/set-role admin</code></>}
+        desc={<>Members holding this role can use every admin command of the bot. Required before installing the ticket panel. ≙ <code className="text-blurple-soft">/set-role admin</code></>}
         done={done.admin}
       >
         <Field label="Pick from the role list" hint={done.admin ? `Saved: ${roleLabel(meta.roles, c.roles.admin)}` : undefined}>
@@ -311,7 +311,7 @@ export function QuickStartModule({
             <Button
               onClick={() => applyRole("admin", "roles.admin", adminPick, adminId, "Admin role registered — effective in the bot immediately.")}
               disabled={busy === "admin"}
-              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="shrink-0 bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               {busy === "admin" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Register
@@ -324,7 +324,7 @@ export function QuickStartModule({
       <StepCard
         n={2}
         title="Auto-Role on Join"
-        desc={<>Roles granted automatically to every new member. Turn the toggle below on if you want them gone once the member gets any other role (self-role, level role, admin grant) — the Unverified replacement, with no separate setup. ≙ <code className="text-amber-300/80">/set-autorole</code></>}
+        desc={<>Roles granted automatically to every new member. Turn the toggle below on if you want them gone once the member gets any other role (self-role, level role, admin grant) — the Unverified replacement, with no separate setup. ≙ <code className="text-blurple-soft">/set-autorole</code></>}
         done={done.autorole}
       >
         <Field label="Pick from the role list" hint={done.autorole ? `Saved: ${(c.autorole?.roleIds ?? []).map((id) => roleLabel(meta.roles, id)).join(", ")}` : undefined}>
@@ -336,7 +336,7 @@ export function QuickStartModule({
             <Button
               onClick={() => applyJoinRole(joinPick, joinId)}
               disabled={busy === "autorole"}
-              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="shrink-0 bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               {busy === "autorole" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Register
@@ -357,14 +357,14 @@ export function QuickStartModule({
       <StepCard
         n={3}
         title="Ticket Categories & Products"
-        desc={<>Prepare your store catalog: every product shows up in the ticket panel's price list. ≙ <code className="text-amber-300/80">/add-product</code> — manage everything in the Tickets &amp; Products module.</>}
+        desc={<>Prepare your store catalog: every product shows up in the ticket panel's price list. ≙ <code className="text-blurple-soft">/add-product</code> — manage everything in the Tickets &amp; Products module.</>}
         done={done.catalog}
       >
         <div className="md:col-span-2">
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-800/70 bg-zinc-950/40 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/[0.06] bg-dbg-0/40 px-4 py-3">
             <Pill tone={cats.length > 0 ? "green" : "red"}>{cats.length} categories</Pill>
             <Pill tone={products.length > 0 ? "green" : "red"}>{products.length} products</Pill>
-            <span className="text-[11px] text-zinc-500">
+            <span className="text-[11px] text-dtx-3">
               {done.catalog
                 ? "Catalog ready — the ticket panel will display this price list."
                 : "Add at least 1 product so the ticket panel shows a price list."}
@@ -373,7 +373,7 @@ export function QuickStartModule({
               size="sm"
               variant="outline"
               onClick={() => goTo("tickets")}
-              className="ml-auto border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+              className="ml-auto border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
             >
               Manage catalog <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
@@ -381,7 +381,7 @@ export function QuickStartModule({
         </div>
 
         {/* Quick add product */}
-        <div className="md:col-span-2 grid gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 md:grid-cols-6">
+        <div className="md:col-span-2 grid gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4 md:grid-cols-6">
           <div className="md:col-span-2">
             <Field label="Product label">
               <TextInput value={prdLabel} onChange={setPrdLabel} placeholder="e.g. VIP 30 Days" />
@@ -410,7 +410,7 @@ export function QuickStartModule({
             <Button
               onClick={quickAddProduct}
               disabled={busy === "product"}
-              className="w-full bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="w-full bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               {busy === "product" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
               Add
@@ -422,8 +422,8 @@ export function QuickStartModule({
               onClick={() => setPrdKey(!prdKey)}
               className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
                 prdKey
-                  ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                  : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                  ? "border-blurple/40 bg-blurple/10 text-blurple-soft"
+                  : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
               }`}
             >
               {prdKey ? "key-based (VIP role — granted via /set-key)" : "no key (service/account — details via DM)"}
@@ -436,7 +436,7 @@ export function QuickStartModule({
       <StepCard
         n={4}
         title="Install Ticket Panel"
-        desc={<>The bot sends the order panel (embed + category buttons + price list) to the channel you pick — members click to buy. ≙ <code className="text-amber-300/80">/setup-ticket-panel</code></>}
+        desc={<>The bot sends the order panel (embed + category buttons + price list) to the channel you pick — members click to buy. ≙ <code className="text-blurple-soft">/setup-ticket-panel</code></>}
         done={done.panel}
       >
         <Field label="Target channel" hint={done.panel ? `Installed in: ${panels.map((p) => channelLabel(meta.channels, p.channelId)).join(", ")}` : "Pick the channel where the panel should be installed."}>
@@ -448,7 +448,7 @@ export function QuickStartModule({
               type="button"
               onClick={() => setPanelDropdown(false)}
               className={`h-10 flex-1 rounded-lg border text-xs font-medium transition-colors ${
-                !panelDropdown ? "border-amber-400/40 bg-amber-400/10 text-amber-300" : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                !panelDropdown ? "border-blurple/40 bg-blurple/10 text-blurple-soft" : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
               }`}
             >
               🔘 Buttons
@@ -457,7 +457,7 @@ export function QuickStartModule({
               type="button"
               onClick={() => setPanelDropdown(true)}
               className={`h-10 flex-1 rounded-lg border text-xs font-medium transition-colors ${
-                panelDropdown ? "border-amber-400/40 bg-amber-400/10 text-amber-300" : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                panelDropdown ? "border-blurple/40 bg-blurple/10 text-blurple-soft" : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
               }`}
             >
               📋 Dropdown
@@ -465,7 +465,7 @@ export function QuickStartModule({
             <Button
               onClick={installTicketPanel}
               disabled={busy === "panel"}
-              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="shrink-0 bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               {busy === "panel" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Install
@@ -478,7 +478,7 @@ export function QuickStartModule({
       <StepCard
         n={5}
         title="Self-Role Panel (e.g. Verification)"
-        desc={<>A panel where members pick their own roles by clicking buttons — add your Verified role here and it becomes your verification gate, with the style/label/emoji you want. ≙ <code className="text-amber-300/80">/setup-selfrole</code> + <code className="text-amber-300/80">/selfrole-add</code></>}
+        desc={<>A panel where members pick their own roles by clicking buttons — add your Verified role here and it becomes your verification gate, with the style/label/emoji you want. ≙ <code className="text-blurple-soft">/setup-selfrole</code> + <code className="text-blurple-soft">/selfrole-add</code></>}
         done={done.selfrole}
       >
         <Field
@@ -486,12 +486,12 @@ export function QuickStartModule({
           hint={done.selfrole ? `${selfrolePanels.length} panel(s) installed — manage them in the Self Roles module.` : "None yet — create one in the Self Roles module."}
         >
           <div className="flex items-center">
-            <span className="mr-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
+            <span className="mr-2 rounded-lg border border-dgreen/40 bg-dgreen/10 px-3 py-1.5 text-xs font-medium text-dgreen">
               🎭 {selfrolePanels.length} panel{selfrolePanels.length === 1 ? "" : "s"}
             </span>
             <Button
               onClick={() => goTo("selfroles")}
-              className="ml-auto bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="ml-auto bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
               Create / Manage
@@ -504,7 +504,7 @@ export function QuickStartModule({
       <StepCard
         n={6}
         title="Server Log Channel"
-        desc={<>Records joins/leaves, deleted messages, bans, and every moderation action. ≙ <code className="text-amber-300/80">/set-channel server-log</code></>}
+        desc={<>Records joins/leaves, deleted messages, bans, and every moderation action. ≙ <code className="text-blurple-soft">/set-channel server-log</code></>}
         done={done.log}
       >
         <Field label="Pick from the channel list" hint={done.log ? `Saved: ${channelLabel(meta.channels, c.channels["server-log"])}` : undefined}>
@@ -516,7 +516,7 @@ export function QuickStartModule({
             <Button
               onClick={() => applyChannel("log", "channels.server-log", logPick, logId, "Log channel registered — server activity starts being recorded.")}
               disabled={busy === "log"}
-              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="shrink-0 bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               {busy === "log" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Register
@@ -526,9 +526,9 @@ export function QuickStartModule({
       </StepCard>
 
       {/* Next steps — connecting the other categories */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Next steps (optional)</h3>
-        <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Next steps (optional)</h3>
+        <p className="mt-1 text-xs leading-relaxed text-dtx-3">
           Basics running? Every slash command category of this bot has its own module in this
           dashboard — configure everything from the web without opening Discord:
         </p>
@@ -547,13 +547,13 @@ export function QuickStartModule({
               key={item.id}
               type="button"
               onClick={() => goTo(item.id)}
-              className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 px-4 py-3 text-left transition-colors hover:border-amber-400/30 hover:bg-zinc-900/60"
+              className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 px-4 py-3 text-left transition-colors hover:border-blurple/30 hover:bg-dbg-1/60"
             >
               <span className="min-w-0">
-                <span className="block text-[13px] font-medium text-zinc-200">{item.label}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{item.desc}</span>
+                <span className="block text-[13px] font-medium text-dtx-1">{item.label}</span>
+                <span className="mt-0.5 block truncate text-[11px] text-dtx-3">{item.desc}</span>
               </span>
-              <ArrowRight className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true" />
+              <ArrowRight className="h-4 w-4 shrink-0 text-dtx-4" aria-hidden="true" />
             </button>
           ))}
         </div>

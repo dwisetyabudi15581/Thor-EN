@@ -59,12 +59,12 @@ export default function Page() {
 
   if (booting || !me) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4">
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400/10 border border-amber-400/25">
-          <Hammer className="h-6 w-6 text-amber-400" aria-hidden="true" />
-          <span className="absolute inset-0 rounded-2xl border border-amber-400/40 animate-ping opacity-30" aria-hidden="true" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-0 text-dtx-0 gap-4">
+        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-blurple/10 border border-blurple/25">
+          <Hammer className="h-6 w-6 text-blurple-soft" aria-hidden="true" />
+          <span className="absolute inset-0 rounded-2xl border border-blurple/40 animate-ping opacity-30" aria-hidden="true" />
         </div>
-        <p className="text-sm text-zinc-400">Preparing the dashboard…</p>
+        <p className="text-sm text-dtx-3">Preparing the dashboard…</p>
       </div>
     );
   }
@@ -72,12 +72,12 @@ export default function Page() {
   // v3.24.1 FIX (5.3): retry UI instead of a dead spinner when the boot fetch failed.
   if (netError) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4 px-6 text-center">
-        <p className="text-sm text-zinc-300">{netError}</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-0 text-dtx-0 gap-4 px-6 text-center">
+        <p className="text-sm text-dtx-2">{netError}</p>
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="rounded-lg border border-zinc-700 bg-transparent px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+          className="rounded-lg border border-white/[0.1] bg-transparent px-4 py-2 text-sm text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"
         >
           Retry
         </button>
@@ -100,12 +100,12 @@ export default function Page() {
 
   // User is logged in — the redirect effect above is in flight.
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4">
-      <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-400/10 border border-amber-400/25">
-        <Hammer className="h-6 w-6 text-amber-400" aria-hidden="true" />
-        <span className="absolute inset-0 rounded-2xl border border-amber-400/40 animate-ping opacity-30" aria-hidden="true" />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-0 text-dtx-0 gap-4">
+      <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-blurple/10 border border-blurple/25">
+        <Hammer className="h-6 w-6 text-blurple-soft" aria-hidden="true" />
+        <span className="absolute inset-0 rounded-2xl border border-blurple/40 animate-ping opacity-30" aria-hidden="true" />
       </div>
-      <p className="text-sm text-zinc-400">Heading to the dashboard…</p>
+      <p className="text-sm text-dtx-3">Heading to the dashboard…</p>
     </div>
   );
 }

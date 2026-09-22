@@ -155,20 +155,20 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
           <>
             Disable the commands you do not use on this server — keep only what your community needs. Disabled commands are
             rejected by the bot with a clear message to members.{" "}
-            <span className="text-zinc-400">Also manageable from Discord: </span>
-            <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/commands toggle</code>
+            <span className="text-dtx-3">Also manageable from Discord: </span>
+            <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/commands toggle</code>
           </>
         }
       >
         <div className="md:col-span-2">
           <Field label="Search Commands" hint={`${draft.commands.list.length} commands total · ${disabled.size} disabled`}>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dtx-3" aria-hidden="true" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="e.g. giveaway, warn, backup…"
-                className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-400/50 focus:outline-none"
+                className="w-full rounded-lg border border-white/[0.06] bg-dbg-1/60 py-2 pl-9 pr-3 text-sm text-dtx-0 placeholder:text-dtx-4 focus:border-blurple/50 focus:outline-none"
               />
             </div>
           </Field>
@@ -177,7 +177,7 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
           <Button
             onClick={() => void save([], "All commands re-enabled.")}
             disabled={busy || disabled.size === 0}
-            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             Enable All
@@ -193,11 +193,11 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
       {grouped.map(([domain, commands]) => {
         const disabledCount = commands.filter((c) => disabled.has(c.name)).length;
         return (
-          <section key={domain} className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
+          <section key={domain} className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-zinc-100">
+              <h3 className="text-sm font-semibold text-dtx-0">
                 {domainLabel(domain)}{" "}
-                <span className="font-normal text-zinc-500">
+                <span className="font-normal text-dtx-3">
                   ({commands.length} command{disabledCount > 0 ? `, ${disabledCount} off` : ""})
                 </span>
               </h3>
@@ -207,7 +207,7 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
                   size="sm"
                   onClick={() => toggleGroup(domain, commands, false)}
                   disabled={busy || disabledCount === 0}
-                  className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-800"
+                  className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px] text-dtx-2 hover:bg-dbg-3"
                 >
                   Enable group
                 </Button>
@@ -216,24 +216,24 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
                   size="sm"
                   onClick={() => toggleGroup(domain, commands, true)}
                   disabled={busy || disabledCount === commands.filter((c) => !protectedSet.has(c.name)).length}
-                  className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-800"
+                  className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px] text-dtx-2 hover:bg-dbg-3"
                 >
                   Disable group
                 </Button>
               </div>
             </div>
-            <div className="mt-3 divide-y divide-zinc-800/60">
+            <div className="mt-3 divide-y divide-white/[0.06]">
               {commands.map((c) => {
                 const isOn = !disabled.has(c.name);
                 const isProtected = protectedSet.has(c.name);
                 return (
                   <div key={c.name} className="flex items-center justify-between gap-3 py-2.5">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
-                        <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[12px] text-amber-200">/{c.name}</code>
+                      <p className="flex items-center gap-2 text-[13px] font-medium text-dtx-0">
+                        <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[12px] text-blurple-soft">/{c.name}</code>
                         {isProtected ? <Pill tone="green">disable-proof</Pill> : null}
                       </p>
-                      <p className="mt-0.5 truncate text-xs text-zinc-500">{c.description}</p>
+                      <p className="mt-0.5 truncate text-xs text-dtx-3">{c.description}</p>
                     </div>
                     <button
                       type="button"
@@ -241,7 +241,7 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
                       disabled={busy || isProtected}
                       title={isProtected ? "Management commands cannot be disabled (anti-lockout)" : isOn ? "Disable" : "Enable"}
                       className={`shrink-0 transition-colors ${isProtected ? "cursor-not-allowed opacity-60" : ""} ${
-                        isOn ? "text-emerald-400 hover:text-emerald-300" : "text-zinc-600 hover:text-zinc-400"
+                        isOn ? "text-dgreen hover:text-dgreen" : "text-dtx-4 hover:text-dtx-3"
                       }`}
                       aria-label={`${isOn ? "Disable" : "Enable"} /${c.name}`}
                     >
@@ -256,7 +256,7 @@ export function CommandManagerModule({ draft, call, refresh, toast }: ModuleActi
       })}
 
       {grouped.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-zinc-800 p-8 text-center text-sm text-zinc-500">
+        <p className="rounded-xl border border-dashed border-white/[0.06] p-8 text-center text-sm text-dtx-3">
           No commands match the search &ldquo;{query}&rdquo;.
         </p>
       ) : null}
@@ -334,14 +334,14 @@ A new winner is picked from participants who haven't won yet.`)) return;
 
   function renderRow(g: (typeof draft.giveaways)[number]) {
     return (
-      <div key={g.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+      <div key={g.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
-            <Gift className="h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+          <p className="flex items-center gap-2 text-[13px] font-medium text-dtx-0">
+            <Gift className="h-3.5 w-3.5 shrink-0 text-blurple-soft" aria-hidden="true" />
             {g.prize}
             {g.ended ? <Pill tone="zinc">finished</Pill> : <Pill tone="green">running</Pill>}
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500">
+          <p className="mt-0.5 text-xs text-dtx-3">
             {g.winnersCount} winner(s) · {g.participantIds.length} entries · {channelLabel(meta.channels, g.channelId)} ·{" "}
             {g.ended ? `ended ${fmtDate(g.endsAt)}` : `ends ${fmtDate(g.endsAt)}`} · host {g.hostTag}
           </p>
@@ -354,7 +354,7 @@ A new winner is picked from participants who haven't won yet.`)) return;
               variant="outline"
               onClick={() => void end(g)}
               disabled={busy}
-              className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+              className="h-8 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
               title="Pick winners now, announce + DM them (same as /giveaway end)"
             >
               End now
@@ -365,7 +365,7 @@ A new winner is picked from participants who haven't won yet.`)) return;
               variant="outline"
               onClick={() => void reroll(g)}
               disabled={busy}
-              className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+              className="h-8 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
               title="Pick a new winner (same as /giveaway reroll)"
             >
               🎲 Reroll
@@ -398,7 +398,7 @@ A new winner is picked from participants who haven't won yet.`)) return;
           <Button
             onClick={create}
             disabled={busy || !channelId || !prize.trim()}
-            className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="w-full bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
             Start Giveaway
@@ -406,11 +406,11 @@ A new winner is picked from participants who haven't won yet.`)) return;
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Running ({active.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Running ({active.length})</h3>
         <div className="mt-4 space-y-2">
           {active.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No active giveaways. Create one with the form above or /giveaway create.
             </p>
           ) : (
@@ -419,7 +419,7 @@ A new winner is picked from participants who haven't won yet.`)) return;
         </div>
         {finished.length > 0 ? (
           <>
-            <h3 className="mt-6 text-sm font-semibold text-zinc-400">History ({finished.length})</h3>
+            <h3 className="mt-6 text-sm font-semibold text-dtx-3">History ({finished.length})</h3>
             <div className="mt-3 space-y-2">{finished.slice(0, 10).map(renderRow)}</div>
           </>
         ) : null}
@@ -492,7 +492,7 @@ Voting stops and the final results are shown in the message.`)) return;
           />
         </Field>
         <div className="md:col-span-2 space-y-2">
-          <p className="text-xs font-medium text-zinc-300">Options (2–10)</p>
+          <p className="text-xs font-medium text-dtx-2">Options (2–10)</p>
           {options.map((opt, i) => (
             <div key={i} className="flex gap-2">
               <TextInput
@@ -505,7 +505,7 @@ Voting stops and the final results are shown in the message.`)) return;
                   variant="outline"
                   size="icon"
                   onClick={() => setOptions((prev) => prev.filter((_, j) => j !== i))}
-                  className="shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800"
+                  className="shrink-0 border-white/[0.1] bg-transparent hover:bg-dbg-3"
                   aria-label={`Remove option ${i + 1}`}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -518,7 +518,7 @@ Voting stops and the final results are shown in the message.`)) return;
               variant="outline"
               size="sm"
               onClick={() => setOptions((prev) => [...prev, ""])}
-              className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800"
+              className="border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3"
             >
               <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add option
             </Button>
@@ -528,7 +528,7 @@ Voting stops and the final results are shown in the message.`)) return;
           <Button
             onClick={create}
             disabled={busy || !channelId || !question.trim() || options.map((o) => o.trim()).filter(Boolean).length < 2}
-            className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="w-full bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <BarChart3 className="h-4 w-4" aria-hidden="true" />}
             Send Poll
@@ -536,25 +536,25 @@ Voting stops and the final results are shown in the message.`)) return;
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Polls on This Server ({draft.polls.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Polls on This Server ({draft.polls.length})</h3>
         <div className="mt-4 space-y-2">
           {draft.polls.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No polls yet. Create one with the form above or /poll create.
             </p>
           ) : (
             draft.polls.slice(0, 15).map((p) => {
               const total = p.options.reduce((s, o) => s + o.votes.length, 0);
               return (
-                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+                <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
+                    <p className="flex items-center gap-2 text-[13px] font-medium text-dtx-0">
                       {p.question}
                       {p.closed ? <Pill tone="zinc">closed</Pill> : <Pill tone="green">open</Pill>}
                       {p.multiple ? <Pill tone="amber">multi</Pill> : null}
                     </p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
+                    <p className="mt-0.5 text-xs text-dtx-3">
                       {p.options.length} options · {total} votes · {channelLabel(meta.channels, p.channelId)} · by {p.creatorTag} · {fmtDate(p.createdAt)}
                     </p>
                   </div>
@@ -564,7 +564,7 @@ Voting stops and the final results are shown in the message.`)) return;
                       size="sm"
                       variant="outline"
                       onClick={() => void close(p)}
-                      className="h-8 shrink-0 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                      className="h-8 shrink-0 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
                       title="Stop voting and show the final results (same as /poll close)"
                     >
                       Close
@@ -626,7 +626,7 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
           <Button
             onClick={send}
             disabled={busy || !channelId || (!finalContent.trim() && isEmbedDraftEmpty(draftEmbed))}
-            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
             Send Embed
@@ -638,7 +638,7 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
               setMention("");
             }}
             disabled={busy}
-            className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+            className="border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" /> Reset
           </Button>
@@ -647,14 +647,14 @@ export function EmbedModule({ meta, call, toast }: ModuleActionProps) {
 
       <EmbedEditor value={draftEmbed} onChange={setDraftEmbed} />
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Preview (Discord look)</h3>
-        <p className="mt-1 text-xs text-zinc-500">An approximation of the message in Discord — the chosen mention appears in the outer text; markdown formatting (bold/italic) is rendered by Discord on send.</p>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Preview (Discord look)</h3>
+        <p className="mt-1 text-xs text-dtx-3">An approximation of the message in Discord — the chosen mention appears in the outer text; markdown formatting (bold/italic) is rendered by Discord on send.</p>
         <div className="mt-4">
           <EmbedLivePreview draft={{ ...draftEmbed, content: finalContent }} />
         </div>
         {lastUrl ? (
-          <a href={lastUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-amber-300 hover:underline">
+          <a href={lastUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-blurple-soft hover:underline">
             Open the last message in Discord
           </a>
         ) : null}
@@ -748,7 +748,7 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
         title="Custom Command"
         desc={
           <>
-            Build your own slash command for this server — <span className="text-zinc-300">no coding needed</span>.
+            Build your own slash command for this server — <span className="text-dtx-2">no coding needed</span>.
             Once saved, the command is registered on Discord instantly (usually &lt; 1 minute) and every member can use it.
           </>
         }
@@ -757,49 +757,49 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
           <Button
             onClick={() => setForm(emptyForm())}
             disabled={busy || maxReached}
-            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             <Wand2 className="h-4 w-4" aria-hidden="true" /> New Command
           </Button>
           {maxReached ? <Pill tone="red">Max of 20 reached</Pill> : <Pill>{customCommands.length}/20 created</Pill>}
         </div>
         <div className="md:col-span-2">
-          <p className="text-[11px] leading-relaxed text-zinc-500">
-            Temporarily disable one via the Command Manager (or <code className="rounded bg-zinc-800 px-1 text-[10px] text-amber-200">/commands toggle</code>),
+          <p className="text-[11px] leading-relaxed text-dtx-3">
+            Temporarily disable one via the Command Manager (or <code className="rounded bg-dbg-3 px-1 text-[10px] text-blurple-soft">/commands toggle</code>),
             permanently remove it with the button in the list. Every change syncs to Discord automatically.
           </p>
         </div>
       </Section>
 
       {/* Existing commands */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
-        <h3 className="text-sm font-semibold text-zinc-100">
-          Custom Commands <span className="font-normal text-zinc-500">({customCommands.length})</span>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5">
+        <h3 className="text-sm font-semibold text-dtx-0">
+          Custom Commands <span className="font-normal text-dtx-3">({customCommands.length})</span>
         </h3>
         {customCommands.length === 0 ? (
-          <p className="mt-3 rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs text-zinc-500">
-            No custom commands yet. Example uses: <code className="text-amber-200">/socials</code> (social media links),{" "}
-            <code className="text-amber-200">/prices</code> (price list), <code className="text-amber-200">/rules</code> (server rules) — the reply can be text, an embed, or both.
+          <p className="mt-3 rounded-lg border border-dashed border-white/[0.06] px-4 py-3 text-xs text-dtx-3">
+            No custom commands yet. Example uses: <code className="text-blurple-soft">/socials</code> (social media links),{" "}
+            <code className="text-blurple-soft">/prices</code> (price list), <code className="text-blurple-soft">/rules</code> (server rules) — the reply can be text, an embed, or both.
           </p>
         ) : (
           <div className="mt-4 space-y-2">
             {customCommands.map((c) => (
-              <div key={c.name} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3.5">
+              <div key={c.name} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-mono text-sm font-semibold text-amber-200">/{c.name}</p>
-                    <p className="mt-0.5 truncate text-xs text-zinc-400">{c.description}</p>
+                    <p className="font-mono text-sm font-semibold text-blurple-soft">/{c.name}</p>
+                    <p className="mt-0.5 truncate text-xs text-dtx-3">{c.description}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {c.content?.trim() ? <Pill>text</Pill> : null}
                     {c.embed && !isEmbedDraftEmpty(embedDraftFromDef(c.embed)) ? <Pill>embed</Pill> : null}
                     {c.ephemeral ? <Pill tone="amber">ephemeral</Pill> : null}
                     {draft.commands.disabled.includes(c.name) ? <Pill tone="red">disabled</Pill> : null}
-                    <span className="text-[10px] text-zinc-600">used {c.useCount ?? 0}x</span>
+                    <span className="text-[10px] text-dtx-4">used {c.useCount ?? 0}x</span>
                   </div>
                 </div>
                 <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] text-zinc-600">
+                  <span className="text-[10px] text-dtx-4">
                     created by {c.createdByTag ?? "—"} · updated {fmtDate(c.updatedAt)}
                   </span>
                   <div className="flex gap-1.5">
@@ -808,16 +808,16 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
                       size="sm"
                       onClick={() => setForm(formFromCommand(c))}
                       disabled={busy}
-                      className="h-8 border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                      className="h-8 border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"
                     >
                       <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Edit
                     </Button>
                     {confirmDelete === c.name ? (
                       <>
-                        <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)} disabled={busy} className="h-8 border-zinc-700 bg-transparent text-zinc-400">
+                        <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)} disabled={busy} className="h-8 border-white/[0.1] bg-transparent text-dtx-3">
                           Cancel
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => void remove(c.name)} disabled={busy} className="h-8 border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50">
+                        <Button variant="outline" size="sm" onClick={() => void remove(c.name)} disabled={busy} className="h-8 border-dred/40 bg-dred/10 text-dred hover:bg-dred/15/50">
                           <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Yes, delete
                         </Button>
                       </>
@@ -827,7 +827,7 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
                         size="sm"
                         onClick={() => setConfirmDelete(c.name)}
                         disabled={busy}
-                        className="h-8 border-zinc-700 bg-transparent text-red-300/90 hover:bg-red-950/40 hover:text-red-300"
+                        className="h-8 border-white/[0.1] bg-transparent text-dred hover:bg-dred/10 hover:text-dred"
                       >
                         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
                       </Button>
@@ -873,22 +873,22 @@ export function CustomCommandsModule({ draft, call, refresh, toast }: ModuleActi
             </div>
           </Section>
 
-          <p className="text-[13px] font-medium text-zinc-300">Command Reply</p>
+          <p className="text-[13px] font-medium text-dtx-2">Command Reply</p>
           <EmbedEditor value={form.embedDraft} onChange={(d) => setForm({ ...form, embedDraft: d })} />
 
-          <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-            <h3 className="text-sm font-semibold text-zinc-100">Preview (Discord look)</h3>
+          <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+            <h3 className="text-sm font-semibold text-dtx-0">Preview (Discord look)</h3>
             <div className="mt-4">
               <EmbedLivePreview draft={form.embedDraft} />
             </div>
           </section>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => void save()} disabled={busy || !canSave} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+            <Button onClick={() => void save()} disabled={busy || !canSave} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
               Save &amp; Register on Discord
             </Button>
-            <Button variant="outline" onClick={() => setForm(null)} disabled={busy} className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">
+            <Button variant="outline" onClick={() => setForm(null)} disabled={busy} className="border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0">
               Cancel
             </Button>
           </div>
@@ -939,41 +939,41 @@ export function BackupModule({ draft, call, refresh, toast }: ModuleActionProps)
         title="Bot Data Backups"
         desc={
           <>
-            Same as <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/backup-now</code> — a
+            Same as <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/backup-now</code> — a
             safety backup also runs automatically every 24h (max 7 slots, oldest falls off).
           </>
         }
       >
         <div className="flex items-end">
-          <Button onClick={createNow} disabled={busy} className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+          <Button onClick={createNow} disabled={busy} className="w-full bg-blurple text-white hover:bg-blurple-dark font-semibold">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
             Back Up Now
           </Button>
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Backup Slots ({draft.backups.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Backup Slots ({draft.backups.length})</h3>
         <div className="mt-4 space-y-2">
           {draft.backups.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No backups yet. Hit &ldquo;Back Up Now&rdquo; above.
             </p>
           ) : (
             draft.backups.map((b) => (
-              <div key={b.name} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+              <div key={b.name} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="flex items-center gap-2 text-[13px] font-medium text-zinc-100">
+                  <p className="flex items-center gap-2 text-[13px] font-medium text-dtx-0">
                     {b.name.startsWith("pre-restore_") ? <Pill tone="amber">pre-restore</Pill> : null}
-                    <code className="text-[12px] text-zinc-200">{b.name}</code>
+                    <code className="text-[12px] text-dtx-1">{b.name}</code>
                   </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
+                  <p className="mt-0.5 text-xs text-dtx-3">
                     {fmtDate(b.mtime)} · {b.fileCount} files · {(b.size / 1024).toFixed(1)} KB
                   </p>
                 </div>
                 {confirmRestore === b.name ? (
                   <div className="flex items-center gap-1.5">
-                    <Button variant="outline" size="sm" onClick={() => setConfirmRestore(null)} disabled={busy} className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px]">
+                    <Button variant="outline" size="sm" onClick={() => setConfirmRestore(null)} disabled={busy} className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px]">
                       Cancel
                     </Button>
                     <Button
@@ -991,7 +991,7 @@ export function BackupModule({ draft, call, refresh, toast }: ModuleActionProps)
                     size="sm"
                     onClick={() => setConfirmRestore(b.name)}
                     disabled={busy}
-                    className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px] text-zinc-300 hover:bg-zinc-800"
+                    className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px] text-dtx-2 hover:bg-dbg-3"
                   >
                     <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Restore
                   </Button>
@@ -1000,7 +1000,7 @@ export function BackupModule({ draft, call, refresh, toast }: ModuleActionProps)
             ))
           )}
         </div>
-        <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
+        <p className="mt-4 text-[11px] leading-relaxed text-dtx-3">
           Restoring overwrites the bot data with the state captured in that backup. A safety backup
           (&ldquo;pre-restore&rdquo;) is taken automatically before overwriting — you can always go back.
         </p>
@@ -1131,7 +1131,7 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
         title="Take Action"
         desc={
           <>
-            Every moderation slash command works here too — the same guards (role hierarchy, bot permissions) and the same moderation history as Discord. <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/warn</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/kick</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/ban</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/unban</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/timeout</code> <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/untimeout</code>
+            Every moderation slash command works here too — the same guards (role hierarchy, bot permissions) and the same moderation history as Discord. <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/warn</code> <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/kick</code> <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/ban</code> <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/unban</code> <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/timeout</code> <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/untimeout</code>
           </>
         }
       >
@@ -1171,7 +1171,7 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
           <Button
             onClick={() => void (modAction === "warn" ? doWarn() : doModerate())}
             disabled={busy !== null || !call || !refresh || !targetUser.trim() || (modAction === "warn" && !modReason.trim()) || (modAction === "timeout" && !timeoutMinutes)}
-            className={modAction === "ban" || modAction === "kick" ? "bg-red-600 font-semibold text-white hover:bg-red-500" : "bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"}
+            className={modAction === "ban" || modAction === "kick" ? "bg-dred font-semibold text-white hover:bg-dred-dark" : "bg-blurple font-semibold text-white hover:bg-blurple-dark"}
           >
             {busy === "warn" || busy === "moderate" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <ShieldAlert className="h-4 w-4" aria-hidden="true" />}
             {modAction === "warn" ? "Warn the member" : modAction.charAt(0).toUpperCase() + modAction.slice(1) + " the member"}
@@ -1181,7 +1181,7 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
 
       <Section
         title="Purge Messages"
-        desc={<>Bulk-delete the newest messages in a channel (≙ <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/purge</code>). Messages older than 14 days are skipped (Discord bulk-delete limit).</>}
+        desc={<>Bulk-delete the newest messages in a channel (≙ <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/purge</code>). Messages older than 14 days are skipped (Discord bulk-delete limit).</>}
       >
         <Field label="Channel">
           <ChannelSelect value={purgeChannel} onChange={setPurgeChannel} channels={meta.channels} />
@@ -1196,7 +1196,7 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
           <Button
             onClick={() => void doPurge()}
             disabled={busy !== null || !purgeChannel || !call || !refresh}
-            className="bg-zinc-100 font-semibold text-zinc-900 hover:bg-zinc-300"
+            className="bg-dred font-semibold text-white hover:bg-dred-dark"
           >
             {busy === "purge" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}
             Purge
@@ -1204,34 +1204,34 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-zinc-100">Warns ({warns.length} most recent)</h3>
+          <h3 className="text-sm font-semibold text-dtx-0">Warns ({warns.length} most recent)</h3>
           <div className="relative w-64">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" aria-hidden="true" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dtx-3" aria-hidden="true" />
             <input
               value={warnFilter}
               onChange={(e) => setWarnFilter(e.target.value)}
               placeholder="Filter by reason, user ID, or moderator"
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-900/60 py-2 pl-9 pr-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-400/50 focus:outline-none"
+              className="w-full rounded-lg border border-white/[0.06] bg-dbg-1/60 py-2 pl-9 pr-3 text-sm text-dtx-0 placeholder:text-dtx-4 focus:border-blurple/50 focus:outline-none"
             />
           </div>
         </div>
         <div className="mt-4 space-y-2">
           {warns.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               {draft.warns.length === 0 ? "No warns recorded on this server. A clean server is a happy server." : "No warns match your search."}
             </p>
           ) : (
             warns.map((w) => (
-              <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+              <div key={w.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-zinc-100">
-                    <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{w.userId}</code>{" "}
+                  <p className="text-[13px] text-dtx-0">
+                    <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-dtx-3">{w.userId}</code>{" "}
 
                     — {w.reason}
                   </p>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs text-dtx-3">
                     by {w.warnedByTag} · {fmtDate(w.createdAt)}
                     {w.actionTaken ? ` · automatic action: ${w.actionTaken}` : ""}
                   </p>
@@ -1239,15 +1239,15 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
                 <div className="flex shrink-0 items-center gap-2">
                   {confirmId === w.id ? (
                     <>
-                      <Button size="sm" variant="outline" onClick={() => void removeWarn(w.id, w.userId)} disabled={busy !== null} className="h-7 border-red-900/60 bg-transparent px-2 text-xs text-red-300 hover:bg-red-950/40">
+                      <Button size="sm" variant="outline" onClick={() => void removeWarn(w.id, w.userId)} disabled={busy !== null} className="h-7 border-dred/40 bg-transparent px-2 text-xs text-dred hover:bg-dred/10">
                         {busy === w.id ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : null} Confirm remove
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => setConfirmId(null)} disabled={busy !== null} className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800">
+                      <Button size="sm" variant="outline" onClick={() => setConfirmId(null)} disabled={busy !== null} className="h-7 border-white/[0.1] bg-transparent px-2 text-xs text-dtx-3 hover:bg-dbg-3">
                         Cancel
                       </Button>
                     </>
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => setConfirmId(w.id)} disabled={busy !== null} className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100" title="Remove this single warn">
+                    <Button size="sm" variant="outline" onClick={() => setConfirmId(w.id)} disabled={busy !== null} className="h-7 border-white/[0.1] bg-transparent px-2 text-xs text-dtx-3 hover:bg-dbg-3 hover:text-dtx-0" title="Remove this single warn">
                       Remove
                     </Button>
                   )}
@@ -1259,7 +1259,7 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
                       else setConfirmId(`clear:${w.userId}`);
                     }}
                     disabled={busy !== null}
-                    className="h-7 border-zinc-700 bg-transparent px-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    className="h-7 border-white/[0.1] bg-transparent px-2 text-xs text-dtx-3 hover:bg-dbg-3 hover:text-dtx-0"
                     title={`Clear ALL warns of ${w.userId}`}
                   >
                     {busy === `clear:${w.userId}` ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> : null}
@@ -1272,21 +1272,21 @@ export function ModerationModule({ draft, meta, call, refresh, toast }: ModuleAc
         </div>
       </section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Moderator Actions ({draft.modlogs.length} most recent)</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Moderator Actions ({draft.modlogs.length} most recent)</h3>
         <div className="mt-4 space-y-2">
           {draft.modlogs.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No timeout/kick/ban actions recorded yet.
             </p>
           ) : (
             draft.modlogs.map((m) => (
-              <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+              <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
                 <div className="min-w-0">
-                  <p className="text-[13px] text-zinc-100">
-                    {MODLOG_LABEL[m.type as keyof typeof MODLOG_LABEL] ?? m.type} — <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-zinc-400">{m.userId}</code>
+                  <p className="text-[13px] text-dtx-0">
+                    {MODLOG_LABEL[m.type as keyof typeof MODLOG_LABEL] ?? m.type} — <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-dtx-3">{m.userId}</code>
                   </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
+                  <p className="mt-0.5 text-xs text-dtx-3">
                     {m.reason} · by {m.moderatorTag} · {fmtDate(m.createdAt)}
                   </p>
                 </div>
@@ -1354,7 +1354,7 @@ export function KeysModule({ draft, meta, call, refresh, toast }: ModuleActionPr
         title="Grant a VIP Key"
         desc={
           <>
-            Same as <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/set-key</code> — the
+            Same as <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/set-key</code> — the
             key is created, the product role is granted to the member, and auto-expiry is scheduled automatically.
           </>
         }
@@ -1379,7 +1379,7 @@ export function KeysModule({ draft, meta, call, refresh, toast }: ModuleActionPr
           <Button
             onClick={generate}
             disabled={busy || !userId.trim() || !value}
-            className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="w-full bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <KeyRound className="h-4 w-4" aria-hidden="true" />}
             Create Key
@@ -1388,36 +1388,36 @@ export function KeysModule({ draft, meta, call, refresh, toast }: ModuleActionPr
       </Section>
 
       {lastKey ? (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-4">
-          <p className="text-xs text-emerald-300">The most recently created key — send it to the member:</p>
-          <code className="mt-1.5 block select-all rounded-lg bg-zinc-900 px-3 py-2 font-mono text-sm text-emerald-200">{lastKey}</code>
+        <div className="rounded-2xl border border-dgreen/30 bg-dgreen/10 p-4">
+          <p className="text-xs text-dgreen">The most recently created key — send it to the member:</p>
+          <code className="mt-1.5 block select-all rounded-lg bg-dbg-1 px-3 py-2 font-mono text-sm text-dgreen">{lastKey}</code>
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Active Keys on This Server ({draft.keys.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Active Keys on This Server ({draft.keys.length})</h3>
         <div className="mt-4 space-y-2">
           {draft.keys.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No keys for this server yet. Create one with the form above or /set-key.
             </p>
           ) : (
             draft.keys.map((k) => {
               const expired = k.expireAt !== null && k.expireAt < Date.now();
               return (
-                <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800/80 bg-zinc-900/40 px-4 py-3">
+                <div key={k.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-dbg-1/40 px-4 py-3">
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-[13px] text-zinc-100">
-                      <code className="select-all rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[12px] text-amber-200">{k.key}</code>
+                    <p className="flex items-center gap-2 text-[13px] text-dtx-0">
+                      <code className="select-all rounded bg-dbg-3 px-1.5 py-0.5 font-mono text-[12px] text-blurple-soft">{k.key}</code>
                       {k.expireAt === null ? <Pill tone="green">permanent</Pill> : expired ? <Pill tone="red">expired</Pill> : <Pill tone="zinc">{fmtDate(k.expireAt)}</Pill>}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">
+                    <p className="mt-1 text-xs text-dtx-3">
                       {k.username || k.userId} · {k.productName} · {roleLabel(meta.roles, k.roleId)} · created {fmtDate(k.createdAt)}
                     </p>
                   </div>
                   {confirmClear === k.userId ? (
                     <div className="flex items-center gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => setConfirmClear(null)} disabled={busy} className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px]">
+                      <Button variant="outline" size="sm" onClick={() => setConfirmClear(null)} disabled={busy} className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px]">
                         Cancel
                       </Button>
                       <Button size="sm" onClick={() => void clearUser(k.userId)} disabled={busy} className="h-7 bg-red-500 px-2.5 text-[11px] font-semibold text-white hover:bg-red-400">
@@ -1430,7 +1430,7 @@ export function KeysModule({ draft, meta, call, refresh, toast }: ModuleActionPr
                       size="sm"
                       onClick={() => setConfirmClear(k.userId)}
                       disabled={busy}
-                      className="h-7 border-zinc-700 bg-transparent px-2.5 text-[11px] text-red-300 hover:bg-red-950/30"
+                      className="h-7 border-white/[0.1] bg-transparent px-2.5 text-[11px] text-dred hover:bg-dred/10"
                       title="Remove all of this user's keys + lift product roles (parity with /clear-schedule)"
                     >
                       <XCircle className="h-3.5 w-3.5" aria-hidden="true" /> Clear
@@ -1482,7 +1482,7 @@ export function SendMessageModule({ meta, call, toast }: ModuleActionProps) {
         title="Send a Plain Message"
         desc={
           <>
-            The web twin of <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/send-message</code> — the bot sends your text to the chosen channel as-is. For a rich embed use the Embed Builder module instead. The message is audit-logged.
+            The web twin of <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/send-message</code> — the bot sends your text to the chosen channel as-is. For a rich embed use the Embed Builder module instead. The message is audit-logged.
           </>
         }
       >
@@ -1497,7 +1497,7 @@ export function SendMessageModule({ meta, call, toast }: ModuleActionProps) {
             label={`Message (${message.length}/2000)`}
             hint={
               <span>
-                Supports <code className="text-amber-300/80">{"\\n"}</code> for newlines · plain text only (no markdown preview here — Discord renders it).
+                Supports <code className="text-blurple-soft">{"\\n"}</code> for newlines · plain text only (no markdown preview here — Discord renders it).
               </span>
             }
           >
@@ -1508,7 +1508,7 @@ export function SendMessageModule({ meta, call, toast }: ModuleActionProps) {
           <Button
             onClick={() => void send()}
             disabled={busy || !channelId || (!message.trim() && mention === "")}
-            className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+            className="bg-blurple font-semibold text-white hover:bg-blurple-dark"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
             Send as the bot

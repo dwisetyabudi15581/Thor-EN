@@ -168,20 +168,20 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
       >
         <div className="space-y-3 md:col-span-2">
           {value.fields.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-3 text-xs text-zinc-500">
+            <p className="rounded-lg border border-dashed border-white/[0.06] px-4 py-3 text-xs text-dtx-3">
               No fields yet — body text above may be enough, or add fields for structured data (e.g. Price | Contact).
             </p>
           ) : null}
           {value.fields.map((f, i) => (
-            <div key={i} className="rounded-xl border border-zinc-800/80 bg-zinc-950/40 p-3">
+            <div key={i} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Field #{i + 1}</span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-dtx-3">Field #{i + 1}</span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => moveField(i, -1)}
                     disabled={i === 0}
-                    className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
+                    className="rounded-md p-1.5 text-dtx-3 hover:bg-dbg-3 hover:text-dtx-1 disabled:opacity-30"
                     title="Move up"
                     aria-label={`Move field ${i + 1} up`}
                   >
@@ -191,7 +191,7 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
                     type="button"
                     onClick={() => moveField(i, 1)}
                     disabled={i === value.fields.length - 1}
-                    className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-30"
+                    className="rounded-md p-1.5 text-dtx-3 hover:bg-dbg-3 hover:text-dtx-1 disabled:opacity-30"
                     title="Move down"
                     aria-label={`Move field ${i + 1} down`}
                   >
@@ -201,7 +201,7 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
                     type="button"
                     onClick={() => setField(i, { inline: !f.inline })}
                     className={`rounded-md px-2 py-1 text-[10px] font-semibold ${
-                      f.inline ? "bg-amber-400/15 text-amber-300" : "bg-zinc-800 text-zinc-400"
+                      f.inline ? "bg-blurple/15 text-blurple-soft" : "bg-dbg-3 text-dtx-3"
                     }`}
                     title="Show inline (3 per row)"
                   >
@@ -210,7 +210,7 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
                   <button
                     type="button"
                     onClick={() => patch({ fields: value.fields.filter((_, idx) => idx !== i) })}
-                    className="rounded-md p-1.5 text-red-400/80 hover:bg-red-950/40 hover:text-red-300"
+                    className="rounded-md p-1.5 text-dred hover:bg-dred/10 hover:text-dred"
                     title="Delete field"
                     aria-label={`Delete field ${i + 1}`}
                   >
@@ -230,7 +230,7 @@ export function EmbedEditor({ value, onChange }: { value: EmbedDraft; onChange: 
             variant="outline"
             onClick={() => value.fields.length < 25 && patch({ fields: [...value.fields, { name: "", value: "", inline: false }] })}
             disabled={value.fields.length >= 25}
-            className="w-full border-dashed border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100"
+            className="w-full border-dashed border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-1 hover:text-dtx-0"
           >
             <Plus className="h-4 w-4" aria-hidden="true" /> Add Field ({value.fields.length}/25)
           </Button>
@@ -278,7 +278,7 @@ export function EmbedLivePreview({ draft, botName = "Thor" }: { draft: EmbedDraf
     <div className="rounded-xl bg-[#313338] p-4">
       <div className="flex gap-3">
         {/* Bot avatar */}
-        <div className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-amber-400 text-sm font-black text-zinc-950">
+        <div className="flex h-10 w-10 shrink-0 select-none items-center justify-center rounded-full bg-blurple text-sm font-black text-white">
           T
         </div>
         <div className="min-w-0 flex-1">

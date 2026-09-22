@@ -1,10 +1,18 @@
 "use client";
 
-// Reusable form controls for the dashboard modules .
-// All fields are dark-editorial (zinc + amber accent) and are reused by
-// module-forms.tsx so the 12 modules never build UI from scratch.
+// Reusable form controls for the dashboard modules (v3.31.0 — Discord design
+// language). All fields use Discord's dark scheme (raised #2b2d31 cards,
+// #1e1f22 inputs, blurple focus) and are reused by module-forms.tsx so the
+// modules never build UI from scratch.
+//
+// v3.31.0 UX contract (the "understand in 3 seconds" rule):
+//   - every Toggle switch is GREEN when ON, RED when OFF (high-contrast
+//     status at a glance, no reading required)
+//   - inputs sit on the deep #1e1f22 well color, exactly like Discord's
+//     own settings forms
+//   - destructive hints (deleted channel/role ghosts) stay red
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { BotChannel, BotRole } from "@/lib/bot-api";
 
 /* ---------------- Shells ---------------- */
@@ -12,20 +20,20 @@ import type { BotChannel, BotRole } from "@/lib/bot-api";
 export function Field({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={htmlFor} className="block text-[13px] font-medium text-zinc-300">
+      <label htmlFor={htmlFor} className="block text-[13px] font-medium text-dtx-1">
         {label}
       </label>
       {children}
-      {hint ? <p className="text-[11px] leading-relaxed text-zinc-500">{hint}</p> : null}
+      {hint ? <p className="text-[11px] leading-relaxed text-dtx-3">{hint}</p> : null}
     </div>
   );
 }
 
 export function Section({ title, desc, children }: { title: string; desc?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-      <h3 className="text-sm font-semibold text-zinc-100">{title}</h3>
-      {desc ? <p className="mt-1 text-xs leading-relaxed text-zinc-500">{desc}</p> : null}
+    <section className="rounded-xl border border-white/[0.06] bg-dbg-1 p-5 md:p-6">
+      <h3 className="text-sm font-semibold text-dtx-0">{title}</h3>
+      {desc ? <p className="mt-1 text-xs leading-relaxed text-dtx-3">{desc}</p> : null}
       <div className="mt-5 grid gap-5 md:grid-cols-2">{children}</div>
     </section>
   );
@@ -34,7 +42,7 @@ export function Section({ title, desc, children }: { title: string; desc?: React
 /* ---------------- Basic inputs ---------------- */
 
 const inputCls =
-  "w-full h-10 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-50";
+  "w-full h-10 rounded-lg border border-white/[0.08] bg-dbg-0 px-3 text-sm text-dtx-0 placeholder:text-dtx-4 focus:outline-none focus:border-blurple focus:ring-1 focus:ring-blurple/40 disabled:opacity-50";
 
 export function TextInput({
   value, onChange, placeholder, disabled, id, type = "text", invalid,
@@ -55,7 +63,7 @@ export function TextInput({
       disabled={disabled}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      className={`${inputCls} ${invalid ? "border-red-500/60" : ""}`}
+      className={`${inputCls} ${invalid ? "border-dred/70" : ""}`}
     />
   );
 }
@@ -76,7 +84,7 @@ export function TextArea({
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2.5 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-amber-400/50 resize-y"
+      className="w-full rounded-lg border border-white/[0.08] bg-dbg-0 px-3 py-2.5 text-sm leading-relaxed text-dtx-0 placeholder:text-dtx-4 focus:outline-none focus:border-blurple focus:ring-1 focus:ring-blurple/40 resize-y"
     />
   );
 }
@@ -95,20 +103,30 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3.5 py-3 text-left transition-colors hover:border-zinc-700"
+      className="flex w-full items-center justify-between gap-4 rounded-lg border border-white/[0.06] bg-dbg-0/50 px-3.5 py-3 text-left transition-colors hover:border-white/[0.12]"
     >
       <span className="min-w-0">
-        <span className="block text-[13px] font-medium text-zinc-200">{label}</span>
-        {desc ? <span className="mt-0.5 block text-[11px] leading-snug text-zinc-500">{desc}</span> : null}
+        <span className="flex items-center gap-2 text-[13px] font-medium text-dtx-1">
+          {label}
+          {/* High-contrast ON/OFF word — green when on, red when off. */}
+          <span className={`text-[10px] font-bold uppercase tracking-wide ${checked ? "text-dgreen" : "text-dred"}`}>
+            {checked ? "ON" : "OFF"}
+          </span>
+        </span>
+        {desc ? <span className="mt-0.5 block text-[11px] leading-snug text-dtx-3">{desc}</span> : null}
       </span>
+      {/* The switch itself: green track when ON, red track when OFF —
+          unmistakable at any glance distance. */}
       <span
-        className={`relative inline-flex h-5.5 w-10 shrink-0 items-center rounded-full transition-colors ${
-          checked ? "bg-amber-400" : "bg-zinc-700"
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+          checked ? "bg-dgreen" : "bg-dred/80"
         }`}
-        style={{ height: 22 }}
+        style={{ height: 24, width: 44 }}
       >
         <span
-          className={`inline-block h-4 w-4 rounded-full bg-zinc-950 transition-transform ${checked ? "translate-x-[22px]" : "translate-x-[3px]"}`}
+          className={`inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
+            checked ? "translate-x-[22px]" : "translate-x-[3px]"
+          }`}
         />
       </span>
     </button>
@@ -129,7 +147,7 @@ export function Select({
       id={id}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`${inputCls} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23a1a1aa%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.75rem_center] bg-no-repeat pr-9`}
+      className={`${inputCls} appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23949ba4%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_0.75rem_center] bg-no-repeat pr-9`}
     >
       {placeholder ? <option value="">{placeholder}</option> : null}
       {options.map((o) => (
@@ -261,7 +279,7 @@ export function ColorInput({ value, onChange }: { value: number; onChange: (v: n
         type="color"
         value={hex}
         onChange={(e) => onChange(parseInt(e.target.value.slice(1), 16))}
-        className="h-10 w-12 cursor-pointer rounded-lg border border-zinc-800 bg-zinc-950/60 p-1"
+        className="h-10 w-12 cursor-pointer rounded-lg border border-white/[0.08] bg-dbg-0 p-1"
         aria-label="Pick a color"
       />
       <input
@@ -292,10 +310,10 @@ export function ColorInput({ value, onChange }: { value: number; onChange: (v: n
 
 export function Pill({ children, tone = "zinc" }: { children: ReactNode; tone?: "zinc" | "amber" | "green" | "red" }) {
   const tones = {
-    zinc: "border-zinc-700/60 bg-zinc-800/40 text-zinc-400",
-    amber: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    green: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-    red: "border-red-400/30 bg-red-400/10 text-red-300",
+    zinc: "border-white/[0.08] bg-dbg-3/60 text-dtx-3",
+    amber: "border-dyellow/30 bg-dyellow/10 text-dyellow",
+    green: "border-dgreen/40 bg-dgreen/10 text-dgreen",
+    red: "border-dred/40 bg-dred/10 text-dred",
   } as const;
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-medium ${tones[tone]}`}>

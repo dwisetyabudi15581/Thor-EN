@@ -1,8 +1,8 @@
 {
   "name": "thor-dashboard",
-  "version": "3.30.0",
+  "version": "3.31.0",
   "private": true,
-  "description": "Dashboard web Thor Bot — kendali server Discord ala  (Next.js 16 + Prisma SQLite)",
+  "description": "Dashboard web Thor Bot \u2014 kendali server Discord ala  (Next.js 16 + Prisma SQLite)",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",

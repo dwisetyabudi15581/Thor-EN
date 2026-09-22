@@ -3,6 +3,38 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---- v3.31.0: Discord design language --------------------------------
+ * The dashboard uses Discord's own palette so the control panel feels like
+ * a native extension of the app members already know:
+ *   bg scale   #1e1f22 (inputs / deepest) · #2b2d31 (sidebar & cards) ·
+ *              #313338 (content) · #383a40 (raised chips)
+ *   text scale #f2f3f5 · #dbdee1 · #b5bac1 · #949ba4 · #6d6f78
+ *   accent     blurple #5865f2 (hover #4752c4)
+ *   semantic   green #23a55a (ON / success) · red #f23f43 (OFF / danger)
+ *              yellow #f0b232 (warning)
+ * Custom utilities (bg-dbg-1, text-dtx-2, bg-blurple, border-dred/40 …)
+ * are generated from the @theme block below and used across the rewrite.
+ * ------------------------------------------------------------------- */
+@theme {
+  --color-blurple: #5865f2;
+  --color-blurple-dark: #4752c4;
+  --color-blurple-soft: #a8b0ff;
+  --color-dgreen: #23a55a;
+  --color-dgreen-dark: #1c7a43;
+  --color-dred: #f23f43;
+  --color-dred-dark: #a12d2f;
+  --color-dyellow: #f0b232;
+  --color-dbg-0: #1e1f22;
+  --color-dbg-1: #2b2d31;
+  --color-dbg-2: #313338;
+  --color-dbg-3: #383a40;
+  --color-dtx-0: #f2f3f5;
+  --color-dtx-1: #dbdee1;
+  --color-dtx-2: #b5bac1;
+  --color-dtx-3: #949ba4;
+  --color-dtx-4: #6d6f78;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -43,73 +75,76 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* :root keeps a light baseline for completeness (the app never uses it). */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --radius: 0.5rem;
+  --background: #ffffff;
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: #ffffff;
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+  --popover: #ffffff;
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #5865f2;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: #f23f43;
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
+  --ring: #5865f2;
+  --chart-1: #5865f2;
+  --chart-2: #23a55a;
+  --chart-3: #f0b232;
+  --chart-4: #eb459e;
+  --chart-5: #00a8fc;
+  --sidebar: #f2f3f5;
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: #5865f2;
+  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: #5865f2;
 }
 
+/* The theme actually used — Discord's dark scheme. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --radius: 0.5rem;
+  --background: #313338;
+  --foreground: #f2f3f5;
+  --card: #2b2d31;
+  --card-foreground: #f2f3f5;
+  --popover: #2b2d31;
+  --popover-foreground: #f2f3f5;
+  --primary: #5865f2;
+  --primary-foreground: #ffffff;
+  --secondary: #4e5058;
+  --secondary-foreground: #f2f3f5;
+  --muted: #383a40;
+  --muted-foreground: #949ba4;
+  --accent: #404249;
+  --accent-foreground: #f2f3f5;
+  --destructive: #f23f43;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: #1e1f22;
+  --ring: #5865f2;
+  --chart-1: #5865f2;
+  --chart-2: #23a55a;
+  --chart-3: #f0b232;
+  --chart-4: #eb459e;
+  --chart-5: #00a8fc;
+  --sidebar: #2b2d31;
+  --sidebar-foreground: #f2f3f5;
+  --sidebar-primary: #5865f2;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #404249;
+  --sidebar-accent-foreground: #f2f3f5;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: #5865f2;
 }
 
 @layer base {
@@ -121,7 +156,7 @@
   }
 }
 
-/* ---- Premium presentation layer (dark-only) ---- */
+/* ---- Presentation layer (always dark) ---- */
 
 /* This app is always dark: the native color scheme (scrollbars, inputs,
    browser dialogs) follows suit so no bright element glows on its own. */
@@ -129,25 +164,25 @@ html {
   color-scheme: dark;
 }
 
-/* An ultra-subtle radial halo at the top of the page — adds depth without
-   noise, replacing the template-feeling flat black. */
+/* An ultra-subtle blurple radial halo at the top of the page — depth without
+   noise, exactly like Discord's app frame. */
 body {
   background-image: radial-gradient(
     1100px 500px at 50% -8%,
-    rgba(251, 191, 36, 0.055),
+    rgba(88, 101, 242, 0.06),
     transparent 62%
   );
   background-repeat: no-repeat;
   background-attachment: fixed;
 }
 
-/* Text selection uses the gold accent, consistent with Thor's identity. */
+/* Text selection uses the blurple accent. */
 ::selection {
-  background: rgba(251, 191, 36, 0.28);
-  color: #fafafa;
+  background: rgba(88, 101, 242, 0.35);
+  color: #ffffff;
 }
 
-/* Thin & quiet scrollbar — modern app style (Linear/Vercel). */
+/* Thin & quiet scrollbar — modern app style (Linear/Vercel/Discord). */
 ::-webkit-scrollbar {
   width: 9px;
   height: 9px;
@@ -169,7 +204,7 @@ body {
 
 /* Keyboard focus is clearly visible but never intrusive. */
 :focus-visible {
-  outline: 2px solid rgba(251, 191, 36, 0.55);
+  outline: 2px solid rgba(88, 101, 242, 0.6);
   outline-offset: 2px;
 }
 
@@ -179,4 +214,17 @@ body {
    `next dev`; production builds are completely unaffected. */
 nextjs-portal {
   display: none !important;
+}
+
+/* v3.31.0: native dropdown (<select>) options render on the OS level and
+   ignore Tailwind classes — without this they come up WHITE on some
+   platforms, blinding anyone opening a Channel/Role picker in dark mode. */
+select option,
+select optgroup {
+  background-color: #2b2d31;
+  color: #dbdee1;
+}
+select option:checked {
+  background-color: #3f4147;
+  color: #ffffff;
 }

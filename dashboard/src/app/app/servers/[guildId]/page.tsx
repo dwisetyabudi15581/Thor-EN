@@ -13,8 +13,8 @@ export default function ServerDashboardPage() {
 
   if (!guildId) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-2">
-        <p className="text-sm text-zinc-400">Invalid server ID.</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-0 text-dtx-0 gap-2">
+        <p className="text-sm text-dtx-3">Invalid server ID.</p>
       </div>
     );
   }

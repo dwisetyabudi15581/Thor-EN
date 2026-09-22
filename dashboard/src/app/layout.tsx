@@ -33,13 +33,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // className="dark": this app is ALWAYS dark (manual bg-zinc-950). Without
-    // this class, the shadcn theme variables (:root) resolve to the LIGHT
-    // theme — variant="outline" buttons get a WHITE background that swallows
-    // bright zinc text (the "text hidden under a color" bug).
+    // className="dark": this app is ALWAYS dark (Discord scheme, bg #313338).
+    // Without this class, the shadcn theme variables (:root) resolve to the
+    // LIGHT theme — variant="outline" buttons get a WHITE background that
+    // swallows bright text (the "text hidden under a color" bug).
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-zinc-950 text-zinc-100`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-dbg-2 text-dtx-0`}
       >
         {children}
         <Toaster />

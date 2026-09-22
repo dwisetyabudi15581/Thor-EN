@@ -4,6 +4,53 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.31.0] — 2026-09-23
+
+### Added — 🎨 TAHAP 3: REWRITE TOTAL UI/UX DASHBOARD (DARK MODE KHAS DISCORD)
+
+The dashboard's entire presentation layer was rebuilt around one goal: **anyone — member, staff, or admin — understands every button and feature within seconds, without reading a manual.** The visual language is Discord's own dark scheme, so the control panel feels like a native extension of the app members already know. The rewrite is presentation-only by design: the v3.29.0 two-way live-sync machinery and the v3.30.0 RBAC tiers are untouched underneath (same endpoints, same draft/SaveBar contract, same 15 s auto-poll, same tier resolver).
+
+**The design system (globals.css):**
+
+- 🟢 **Discord's real palette everywhere** — content `#313338`, cards/sidebar `#2b2d31`, inputs `#1e1f22`, raised chips `#383a40`; text scale `#f2f3f5 → #6d6f78`; accent **blurple `#5865f2`**; semantic green `#23a55a` / red `#f23f43` / yellow `#f0b232`. Exposed as Tailwind 4 `@theme` utilities (`bg-dbg-1`, `text-dtx-2`, `bg-blurple`, `border-dred/40` …) so every module speaks the same tokens. Native `<select>` dropdowns get dark options too (the OS renders those outside Tailwind — a white dropdown list in dark mode was a real glare bug on Windows/Android).
+- 🟢 **ON/OFF is always green/red, high contrast** — every Toggle switch shows a green track + green "ON" word when active, red track + red "OFF" when not; status pills, quick-toggle cards and the header's bot indicator follow the same rule. A module's state is readable from across the room.
+
+**The new shell (guild-dashboard.tsx + side-nav.tsx):**
+
+- 🟠 **Persistent status header on every screen** — a live bot cluster (● Online / Offline with pulsing dot, gateway ping in ms with healthy/warn/slow coloring, server count) plus a "Live · 15s" chip explaining the auto-refresh, and the manual refresh button. Backed by the new login-gated `GET /api/bot-status` proxy, polled every 15 s in step with the data poll (visible-tab only, last-known-state on failure — a header widget must never explode the page).
+- 🟠 **Sidebar server switcher** — the current server sits at the top of the sidebar as a dropdown listing EVERY server the user can reach (with Admin/Staff/Member badges + a check on the current one); switching is one click, no round-trip to the picker page, with the unsaved-changes guard applied. The picker page remains as "View the full server list".
+- 🟢 **Profile card at the sidebar's foot** — avatar, name, the user's tier on the current server, the build version, and a log-out button (the escape hatch used to be buried in the picker page only).
+- 🟢 **Navigation regrouped into six Discord-like sections** — Overview / Moderation / Automation / Economy / Logs & Insights / Admin Settings — every entry icon + label, live search kept on top.
+
+**The new Overview ("understand in 3 seconds"):**
+
+- 🟠 **Quick Toggles — module ON/OFF switches that apply INSTANTLY.** Auto-Mod, Welcome Message, Economy & Leveling, and Auto-Role on Join are big green/red switches that PUT straight to the bot on click (no draft, no SaveBar) and refresh the payload immediately — the module turns on/off on Discord within the second. Toggles that need a target (welcome channel, first join role) expand an inline picker instead of guessing; flipping back ON restores what was just cleared (remembered for the visit); disabling Auto-Role asks first (it removes the join roles). Every failure toasts the bot's message and changes NOTHING.
+- 🟢 **Summary cards** — Total Members, **Commands Executed** (new stat, see below), Bot Uptime (live from the header's health poll; "offline" when the bot is down), Total Messages.
+- 🟢 **Module Status grid** — every other module as a one-glance green/red row that jumps straight to its configuration page when clicked.
+
+**Commands Executed (new bot-side statistic):**
+
+- 🟢 `src/data/commandStats.js` — a per-guild slash-command execution counter (in-memory cache + 30 s flush to `data/commandStats.json`, the statsManager pattern; a crash loses at most 30 s of counts). Counted ONLY at the router's dispatch points — commands that actually ran; permission denials and disabled-command rejections don't count. Custom commands count too.
+- 🟢 `GET /health` now reports `pingMs` (the gateway heartbeat; -1 before the first heartbeat) — feeding the header's ping indicator; the dashboard payload's `stats.server` gains `commandsExecuted`. The sandbox mock reports both, so the Overview is fully explorable in demo mode.
+
+**Embedded live previews (see it before you save it):**
+
+- 🟠 **Welcome/Goodbye live preview** — the message form now sits beside a pixel-honest Discord chat simulation: the exact embed the bot builds (green `#2ecc71` welcome / red `#e74c3c` goodbye border, the "new member" thumbnail, guild-name footer, timestamp), template variables filled with the ADMIN's own data ({user} renders as a Discord-style mention pill; **bold**/*italic*/newlines render), a Welcome↔Goodbye tab, the target channel shown live — and when no channel is set, the same honest warning the bot logs (mirrors `/test-welcome` 1:1, since both use the same builder).
+- 🟢 The Embed Builder's existing Discord-style preview was re-skinned to the new tokens (unchanged logic).
+
+**Access Control, redesigned as the simple panel requested:**
+
+- 🟠 **One table for every grant** — each role or user grant is a single row: an icon (role/user), the name (or ID), a two-state **Admin ⇄ Staff** switch, and a remove button. No more four separate chip lists to reason about. Same single source of truth (`config.access`), same SaveBar write, same instant hot-apply on the bot (cache invalidation), same privilege-escalation guard — only the presentation changed.
+- 🟢 **Add-access row** — by Role (picker) or by Discord User ID (validated), with an Admin/Staff tier choice; duplicate and invalid entries are rejected with a clear toast.
+
+**Everywhere else:** the server picker, member profile view, landing page, login gate and all 24 module pages were swept to the Discord tokens (semantic colors preserved: green = active/success, red = off/danger, yellow = warning, sky = staff). Toasts and the SaveBar follow the blurple accent.
+
+### Fixed
+
+- 🟡 The purge button in Moderation rendered as a light-gray "inverted" button (a leftover from an old palette) — now a proper red destructive button.
+
+**Tests:** 6 new (total 897) — tests/unit/commandStatsV331.test.js (round-trip + cross-guild isolation, invalid ids ignored, persisted file reload, garbage entries filtered, corrupt file quarantined + reset, flush durability). Verification: 897/897 bot tests, bot lint 0 errors (1 pre-existing warning), dashboard `tsc --noEmit` clean, dashboard build green with the new `/api/bot-status` route, eslint 0 errors (warnings unchanged in kind: the pre-existing initial-load patterns + window.location navigations), smoke v320 8/8 + v321 8/8 against the updated mock (which now serves `pingMs` + `commandsExecuted`).
+
 ## [3.30.0] — 2026-09-23
 
 ### Added — 🛡️ TAHAP 2: RBAC — SINKRON ADMIN & ACCESS CONTROL (BOT ⇄ DATABASE ⇄ DASHBOARD)

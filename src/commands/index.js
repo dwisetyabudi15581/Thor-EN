@@ -43,6 +43,9 @@
 
 const { MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { isAdmin: checkIsAdmin, isStaff: checkIsStaff } = require('../infra/permissions');
+// v3.31.0: per-guild execution counter — feeds the dashboard Overview
+// "Commands Executed" card. Counted ONLY for commands that actually run.
+const commandStats = require('../data/commandStats');
 
 // === Domain handlers ===
 // Each file exports a single async function (interaction) → void.
@@ -369,6 +372,12 @@ async function routeCommand(interaction) {
     const domain = COMMAND_TO_DOMAIN[interaction.commandName];
     const handler = domain ? DOMAIN_HANDLERS[domain] : null;
     if (handler) {
+        // v3.31.0: count the execution (fire-and-forget, never blocks).
+        try {
+            commandStats.increment(interaction.guildId);
+        } catch (_) {
+            /* a stats failure must never break a command */
+        }
         return handler(interaction);
     }
 
@@ -379,6 +388,12 @@ async function routeCommand(interaction) {
     // via the Command Manager is rejected with the same message. Full
     // parity: enable/disable custom commands from the web OR /commands toggle.
     if (isCustomCommand) {
+        // v3.31.0: custom commands count too (same "actually ran" rule).
+        try {
+            commandStats.increment(interaction.guildId);
+        } catch (_) {
+            /* a stats failure must never break a command */
+        }
         return customHandler(interaction);
     }
 

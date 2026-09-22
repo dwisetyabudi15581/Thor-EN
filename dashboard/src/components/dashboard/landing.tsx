@@ -90,32 +90,32 @@ function OwnerSetupNote({ serverUri }: { serverUri?: string }) {
   }
 
   return (
-    <details className="group rounded-xl border border-zinc-800/80 bg-zinc-900/30">
-      <summary className="cursor-pointer list-none px-4 py-3 text-xs font-medium text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
-        <Lock className="h-3.5 w-3.5 text-zinc-400" aria-hidden="true" />
+    <details className="group rounded-xl border border-white/[0.06] bg-dbg-1/30">
+      <summary className="cursor-pointer list-none px-4 py-3 text-xs font-medium text-dtx-3 hover:text-dtx-1 transition-colors flex items-center gap-2 [&::-webkit-details-marker]:hidden">
+        <Lock className="h-3.5 w-3.5 text-dtx-3" aria-hidden="true" />
         Bot owner setup — OAuth redirect address
-        <ArrowRight className="ml-auto h-3.5 w-3.5 text-zinc-500 transition-transform group-open:rotate-90" aria-hidden="true" />
+        <ArrowRight className="ml-auto h-3.5 w-3.5 text-dtx-3 transition-transform group-open:rotate-90" aria-hidden="true" />
       </summary>
       <div className="px-4 pb-4 pt-1">
-        <p className="text-xs text-zinc-400 leading-relaxed">
+        <p className="text-xs text-dtx-3 leading-relaxed">
           Register this address once in the Discord Developer Portal (OAuth2 → Redirects)
           so Discord login works:
         </p>
         <div className="mt-2 flex items-center gap-2">
-          <code className="flex-1 text-[11px] leading-relaxed text-amber-200/90 break-all select-all">
+          <code className="flex-1 text-[11px] leading-relaxed text-blurple-soft break-all select-all">
             {origin}
           </code>
           <button
             type="button"
             onClick={copyUri}
-            className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+            className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-white/[0.06] text-dtx-3 hover:bg-dbg-3 hover:text-dtx-1 transition-colors"
           >
-            {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+            {copied ? <Check className="h-3 w-3 text-dgreen" /> : <Copy className="h-3 w-3" />}
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
         {differsFromBrowser ? (
-          <p className="text-[10px] text-amber-500/80 mt-2 leading-relaxed">
+          <p className="text-[10px] text-dyellow/80 mt-2 leading-relaxed">
             Note: the address above (used by the server during login) differs from this
             page&apos;s domain — register the address above, not the one in your address bar.
           </p>
@@ -138,19 +138,19 @@ function ServerStatus({ serverTime }: { serverTime?: string }) {
   const fresh = ageSeconds < 120;
   return (
     <span
-      className="inline-flex items-center gap-2 rounded-full border border-zinc-800/80 bg-zinc-900/40 px-3 py-1.5 text-[11px] text-zinc-400"
+      className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-dbg-1/40 px-3 py-1.5 text-[11px] text-dtx-3"
       title={fresh ? `Data fresh (${ageSeconds}s ago)` : `STALE DATA ${ageSeconds}s — reload the page`}
     >
       <span className="relative flex h-1.5 w-1.5">
         {fresh ? (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dgreen opacity-50" />
         ) : null}
         <span
-          className={`relative inline-flex h-1.5 w-1.5 rounded-full ${fresh ? "bg-emerald-400" : "bg-red-400"}`}
+          className={`relative inline-flex h-1.5 w-1.5 rounded-full ${fresh ? "bg-dgreen" : "bg-red-400"}`}
         />
       </span>
       {fresh ? "All systems normal" : "Stale data — reload"}
-      <span className="text-zinc-500">· server {time}</span>
+      <span className="text-dtx-3">· server {time}</span>
     </span>
   );
 }
@@ -195,11 +195,11 @@ function AuthErrorBanner() {
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mb-6 p-4 rounded-xl border border-red-900/60 bg-red-950/30"
+      className="mb-6 p-4 rounded-xl border border-dred/40 bg-dred/10"
       role="alert"
     >
-      <p className="text-sm font-medium text-red-200">{info.title}</p>
-      {info.hint ? <p className="text-xs text-red-200/70 mt-1.5 leading-relaxed">{info.hint}</p> : null}
+      <p className="text-sm font-medium text-dred">{info.title}</p>
+      {info.hint ? <p className="text-xs text-dred mt-1.5 leading-relaxed">{info.hint}</p> : null}
     </motion.div>
   );
 }
@@ -220,15 +220,15 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
         <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
           {/* Left copy */}
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-medium text-amber-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blurple/30 bg-blurple/10 px-3 py-1 text-[11px] font-medium text-blurple-soft">
               <Bot className="h-3.5 w-3.5" aria-hidden="true" />
               Free · No subscription · Every feature unlocked
             </div>
-            <h1 className="mt-5 text-4xl md:text-5xl font-semibold tracking-tight text-zinc-50 leading-[1.08]">
+            <h1 className="mt-5 text-4xl md:text-5xl font-semibold tracking-tight text-dtx-0 leading-[1.08]">
               One bot for your entire server.
-              <span className="block text-zinc-400 mt-2">Control it from Discord or the web — whichever feels right.</span>
+              <span className="block text-dtx-3 mt-2">Control it from Discord or the web — whichever feels right.</span>
             </h1>
-            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-zinc-400">
+            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-dtx-3">
               Thor combines moderation, tickets, a shop, leveling, and community
               automation in a single bot. Configure everything with slash commands, or open
               the web dashboard for full-scale configuration — both write to the same
@@ -239,7 +239,7 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
                 size="lg"
                 onClick={primaryLogin}
                 disabled={busy}
-                className="bg-amber-400 text-zinc-950 hover:bg-amber-300 h-11 px-6 font-semibold"
+                className="bg-blurple text-white hover:bg-blurple-dark h-11 px-6 font-semibold"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
                 {oauthReady ? "Open Dashboard" : "Explore in Demo Mode"}
@@ -250,7 +250,7 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
                   variant="outline"
                   onClick={() => onLoginDemo("admin")}
                   disabled={busy}
-                  className="h-11 px-6 border-zinc-700 bg-transparent hover:bg-zinc-800/60 hover:text-zinc-100"
+                  className="h-11 px-6 border-white/[0.1] bg-transparent hover:bg-dbg-3/60 hover:text-dtx-0"
                 >
                   Try Demo
                 </Button>
@@ -259,14 +259,14 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="h-11 px-6 border-zinc-700 bg-transparent hover:bg-zinc-800/60 hover:text-zinc-100"
+                  className="h-11 px-6 border-white/[0.1] bg-transparent hover:bg-dbg-3/60 hover:text-dtx-0"
                 >
                   Invite to Server
                   <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden="true" />
                 </Button>
               </a>
             </div>
-            <p className="mt-4 text-xs text-zinc-500 leading-relaxed">
+            <p className="mt-4 text-xs text-dtx-3 leading-relaxed">
               {oauthReady
                 ? "Secure login via Discord OAuth — the bot only reads your server list and identity, with no dangerous permissions."
                 : "Discord login is not configured on this server yet — exploring in demo mode with sample data. Set DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET in dashboard/.env to enable real login."}
@@ -275,34 +275,34 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
 
           {/* Right mockup: two control panels */}
           <div className="hidden lg:block">
-            <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-1.5 shadow-2xl shadow-black/40">
-              <div className="rounded-xl bg-zinc-950/80 p-4">
-                <div className="flex items-center gap-1.5 pb-3 border-b border-zinc-800/60">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-500/70" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/70" />
-                  <span className="ml-3 text-[11px] text-zinc-500">thor dashboard — #general</span>
+            <div className="rounded-2xl border border-white/[0.06] bg-dbg-1/40 p-1.5 shadow-2xl shadow-black/40">
+              <div className="rounded-xl bg-dbg-0/80 p-4">
+                <div className="flex items-center gap-1.5 pb-3 border-b border-white/[0.06]">
+                  <span className="h-2.5 w-2.5 rounded-full bg-dred/70" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-blurple/70" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-dgreen/70" />
+                  <span className="ml-3 text-[11px] text-dtx-3">thor dashboard — #general</span>
                 </div>
                 <div className="pt-3 space-y-3 font-mono text-[11.5px] leading-relaxed">
-                  <p className="text-zinc-500">
-                    <span className="text-zinc-300">admin</span> today at 2:02 PM
+                  <p className="text-dtx-3">
+                    <span className="text-dtx-2">admin</span> today at 2:02 PM
                   </p>
                   <p>
-                    <span className="text-amber-300">/setup-ticket</span>{" "}
-                    <span className="text-zinc-400">channel:#🎫create-ticket</span>
+                    <span className="text-blurple-soft">/setup-ticket</span>{" "}
+                    <span className="text-dtx-3">channel:#🎫create-ticket</span>
                   </p>
-                  <p className="text-zinc-600">✅ Ticket panel installed — 4 categories active</p>
-                  <p className="text-zinc-500 pt-1">
-                    <span className="text-zinc-300">you</span> today at 2:05 PM
+                  <p className="text-dtx-4">✅ Ticket panel installed — 4 categories active</p>
+                  <p className="text-dtx-3 pt-1">
+                    <span className="text-dtx-2">you</span> today at 2:05 PM
                   </p>
                   <p>
-                    <span className="text-amber-300">/add-product</span>{" "}
-                    <span className="text-zinc-400">label:"VIP 30 Days" price:15,000 IDR</span>
+                    <span className="text-blurple-soft">/add-product</span>{" "}
+                    <span className="text-dtx-3">label:"VIP 30 Days" price:15,000 IDR</span>
                   </p>
-                  <p className="text-zinc-600">✅ Product saved in the transaction category</p>
+                  <p className="text-dtx-4">✅ Product saved in the transaction category</p>
                 </div>
-                <div className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2.5">
-                  <p className="text-[11px] text-amber-200/90 leading-snug">
+                <div className="mt-3 rounded-lg border border-blurple/25 bg-blurple/5 px-3 py-2.5">
+                  <p className="text-[11px] text-blurple-soft leading-snug">
                     ↻ The same changes can be made from the web dashboard —
                     data syncs automatically, no restart needed.
                   </p>
@@ -313,7 +313,7 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
         </div>
 
         {/* Stats strip */}
-        <div className="mt-14 grid grid-cols-2 divide-zinc-800/70 border-y border-zinc-800/70 md:grid-cols-4 md:divide-x">
+        <div className="mt-14 grid grid-cols-2 divide-white/[0.06] border-y border-white/[0.06] md:grid-cols-4 md:divide-x">
           {[
             { v: "90+", l: "slash commands ready to use" },
             { v: "18", l: "modules configurable from the web" },
@@ -321,8 +321,8 @@ function Hero({ config, busy, onLoginDiscord, onLoginDemo }: LandingProps) {
             { v: "$0", l: "free forever, no tiers" },
           ].map((s) => (
             <div key={s.l} className="py-5 px-4 text-center md:text-left">
-              <p className="text-2xl font-semibold text-zinc-100 tabular-nums">{s.v}</p>
-              <p className="mt-1 text-xs text-zinc-500">{s.l}</p>
+              <p className="text-2xl font-semibold text-dtx-0 tabular-nums">{s.v}</p>
+              <p className="mt-1 text-xs text-dtx-3">{s.l}</p>
             </div>
           ))}
         </div>
@@ -352,15 +352,15 @@ const CONTROL_WAYS = [
 
 function ControlSection() {
   return (
-    <section className="border-t border-zinc-900">
+    <section className="border-t border-white/[0.06]">
       <div className="mx-auto max-w-6xl px-6 py-16 md:py-20">
-        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-amber-400/90">
+        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-blurple-soft">
           Two Ways to Control
         </motion.p>
-        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
+        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-dtx-0">
           One data source, two doors in.
         </motion.h2>
-        <motion.p {...fadeUp} className="mt-4 max-w-2xl text-[15px] leading-relaxed text-zinc-400">
+        <motion.p {...fadeUp} className="mt-4 max-w-2xl text-[15px] leading-relaxed text-dtx-3">
           Whatever you change on the web is instantly visible to slash commands —
           and vice versa. No manual syncing, no restarts.
         </motion.p>
@@ -371,23 +371,23 @@ function ControlSection() {
               {...fadeUp}
               className={`relative rounded-2xl border p-6 ${
                 w.accent
-                  ? "border-amber-400/30 bg-gradient-to-b from-amber-400/[0.07] to-transparent"
-                  : "border-zinc-800/80 bg-zinc-900/30"
+                  ? "border-blurple/30 bg-gradient-to-b from-blurple/[0.07] to-transparent"
+                  : "border-white/[0.06] bg-dbg-1/30"
               }`}
             >
               <div className="flex items-center gap-3">
                 <div className={`flex h-10 w-10 items-center justify-center rounded-xl border ${
-                  w.accent ? "border-amber-400/40 bg-amber-400/10" : "border-zinc-700/60 bg-zinc-800/60"
+                  w.accent ? "border-blurple/40 bg-blurple/10" : "border-white/[0.1] bg-dbg-3/60"
                 }`}>
-                  <w.icon className={`h-5 w-5 ${w.accent ? "text-amber-300" : "text-zinc-300"}`} aria-hidden="true" />
+                  <w.icon className={`h-5 w-5 ${w.accent ? "text-blurple-soft" : "text-dtx-2"}`} aria-hidden="true" />
                 </div>
-                <h3 className="text-lg font-semibold text-zinc-100">{w.title}</h3>
+                <h3 className="text-lg font-semibold text-dtx-0">{w.title}</h3>
               </div>
-              <p className="mt-4 text-sm leading-relaxed text-zinc-400">{w.desc}</p>
+              <p className="mt-4 text-sm leading-relaxed text-dtx-3">{w.desc}</p>
               <ul className="mt-4 space-y-2">
                 {w.points.map((p) => (
-                  <li key={p} className="flex items-start gap-2 text-[13px] text-zinc-400">
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400/80" aria-hidden="true" />
+                  <li key={p} className="flex items-start gap-2 text-[13px] text-dtx-3">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-dgreen" aria-hidden="true" />
                     {p}
                   </li>
                 ))}
@@ -425,12 +425,12 @@ const MODULES = [
 
 function ModulesSection() {
   return (
-    <section className="border-t border-zinc-900">
+    <section className="border-t border-white/[0.06]">
       <div className="mx-auto max-w-6xl px-6 py-16 md:py-20">
-        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-amber-400/90">
+        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-blurple-soft">
           All Modules
         </motion.p>
-        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
+        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-dtx-0">
           18 modules. All free. All configurable from the web.
         </motion.h2>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -438,11 +438,11 @@ function ModulesSection() {
             <motion.div
               key={m.name}
               {...fadeUp}
-              className="group rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-4 hover:border-zinc-700 hover:bg-zinc-900/60 transition-colors"
+              className="group rounded-xl border border-white/[0.06] bg-dbg-1/30 p-4 hover:border-white/[0.1] hover:bg-dbg-1/60 transition-colors"
             >
-              <m.icon className="h-5 w-5 text-amber-300/90" aria-hidden="true" />
-              <h3 className="mt-3 text-sm font-semibold text-zinc-100">{m.name}</h3>
-              <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{m.desc}</p>
+              <m.icon className="h-5 w-5 text-blurple-soft" aria-hidden="true" />
+              <h3 className="mt-3 text-sm font-semibold text-dtx-0">{m.name}</h3>
+              <p className="mt-1.5 text-xs leading-relaxed text-dtx-3">{m.desc}</p>
             </motion.div>
           ))}
         </div>
@@ -461,20 +461,20 @@ const STEPS = [
 
 function HowSection() {
   return (
-    <section className="border-t border-zinc-900">
+    <section className="border-t border-white/[0.06]">
       <div className="mx-auto max-w-6xl px-6 py-16 md:py-20">
-        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-amber-400/90">
+        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-blurple-soft">
           Start in 3 Steps
         </motion.p>
-        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
+        <motion.h2 {...fadeUp} className="mt-3 max-w-2xl text-2xl md:text-3xl font-semibold tracking-tight text-dtx-0">
           From invite to running — in under 5 minutes.
         </motion.h2>
         <div className="mt-10 grid gap-5 md:grid-cols-3">
           {STEPS.map((s) => (
-            <motion.div key={s.n} {...fadeUp} className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-6">
-              <p className="font-mono text-xs text-amber-400/80">{s.n}</p>
-              <h3 className="mt-3 text-base font-semibold text-zinc-100">{s.title}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{s.desc}</p>
+            <motion.div key={s.n} {...fadeUp} className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-6">
+              <p className="font-mono text-xs text-blurple-soft">{s.n}</p>
+              <h3 className="mt-3 text-base font-semibold text-dtx-0">{s.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-dtx-3">{s.desc}</p>
             </motion.div>
           ))}
         </div>
@@ -510,22 +510,22 @@ const FAQ_ITEMS = [
 
 function FaqSection() {
   return (
-    <section id="faq" className="border-t border-zinc-900">
+    <section id="faq" className="border-t border-white/[0.06]">
       <div className="mx-auto max-w-3xl px-6 py-16 md:py-20">
-        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-amber-400/90">
+        <motion.p {...fadeUp} className="text-xs font-medium uppercase tracking-widest text-blurple-soft">
           FAQ
         </motion.p>
-        <motion.h2 {...fadeUp} className="mt-3 text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
+        <motion.h2 {...fadeUp} className="mt-3 text-2xl md:text-3xl font-semibold tracking-tight text-dtx-0">
           Frequently asked questions.
         </motion.h2>
         <motion.div {...fadeUp} className="mt-8">
           <Accordion type="single" collapsible className="w-full">
             {FAQ_ITEMS.map((f, i) => (
-              <AccordionItem key={f.q} value={`item-${i}`} className="border-zinc-800/80">
-                <AccordionTrigger className="text-left text-[15px] text-zinc-200 hover:text-zinc-50 hover:no-underline">
+              <AccordionItem key={f.q} value={`item-${i}`} className="border-white/[0.06]">
+                <AccordionTrigger className="text-left text-[15px] text-dtx-1 hover:text-dtx-0 hover:no-underline">
                   {f.q}
                 </AccordionTrigger>
-                <AccordionContent className="text-sm leading-relaxed text-zinc-400">{f.a}</AccordionContent>
+                <AccordionContent className="text-sm leading-relaxed text-dtx-3">{f.a}</AccordionContent>
               </AccordionItem>
             ))}
           </Accordion>
@@ -539,29 +539,29 @@ function FaqSection() {
 
 function CtaSection({ onLoginDiscord, inviteUrl }: { onLoginDiscord: () => void; inviteUrl: string }) {
   return (
-    <section className="border-t border-zinc-900">
+    <section className="border-t border-white/[0.06]">
       <div className="mx-auto max-w-6xl px-6 py-16 md:py-20">
         <motion.div
           {...fadeUp}
-          className="relative overflow-hidden rounded-3xl border border-amber-400/25 bg-gradient-to-b from-amber-400/[0.08] to-transparent px-6 py-12 text-center md:px-12"
+          className="relative overflow-hidden rounded-3xl border border-blurple/25 bg-gradient-to-b from-blurple/[0.08] to-transparent px-6 py-12 text-center md:px-12"
         >
-          <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-96 -translate-x-1/2 rounded-full bg-amber-400/10 blur-3xl" aria-hidden="true" />
-          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-zinc-50">
+          <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-96 -translate-x-1/2 rounded-full bg-blurple/10 blur-3xl" aria-hidden="true" />
+          <h2 className="text-2xl md:text-3xl font-semibold tracking-tight text-dtx-0">
             Your server, ready for a new way to be managed.
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-400">
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-dtx-3">
             Invite the bot, log in, and start configuring your favorite modules. No
             subscription required — everything is open from the very first minute.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Button
               onClick={onLoginDiscord}
-              className="bg-amber-400 text-zinc-950 hover:bg-amber-300 h-11 px-6 font-semibold"
+              className="bg-blurple text-white hover:bg-blurple-dark h-11 px-6 font-semibold"
             >
               Login with Discord
             </Button>
             <a href={inviteUrl} target="_blank" rel="noreferrer">
-              <Button variant="outline" className="h-11 px-6 border-zinc-700 bg-transparent hover:bg-zinc-800/60 hover:text-zinc-100">
+              <Button variant="outline" className="h-11 px-6 border-white/[0.1] bg-transparent hover:bg-dbg-3/60 hover:text-dtx-0">
                 Invite Bot
               </Button>
             </a>
@@ -576,29 +576,29 @@ function CtaSection({ onLoginDiscord, inviteUrl }: { onLoginDiscord: () => void;
 
 export function Landing(props: LandingProps) {
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-dbg-0 text-dtx-0">
       {/* Nav */}
-      <header className="sticky top-0 z-40 border-b border-zinc-900/80 bg-zinc-950/85 backdrop-blur">
+      <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-dbg-0/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 border border-amber-400/25">
-              <Hammer className="h-4 w-4 text-amber-400" aria-hidden="true" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blurple/10 border border-blurple/25">
+              <Hammer className="h-4 w-4 text-blurple-soft" aria-hidden="true" />
             </div>
             <div className="leading-tight">
-              <p className="text-sm font-semibold text-zinc-100">Thor</p>
-              <p className="text-[10px] text-zinc-500">Community Bot Dashboard</p>
+              <p className="text-sm font-semibold text-dtx-0">Thor</p>
+              <p className="text-[10px] text-dtx-3">Community Bot Dashboard</p>
             </div>
           </div>
-          <nav className="hidden items-center gap-6 text-sm text-zinc-400 md:flex">
-            <a href="#modules" className="hover:text-zinc-100 transition-colors">Modules</a>
-            <a href="#how" className="hover:text-zinc-100 transition-colors">How to Use</a>
-            <a href="#faq" className="hover:text-zinc-100 transition-colors">FAQ</a>
+          <nav className="hidden items-center gap-6 text-sm text-dtx-3 md:flex">
+            <a href="#modules" className="hover:text-dtx-0 transition-colors">Modules</a>
+            <a href="#how" className="hover:text-dtx-0 transition-colors">How to Use</a>
+            <a href="#faq" className="hover:text-dtx-0 transition-colors">FAQ</a>
           </nav>
           <Button
             onClick={props.onLoginDiscord}
             disabled={props.busy}
             size="sm"
-            className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="bg-blurple text-white hover:bg-blurple-dark font-semibold"
           >
             {props.busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             Login
@@ -619,14 +619,14 @@ export function Landing(props: LandingProps) {
         <CtaSection onLoginDiscord={props.onLoginDiscord} inviteUrl={props.config.inviteUrl} />
       </main>
 
-      <footer className="border-t border-zinc-900/80">
+      <footer className="border-t border-white/[0.06]">
         <div className="mx-auto max-w-6xl px-6 py-10 space-y-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-400/10 border border-amber-400/25">
-                <Hammer className="h-3.5 w-3.5 text-amber-400" aria-hidden="true" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blurple/10 border border-blurple/25">
+                <Hammer className="h-3.5 w-3.5 text-blurple-soft" aria-hidden="true" />
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-dtx-3">
                 Thor Community Bot — free for every server, full control via Discord &amp; the web.
               </p>
             </div>

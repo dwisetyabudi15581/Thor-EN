@@ -109,6 +109,16 @@ export async function botHealth(): Promise<{ online: boolean; guildCount?: numbe
   }
 }
 
+// v3.31.0: live bot health shape consumed by the dashboard header
+// (polled via /api/bot-status every 15s, in step with the data auto-refresh).
+export type BotStatus = {
+  online: boolean;
+  pingMs?: number;
+  guildCount?: number;
+  uptimeSec?: number;
+  version?: string;
+};
+
 // === Bot data shapes (the subset used by the UI) ===
 
 export type BotGuild = {
@@ -424,6 +434,8 @@ export type StatsSection = {
     totalPurchases: number;
     totalRevenue: number;
     totalGiveawaysWon: number;
+    /** v3.31.0: total slash-command executions on this server (commandStats). */
+    commandsExecuted?: number;
   };
   top: {
     messages: StatRow[];

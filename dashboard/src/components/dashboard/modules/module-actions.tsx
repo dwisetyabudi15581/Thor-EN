@@ -95,37 +95,37 @@ export function RespondersModule({ draft, call, refresh, toast }: ModuleActionPr
           />
         </Field>
         <div className="flex items-end">
-          <Button onClick={add} disabled={busy} className="w-full bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+          <Button onClick={add} disabled={busy} className="w-full bg-blurple text-white hover:bg-blurple-dark font-semibold">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
             Add Responder
           </Button>
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Responder List ({draft.responders.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Responder List ({draft.responders.length})</h3>
         <div className="mt-4 space-y-2">
           {draft.responders.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No automatic responders yet.
             </p>
           ) : null}
           {draft.responders.map((r) => (
-            <div key={r.id} className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div key={r.id} className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <code className="rounded bg-zinc-800/60 px-1.5 py-0.5 text-xs text-amber-300">{r.trigger}</code>
+                  <code className="rounded bg-dbg-3/60 px-1.5 py-0.5 text-xs text-blurple-soft">{r.trigger}</code>
                   <Pill>{r.matchMode === "exact" ? "exact" : "contains"}</Pill>
                   <Pill>{r.replyType}</Pill>
                   {r.useCount ? <Pill tone="green">{r.useCount}× used</Pill> : null}
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-zinc-400 line-clamp-3">{r.reply}</p>
+                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-dtx-3 line-clamp-3">{r.reply}</p>
               </div>
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={() => remove(r.trigger)}
-                className="h-8 w-8 shrink-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                className="h-8 w-8 shrink-0 text-dtx-3 hover:text-dred hover:bg-dred/10"
                 title="Delete responder"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -336,24 +336,24 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
   return (
     <div className="space-y-5">
       {/* v3.28.0: Verification — one command, one-way button, repeat-click safe. */}
-      <section className="rounded-2xl border border-emerald-900/50 bg-emerald-950/20 p-5 md:p-6">
+      <section className="rounded-2xl border border-dgreen/30 bg-dgreen/10 p-5 md:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">✅ Verification</h3>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h3 className="text-sm font-semibold text-dtx-0">✅ Verification</h3>
+            <p className="mt-1 text-xs text-dtx-3">
               A clean classic embed — members click the button to GAIN the Verified role. Repeat clicks never remove it (safe for Discord newcomers).
             </p>
           </div>
           {verifyPanel ? <Pill tone="green">installed</Pill> : null}
         </div>
         {verifyPanel ? (
-          <div className="mt-4 space-y-2 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 text-xs text-zinc-400">
+          <div className="mt-4 space-y-2 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4 text-xs text-dtx-3">
             <p>
-              <span className="font-medium text-zinc-200">{verifyPanel.title}</span> in{" "}
-              <span className="text-zinc-300">{channelLabel(meta.channels, verifyPanel.channelId)}</span> — clicking gives{" "}
-              <span className="text-emerald-300">{verifiedRoleLabel}</span>.
+              <span className="font-medium text-dtx-1">{verifyPanel.title}</span> in{" "}
+              <span className="text-dtx-2">{channelLabel(meta.channels, verifyPanel.channelId)}</span> — clicking gives{" "}
+              <span className="text-dgreen">{verifiedRoleLabel}</span>.
             </p>
-            <p className="text-zinc-500">
+            <p className="text-dtx-3">
               While the Verified role is set, tickets & escrow accept verified members only. Edit the panel below — deleting it also clears the
               Verified role (reinstall here anytime).
             </p>
@@ -369,14 +369,14 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
             <Field label="Button Label" hint="The text on the verify button.">
               <TextInput value={verifyLabel} onChange={setVerifyLabel} placeholder="Verify Me" />
             </Field>
-            <p className="md:col-span-3 text-[11px] text-zinc-600">
-              The panel renders as the classic verification embed — green, title + description, bot-name footer (just like the old one). Install form: <span className="text-zinc-500">/setup-verify</span> parity.
+            <p className="md:col-span-3 text-[11px] text-dtx-4">
+              The panel renders as the classic verification embed — green, title + description, bot-name footer (just like the old one). Install form: <span className="text-dtx-3">/setup-verify</span> parity.
             </p>
             <div className="md:col-span-3">
               <Button
                 onClick={installVerify}
                 disabled={verifyBusy}
-                className="w-full bg-emerald-400 text-zinc-950 hover:bg-emerald-300 font-semibold"
+                className="w-full bg-dgreen text-white hover:bg-dgreen-dark font-semibold"
               >
                 {verifyBusy ? (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -391,12 +391,12 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
       </section>
 
       {!open ? (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Self-Role Panels</h3>
-            <p className="mt-1 text-xs text-zinc-500">Create a button/select panel — members grab roles themselves, no admin needed.</p>
+            <h3 className="text-sm font-semibold text-dtx-0">Self-Role Panels</h3>
+            <p className="mt-1 text-xs text-dtx-3">Create a button/select panel — members grab roles themselves, no admin needed.</p>
           </div>
-          <Button size="sm" onClick={() => setOpen(true)} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+          <Button size="sm" onClick={() => setOpen(true)} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
             <Plus className="h-4 w-4" aria-hidden="true" /> New Panel
           </Button>
         </div>
@@ -446,16 +446,16 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
             </div>
           </div>
           <div className="md:col-span-2 space-y-2">
-            <p className="text-[13px] font-medium text-zinc-300">Roles in the panel ({roles.length})</p>
+            <p className="text-[13px] font-medium text-dtx-2">Roles in the panel ({roles.length})</p>
             <div className="flex flex-wrap gap-2">
               {roles.map((r, i) => (
-                <span key={`${r.roleId}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                <span key={`${r.roleId}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-dbg-3/40 py-1 pl-3 pr-1.5 text-xs text-dtx-2">
                   {r.emoji ? <span>{r.emoji}</span> : null}
                   {r.label}
                   <button
                     type="button"
                     onClick={() => setRoles(roles.filter((_, idx) => idx !== i))}
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-dtx-3 hover:bg-dred/10 hover:text-dred"
                   >
                     ×
                   </button>
@@ -469,7 +469,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
               <Button
                 size="sm"
                 variant="outline"
-                className="h-10 shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+                className="h-10 shrink-0 border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
                 onClick={() => {
                   if (!roleId) {
                     toast("Pick a role first.", "err");
@@ -490,58 +490,58 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
             </div>
           </div>
           <div className="flex items-end gap-2 md:col-span-2">
-            <Button onClick={createPanel} disabled={busy} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+            <Button onClick={createPanel} disabled={busy} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
               Send Panel
             </Button>
-            <Button variant="ghost" onClick={() => setOpen(false)} className="text-zinc-400 hover:text-zinc-100">
+            <Button variant="ghost" onClick={() => setOpen(false)} className="text-dtx-3 hover:text-dtx-0">
               Cancel
             </Button>
           </div>
         </Section>
       )}
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Active Panels ({draft.selfroles.length})</h3>
-        <p className="mt-1 text-xs text-zinc-500">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Active Panels ({draft.selfroles.length})</h3>
+        <p className="mt-1 text-xs text-dtx-3">
           Manage each panel live — edit the title/description/layout, add or remove roles, or delete the whole panel.
           Every change re-renders the Discord message immediately.
         </p>
         <div className="mt-4 space-y-2">
           {draft.selfroles.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No self-role panels on this server yet.
             </p>
           ) : null}
           {draft.selfroles.map((p) => (
-            <div key={p.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div key={p.id} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium text-zinc-200">{p.title}</p>
+                    <p className="text-sm font-medium text-dtx-1">{p.title}</p>
                     <Pill>{p.type === "select" ? "dropdown" : "buttons"}</Pill>
                     {p.exclusive ? <Pill tone="amber">exclusive</Pill> : null}
                     {p.once ? <Pill tone="green">one-way</Pill> : null}
-                    <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
+                    <span className="text-[11px] text-dtx-3">{channelLabel(meta.channels, p.channelId)}</span>
                   </div>
-                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{p.description}</p>
+                  <p className="mt-1.5 text-xs leading-relaxed text-dtx-3">{p.description}</p>
                   {/* v3.26.0: live role chips — click × to remove from the panel */}
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {p.roles.length === 0 ? (
-                      <span className="text-[11px] text-zinc-600">No roles yet — add one below.</span>
+                      <span className="text-[11px] text-dtx-4">No roles yet — add one below.</span>
                     ) : null}
                     {p.roles.map((r) => (
                       <span
                         key={r.roleId}
                         title={`${roleLabelFn(meta.roles, r.roleId)}${r.description ? ` — ${r.description}` : ""}`}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-2.5 pr-1.5 text-xs text-zinc-300"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-dbg-3/40 py-1 pl-2.5 pr-1.5 text-xs text-dtx-2"
                       >
                         {r.emoji ? <span>{r.emoji}</span> : null}
                         {r.label}
                         <button
                           type="button"
                           onClick={() => void removeRoleFromPanel(p.id, r.roleId)}
-                          className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                          className="flex h-4 w-4 items-center justify-center rounded-full text-dtx-3 hover:bg-dred/10 hover:text-dred"
                           title={`Remove ${r.label} from the panel`}
                         >
                           ×
@@ -555,7 +555,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                     size="sm"
                     variant="outline"
                     onClick={() => openManage(p.id)}
-                    className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                    className="h-8 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
                   >
                     {manageId === p.id ? "Close" : "Manage"}
                   </Button>
@@ -563,7 +563,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                     size="icon"
                     variant="ghost"
                     onClick={() => deletePanel(p.id)}
-                    className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                    className="h-8 w-8 text-dtx-3 hover:text-dred hover:bg-dred/10"
                     title="Delete panel + message"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -573,18 +573,18 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
 
               {/* v3.26.0: per-panel manager — edit panel + add role (live, /selfrole-update & /selfrole-add parity) */}
               {manageId === p.id ? (
-                <div className="mt-3 space-y-4 border-t border-zinc-800/60 pt-3">
+                <div className="mt-3 space-y-4 border-t border-white/[0.06] pt-3">
                   <div>
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Edit panel — applied immediately
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <div className="min-w-0">
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Title</p>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Title</p>
                         <TextInput value={editPanel.title} onChange={(v) => setEditPanel({ ...editPanel, title: v })} />
                       </div>
                       <div className="min-w-0">
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Format</p>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Format</p>
                         <Select
                           value={editPanel.type}
                           onChange={(v) => setEditPanel({ ...editPanel, type: v })}
@@ -595,7 +595,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                         />
                       </div>
                       <div className="min-w-0 sm:col-span-2">
-                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Description</p>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Description</p>
                         <TextArea value={editPanel.description} onChange={(v) => setEditPanel({ ...editPanel, description: v })} rows={2} />
                       </div>
                       <div className="flex items-end">
@@ -623,7 +623,7 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                         <Button
                           onClick={() => void savePanelEdit(p.id)}
                           disabled={busy}
-                          className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                          className="bg-blurple font-semibold text-white hover:bg-blurple-dark"
                         >
                           {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Save Panel
                         </Button>
@@ -631,8 +631,8 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                     </div>
                   </div>
 
-                  <div className="border-t border-zinc-800/60 pt-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <div className="border-t border-white/[0.06] pt-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Add a role to this panel ({p.roles.length}/25)
                     </p>
                     <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr_130px]">
@@ -652,12 +652,12 @@ export function SelfRolesModule({ draft, meta, call, refresh, toast }: ModuleAct
                       <Button
                         onClick={() => void addRoleToPanel(p.id)}
                         disabled={busy}
-                        className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                        className="bg-blurple font-semibold text-white hover:bg-blurple-dark"
                       >
                         <Plus className="h-4 w-4" aria-hidden="true" /> Role
                       </Button>
                     </div>
-                    <p className="mt-1.5 text-[11px] text-zinc-500">
+                    <p className="mt-1.5 text-[11px] text-dtx-3">
                       Requires role: only members who already hold that role can take this one (gated perks).
                     </p>
                   </div>
@@ -741,7 +741,7 @@ export function AnnounceModule({ draft, meta, call, refresh, toast }: ModuleActi
             type="datetime-local"
             value={when}
             onChange={(e) => setWhen(e.target.value)}
-            className="w-full h-10 rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 text-sm text-zinc-100 focus:outline-none focus:border-amber-400/50 [color-scheme:dark]"
+            className="w-full h-10 rounded-lg border border-white/[0.06] bg-dbg-0/60 px-3 text-sm text-dtx-0 focus:outline-none focus:border-blurple/50 [color-scheme:dark]"
           />
         </Field>
         <div className="md:col-span-2">
@@ -773,33 +773,33 @@ export function AnnounceModule({ draft, meta, call, refresh, toast }: ModuleActi
           <MentionSelect value={mention} onChange={setMention} roles={meta.roles} />
         </Field>
         <div className="md:col-span-2">
-          <Button onClick={schedule} disabled={busy} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+          <Button onClick={schedule} disabled={busy} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Clock className="h-4 w-4" aria-hidden="true" />}
             Schedule
           </Button>
         </div>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Waiting to Send ({pending.length})</h3>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Waiting to Send ({pending.length})</h3>
         <div className="mt-4 space-y-2">
           {pending.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No scheduled announcements.
             </p>
           ) : null}
           {pending.map((a) => (
-            <div key={a.id} className="flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div key={a.id} className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-zinc-200">{a.data.title}</p>
+                  <p className="text-sm font-medium text-dtx-1">{a.data.title}</p>
                   {a.recurring ? <Pill tone="amber">{a.recurring}</Pill> : null}
                 </div>
-                <p className="mt-1 text-xs text-zinc-500 line-clamp-2">{a.data.description}</p>
-                <p className="mt-2 flex items-center gap-2 text-[11px] text-zinc-500">
+                <p className="mt-1 text-xs text-dtx-3 line-clamp-2">{a.data.description}</p>
+                <p className="mt-2 flex items-center gap-2 text-[11px] text-dtx-3">
                   <Clock className="h-3 w-3" aria-hidden="true" />
                   {new Date(a.sendAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}
-                  <span className="text-zinc-600">·</span>
+                  <span className="text-dtx-4">·</span>
                   {channelLabel(meta.channels, a.channelId)}
                 </p>
               </div>
@@ -807,7 +807,7 @@ export function AnnounceModule({ draft, meta, call, refresh, toast }: ModuleActi
                 size="icon"
                 variant="ghost"
                 onClick={() => cancel(a.id)}
-                className="h-8 w-8 shrink-0 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                className="h-8 w-8 shrink-0 text-dtx-3 hover:text-dred hover:bg-dred/10"
                 title="Cancel the announcement"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -834,19 +834,19 @@ export function TempVoiceModule({ draft, meta, call, refresh, toast }: ModuleAct
         {tv ? (
           <>
             <Field label="Trigger Channel" hint="A member joins this channel → the bot creates their private channel.">
-              <div className="flex h-10 items-center rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 text-sm text-zinc-300">
+              <div className="flex h-10 items-center rounded-lg border border-white/[0.06] bg-dbg-0/40 px-3 text-sm text-dtx-2">
                 🔊 {channelLabel(meta.channels, tv.creatorChannelId)}
               </div>
             </Field>
             <Field label="Category">
-              <div className="flex h-10 items-center rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 text-sm text-zinc-300">
+              <div className="flex h-10 items-center rounded-lg border border-white/[0.06] bg-dbg-0/40 px-3 text-sm text-dtx-2">
                 {tv.categoryId ? `Category ${tv.categoryId.slice(0, 10)}…` : "—"}
               </div>
             </Field>
             <div className="flex items-end">
-              <div className="w-full rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4 text-xs leading-relaxed text-zinc-500">
-                <p><b className="text-zinc-300">{tv.activeChannels}</b> active voice channels right now.</p>
-                <p className="mt-1.5">Change the channel/category via <code className="text-amber-300/80">/setup-tempvoice</code> in Discord — the setup creates the category + control panel in one go.</p>
+              <div className="w-full rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4 text-xs leading-relaxed text-dtx-3">
+                <p><b className="text-dtx-2">{tv.activeChannels}</b> active voice channels right now.</p>
+                <p className="mt-1.5">Change the channel/category via <code className="text-blurple-soft">/setup-tempvoice</code> in Discord — the setup creates the category + control panel in one go.</p>
               </div>
             </div>
             <div className="flex items-end">
@@ -865,7 +865,7 @@ export function TempVoiceModule({ draft, meta, call, refresh, toast }: ModuleAct
                     setBusy(false);
                   }
                 }}
-                className="w-full border-red-900/60 bg-transparent text-red-300 hover:bg-red-950/30 hover:text-red-200"
+                className="w-full border-dred/40 bg-transparent text-dred hover:bg-dred/10 hover:text-dred"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}
                 Remove Setup
@@ -873,10 +873,10 @@ export function TempVoiceModule({ draft, meta, call, refresh, toast }: ModuleAct
             </div>
           </>
         ) : (
-          <div className="md:col-span-2 rounded-xl border border-dashed border-zinc-800 p-6 text-center">
-            <p className="text-xs text-zinc-400">Temp voice is not set up on this server yet.</p>
-            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
-              Run <code className="text-amber-300/80">/setup-tempvoice</code> in Discord — the bot creates the category,
+          <div className="md:col-span-2 rounded-xl border border-dashed border-white/[0.06] p-6 text-center">
+            <p className="text-xs text-dtx-3">Temp voice is not set up on this server yet.</p>
+            <p className="mt-1.5 text-xs leading-relaxed text-dtx-3">
+              Run <code className="text-blurple-soft">/setup-tempvoice</code> in Discord — the bot creates the category,
               trigger channel, and control panel automatically (orphan-safe: a mid-way failure rolls back).
             </p>
           </div>
@@ -893,12 +893,12 @@ export function ServerStatsModule({ draft, call, refresh, toast }: ModuleActionP
   return (
     <div className="space-y-5">
       <Section title="Live Server Stats" desc="Counters in channel names: members, bots, boosts, roles, channels — updated automatically (Discord rate-limit safe).">
-        <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+        <div className="md:col-span-2 flex items-center gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
           <span className={`relative flex h-2 w-2 ${enabled ? "" : "grayscale"}`}>
-            {enabled ? <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" /> : null}
-            <span className={`relative inline-flex h-2 w-2 rounded-full ${enabled ? "bg-emerald-400" : "bg-zinc-600"}`} />
+            {enabled ? <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dgreen opacity-50" /> : null}
+            <span className={`relative inline-flex h-2 w-2 rounded-full ${enabled ? "bg-dgreen" : "bg-dbg-3"}`} />
           </span>
-          <p className="text-sm text-zinc-300">{enabled ? "Counters are active and running." : "Counters are not set up yet."}</p>
+          <p className="text-sm text-dtx-2">{enabled ? "Counters are active and running." : "Counters are not set up yet."}</p>
         </div>
         {enabled ? (
           <div className="md:col-span-2 flex flex-wrap gap-2">
@@ -917,80 +917,25 @@ export function ServerStatsModule({ draft, call, refresh, toast }: ModuleActionP
                   setBusy(false);
                 }
               }}
-              className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+              className="border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
               Refresh Now
             </Button>
-            <p className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+            <p className="flex items-center gap-1.5 text-[11px] text-dtx-3">
               <ExternalLink className="h-3 w-3" aria-hidden="true" />
-              Set up / change counter selection: <code className="text-amber-300/80">/serverstats setup</code> in Discord.
+              Set up / change counter selection: <code className="text-blurple-soft">/serverstats setup</code> in Discord.
             </p>
           </div>
         ) : (
-          <div className="md:col-span-2 rounded-xl border border-dashed border-zinc-800 p-6 text-center">
-            <p className="text-xs leading-relaxed text-zinc-500">
-              Run <code className="text-amber-300/80">/serverstats setup</code> in Discord to create the category
+          <div className="md:col-span-2 rounded-xl border border-dashed border-white/[0.06] p-6 text-center">
+            <p className="text-xs leading-relaxed text-dtx-3">
+              Run <code className="text-blurple-soft">/serverstats setup</code> in Discord to create the category
               + 5 counter channels. Once active, you can force a refresh from here.
             </p>
           </div>
         )}
       </Section>
-    </div>
-  );
-}
-
-/* ============================================================
- * MODULE: Overview summary (used by guild-dashboard)
- * ============================================================ */
-
-export function ModuleOverview({ draft, meta }: { draft: DashboardPayload; meta: GuildMeta }) {
-  const c = draft.config;
-  const mods = [
-    { name: "AutoMod", on: draft.automod.enabled, note: draft.automod.blockLinks ? "spam + links + words" : "spam + words" },
-    { name: "Leveling", on: c.leveling.enabled, note: `${c.levelRoles.length} role rewards` },
-    { name: "Auto-Role", on: (c.autorole?.roleIds?.length ?? 0) > 0, note: c.autorole?.removeOnNewRole ? `${c.autorole?.roleIds?.length ?? 0} join roles · removed on a new role` : `${c.autorole?.roleIds?.length ?? 0} join roles` },
-    { name: "Tickets", on: c.ticketCategories.length > 0, note: `${c.ticketCategories.length} categories · ${c.products.length} products` },
-    { name: "Middleman", on: true, note: `${c.midman.feeMode === "percent" ? `${c.midman.feeValue}%` : `flat ${c.midman.feeValue}`} fee` },
-    { name: "Responders", on: draft.responders.length > 0, note: `${draft.responders.length} triggers` },
-    { name: "Self Roles", on: draft.selfroles.length > 0, note: `${draft.selfroles.length} panels` },
-    { name: "Temp Voice", on: Boolean(draft.tempvoice), note: draft.tempvoice ? `${draft.tempvoice.activeChannels} active channels` : "not set up" },
-    { name: "Server Stats", on: Boolean(draft.serverstats?.enabled), note: draft.serverstats?.enabled ? "live counters" : "not set up" },
-    { name: "Announcements", on: draft.announces.filter((a) => !a.sent).length > 0, note: `${draft.announces.filter((a) => !a.sent).length} scheduled` },
-  ];
-  const textChannels = meta.channels.filter((ch) => ch.type === 0).length;
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        {[
-          { l: "Members", v: meta.memberCount?.toLocaleString("en-US") ?? "—" },
-          { l: "Channels", v: `${meta.channels.length} (${textChannels} text)` },
-          { l: "Roles", v: String(meta.roles.length) },
-        ].map((s) => (
-          <div key={s.l} className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5">
-            <p className="text-xs text-zinc-500">{s.l}</p>
-            <p className="mt-1.5 text-2xl font-semibold tabular-nums text-zinc-100">{s.v}</p>
-          </div>
-        ))}
-      </div>
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Module Status</h3>
-        <p className="mt-1 text-xs text-zinc-500">A summary of active modules — click a module in the sidebar to configure it.</p>
-        <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-          {mods.map((m) => (
-            <div key={m.name} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium text-zinc-200">{m.name}</p>
-                <p className="mt-0.5 truncate text-[11px] text-zinc-500">{m.note}</p>
-              </div>
-              {m.on ? <Pill tone="green">on</Pill> : <Pill tone="red">off</Pill>}
-            </div>
-          ))}
-        </div>
-      </section>
-      <p className="px-1 text-[11px] text-zinc-600">
-        Configuration changes are collected as a draft and only applied once you press Save.
-      </p>
     </div>
   );
 }

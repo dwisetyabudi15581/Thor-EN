@@ -17,6 +17,8 @@ import {
   Field, Section, TextInput, TextArea, Toggle, Select, ChannelSelect, RoleSelect, ColorInput, Pill, channelLabel, roleLabel,
 } from "../fields";
 import type { AutoModConfig, DashboardPayload, GuildMeta, Product, TicketCategory } from "@/lib/bot-api";
+// v3.31.0: the Discord-style live preview beside the welcome/goodbye form.
+import { WelcomeLivePreview, type PreviewViewer } from "./welcome-preview";
 
 export type ModuleFormProps = {
   draft: DashboardPayload;
@@ -33,6 +35,9 @@ export type ModuleFormProps = {
   // Optional so the other modules don't have to declare it.
   call?: (action: string, method: "POST" | "PUT" | "DELETE", body?: unknown) => Promise<Record<string, unknown>>;
   refresh?: () => Promise<void>;
+  // v3.31.0: the logged-in viewer — fills the welcome preview's “new member”
+  // data ({user}/{username}/thumbnail), exactly like /test-welcome.
+  viewer?: PreviewViewer | null;
 };
 
 /* ============================================================
@@ -43,15 +48,15 @@ export type ModuleFormProps = {
 
 const TEMPLATE_VARS = (
   <span>
-    Available variables: <code className="text-amber-300/80">{"{user}"}</code>{" "}
-    <code className="text-amber-300/80">{"{username}"}</code>{" "}
-    <code className="text-amber-300/80">{"{server}"}</code>{" "}
-    <code className="text-amber-300/80">{"{count}"}</code>{" "}
-    <code className="text-amber-300/80">{"{action}"}</code>
+    Available variables: <code className="text-blurple-soft">{"{user}"}</code>{" "}
+    <code className="text-blurple-soft">{"{username}"}</code>{" "}
+    <code className="text-blurple-soft">{"{server}"}</code>{" "}
+    <code className="text-blurple-soft">{"{count}"}</code>{" "}
+    <code className="text-blurple-soft">{"{action}"}</code>
   </span>
 );
 
-export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call, refresh, toast }: ModuleFormProps) {
+export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call, refresh, toast, viewer }: ModuleFormProps) {
   const c = draft.config;
   // v3.22.0: local picker state for the auto-role list editor.
   const [autorolePick, setAutorolePick] = useState<string | null>(null);
@@ -132,13 +137,13 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
         <div className="md:col-span-2">
           <div className="flex flex-wrap gap-2">
             {autoroleIds.length === 0 ? (
-              <span className="text-xs text-zinc-500">No join roles yet — add one below (e.g. @Member, or @Unverified as a new-member marker).</span>
+              <span className="text-xs text-dtx-3">No join roles yet — add one below (e.g. @Member, or @Unverified as a new-member marker).</span>
             ) : (
               autoroleIds.map((id) => (
-                <span key={id} className="flex items-center gap-1 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-2.5 py-1 text-xs text-zinc-300">
-                  <span className="text-zinc-500">@</span>
+                <span key={id} className="flex items-center gap-1 rounded-lg border border-white/[0.1] bg-dbg-1/60 px-2.5 py-1 text-xs text-dtx-2">
+                  <span className="text-dtx-3">@</span>
                   {meta.roles.find((r) => r.id === id)?.name ?? id}
-                  <button type="button" onClick={() => removeAutorole(id)} className="ml-1 text-zinc-500 hover:text-red-400" aria-label="Remove role">×</button>
+                  <button type="button" onClick={() => removeAutorole(id)} className="ml-1 text-dtx-3 hover:text-dred" aria-label="Remove role">×</button>
                 </span>
               ))
             )}
@@ -151,7 +156,7 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
               type="button"
               onClick={addAutorole}
               disabled={!autorolePick || autoroleIds.includes(autorolePick) || autoroleIds.length >= 10}
-              className="shrink-0 bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+              className="shrink-0 bg-blurple font-semibold text-white hover:bg-blurple-dark"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add
@@ -192,24 +197,35 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
         </Field>
       </Section>
 
-      <Section title="Welcome & Goodbye Messages" desc={TEMPLATE_VARS}>
-        <Field label="Welcome Title">
-          <TextInput value={c.messages.welcomeTitle} onChange={(v) => setConfig("messages.welcomeTitle", v)} placeholder="👋 WELCOME!" />
-        </Field>
-        <Field label="Goodbye Title">
-          <TextInput value={c.messages.goodbyeTitle} onChange={(v) => setConfig("messages.goodbyeTitle", v)} placeholder="👋 FAREWELL" />
-        </Field>
-        <div className="md:col-span-2">
-          <Field label="Welcome Body" hint={TEMPLATE_VARS}>
-            <TextArea value={c.messages.welcomeBody} onChange={(v) => setConfig("messages.welcomeBody", v)} rows={5} />
+      {/* v3.31.0: the welcome/goodbye form BESIDE a pixel-honest Discord live
+          preview — the admin sees exactly what a new member will receive,
+          filled with their own data (same as /test-welcome), BEFORE saving. */}
+      <div className="grid gap-5 xl:grid-cols-[1fr_400px]">
+        <Section title="Welcome & Goodbye Messages" desc={TEMPLATE_VARS}>
+          <Field label="Welcome Title">
+            <TextInput value={c.messages.welcomeTitle} onChange={(v) => setConfig("messages.welcomeTitle", v)} placeholder="👋 WELCOME!" />
           </Field>
-        </div>
-        <div className="md:col-span-2">
-          <Field label="Goodbye Body" hint={TEMPLATE_VARS}>
-            <TextArea value={c.messages.goodbyeBody} onChange={(v) => setConfig("messages.goodbyeBody", v)} rows={4} />
+          <Field label="Goodbye Title">
+            <TextInput value={c.messages.goodbyeTitle} onChange={(v) => setConfig("messages.goodbyeTitle", v)} placeholder="👋 FAREWELL" />
           </Field>
+          <div className="md:col-span-2">
+            <Field label="Welcome Body" hint={TEMPLATE_VARS}>
+              <TextArea value={c.messages.welcomeBody} onChange={(v) => setConfig("messages.welcomeBody", v)} rows={5} />
+            </Field>
+          </div>
+          <div className="md:col-span-2">
+            <Field label="Goodbye Body" hint={TEMPLATE_VARS}>
+              <TextArea value={c.messages.goodbyeBody} onChange={(v) => setConfig("messages.goodbyeBody", v)} rows={4} />
+            </Field>
+          </div>
+        </Section>
+        <div className="self-start xl:sticky xl:top-2">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-dtx-4">
+            Live preview — how it looks in Discord
+          </p>
+          <WelcomeLivePreview config={draft.config} meta={meta} viewer={viewer ?? null} />
         </div>
-      </Section>
+      </div>
 
       <Section title="Bot Embed Colors" desc="Embed edge colors used by all of the bot's notifications on this server.">
         {(["success", "danger", "primary", "warning", "info"] as const).map((k) => (
@@ -220,11 +236,11 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
       </Section>
 
       {/* v3.24.0: Test Welcome/Goodbye — /test-welcome parity from the web. */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-          <FlaskConical className="h-4 w-4 text-emerald-400" aria-hidden="true" /> Test Automated Messages
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-dtx-0">
+          <FlaskConical className="h-4 w-4 text-dgreen" aria-hidden="true" /> Test Automated Messages
         </h3>
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-dtx-3">
           Send the REAL welcome/goodbye embed (the same builder as the genuine join event) to the configured channel — using your own data as "the new member". Save first if you just changed the channel/message.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -246,7 +262,7 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
                   setTesting(null);
                 }
               }}
-              className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+              className="border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"
             >
               {testing === tipe ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />}
               Test {tipe === "welcome" ? "Welcome" : "Goodbye"}
@@ -270,12 +286,12 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
                 setTesting(null);
               }
             }}
-            className="border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+            className="border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"
           >
             {testing === "booster" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Heart className="h-3.5 w-3.5 text-pink-400" aria-hidden="true" />}
             Test Booster (add)
           </Button>
-          <label className="flex select-none items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 text-xs text-zinc-400">
+          <label className="flex select-none items-center gap-2 rounded-lg border border-white/[0.06] bg-dbg-0/40 px-3 text-xs text-dtx-3">
             <input
               type="checkbox"
               checked={boosterTestLive}
@@ -289,12 +305,12 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
 
       {/* v3.24.4: /reset-message parity — restore any message group to the
           factory default without rebuilding the text by hand. */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-          <RotateCcw className="h-4 w-4 text-amber-300" aria-hidden="true" /> Reset Messages to Default
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-dtx-0">
+          <RotateCcw className="h-4 w-4 text-blurple-soft" aria-hidden="true" /> Reset Messages to Default
         </h3>
-        <p className="mt-1 text-xs text-zinc-500">
-          Restore a message group to the factory text (≙ <code className="rounded bg-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">/reset-message</code>). Saved immediately — unsaved edits in the draft are discarded.
+        <p className="mt-1 text-xs text-dtx-3">
+          Restore a message group to the factory text (≙ <code className="rounded bg-dbg-3 px-1.5 py-0.5 text-[11px] text-blurple-soft">/reset-message</code>). Saved immediately — unsaved edits in the draft are discarded.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {(["welcome", "goodbye", "ticket", "ALL"] as const).map((type) => (
@@ -307,7 +323,7 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
                 if (type === "ALL" && !window.confirm("Reset ALL messages (welcome, goodbye, ticket) to the factory defaults?")) return;
                 void resetMessages(type);
               }}
-              className={type === "ALL" ? "border-red-900/60 bg-transparent text-red-300 hover:bg-red-950/40" : "border-zinc-700 bg-transparent text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"}
+              className={type === "ALL" ? "border-dred/40 bg-transparent text-dred hover:bg-dred/10" : "border-white/[0.1] bg-transparent text-dtx-2 hover:bg-dbg-3 hover:text-dtx-0"}
             >
               {resetting === type ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />}
               {type === "ALL" ? "Reset ALL messages" : `Reset ${type[0].toUpperCase() + type.slice(1)}`}
@@ -318,25 +334,25 @@ export function GeneralModule({ draft, meta, setConfig, setAutoroleRoleIds, call
 
       {/* v3.24.4: /reset-config parity — the Danger Zone. Typed confirmation,
           exactly one button, no misclick path. */}
-      <section className="rounded-2xl border border-red-900/50 bg-red-950/10 p-5 md:p-6">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-red-300">
+      <section className="rounded-2xl border border-dred/40 bg-dred/15/10 p-5 md:p-6">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-dred">
           <TriangleAlert className="h-4 w-4" aria-hidden="true" /> Danger Zone — Full Reset
         </h3>
-        <p className="mt-1 text-xs leading-relaxed text-red-200/70">
-          Deletes <span className="font-semibold">ALL settings</span> on this server — roles, channels, products, categories, messages, automod — and restores the factory defaults (≙ <code className="rounded bg-red-950/60 px-1.5 py-0.5 text-[11px]">/reset-config</code>). This cannot be undone. Type <code className="rounded bg-red-950/60 px-1.5 py-0.5 text-[11px] font-semibold">RESET</code> to enable the button.
+        <p className="mt-1 text-xs leading-relaxed text-dred">
+          Deletes <span className="font-semibold">ALL settings</span> on this server — roles, channels, products, categories, messages, automod — and restores the factory defaults (≙ <code className="rounded bg-dred/15/60 px-1.5 py-0.5 text-[11px]">/reset-config</code>). This cannot be undone. Type <code className="rounded bg-dred/15/60 px-1.5 py-0.5 text-[11px] font-semibold">RESET</code> to enable the button.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <input
             value={resetConfirmText}
             onChange={(e) => setResetConfirmText(e.target.value.toUpperCase())}
             placeholder="Type RESET to confirm"
-            className="h-9 w-44 rounded-lg border border-red-900/60 bg-zinc-950/60 px-3 text-sm tracking-widest text-red-200 placeholder:text-zinc-600 focus:border-red-500/60 focus:outline-none"
+            className="h-9 w-44 rounded-lg border border-dred/40 bg-dbg-0/60 px-3 text-sm tracking-widest text-dred placeholder:text-dtx-4 focus:border-dred/40 focus:outline-none"
           />
           <Button
             size="sm"
             disabled={resetConfirmText !== "RESET" || resetting !== null || !call || !refresh}
             onClick={() => void fullConfigReset()}
-            className="bg-red-600 font-semibold text-white hover:bg-red-500"
+            className="bg-dred font-semibold text-white hover:bg-dred-dark"
           >
             {resetting === "FULL" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TriangleAlert className="h-4 w-4" aria-hidden="true" />}
             Reset EVERYTHING
@@ -500,10 +516,10 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
             label="Ticket Panel Body"
             hint={
               <span>
-                Variables: <code className="text-amber-300/80">{"{price_list}"}</code>{" "}
-                <code className="text-amber-300/80">{"{price_list:<category>}"}</code>{" "}
-                <code className="text-amber-300/80">{"{price_header}"}</code>{" "}
-                <code className="text-amber-300/80">{"{categories_list}"}</code>
+                Variables: <code className="text-blurple-soft">{"{price_list}"}</code>{" "}
+                <code className="text-blurple-soft">{"{price_list:<category>}"}</code>{" "}
+                <code className="text-blurple-soft">{"{price_header}"}</code>{" "}
+                <code className="text-blurple-soft">{"{categories_list}"}</code>
               </span>
             }
           >
@@ -513,11 +529,11 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
       </Section>
 
       {/* Ticket categories */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Ticket Categories</h3>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h3 className="text-sm font-semibold text-dtx-0">Ticket Categories</h3>
+            <p className="mt-1 text-xs text-dtx-3">
               Each category becomes a button on the panel — members click to open a ticket. Built-in categories can be
               deleted here too (they stay deleted); re-add one anytime with the button on the right.
             </p>
@@ -529,14 +545,14 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                   size="sm"
                   variant="outline"
                   onClick={() => setRestoreOpen((o) => !o)}
-                  className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+                  className="border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
                   title="Bring back a deleted built-in category"
                 >
                   Restore <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
                 </Button>
                 {restoreOpen && (
-                  <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl">
-                    <p className="border-b border-zinc-800 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-xl border border-white/[0.1] bg-dbg-1 shadow-xl">
+                    <p className="border-b border-white/[0.06] px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Built-in categories not in use
                     </p>
                     {missingDefaults.map((d) => (
@@ -544,7 +560,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                         key={d.id}
                         type="button"
                         onClick={() => restoreDefault(d)}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-dtx-2 transition-colors hover:bg-dbg-3 hover:text-dtx-0"
                       >
                         <span aria-hidden="true">{d.emoji}</span> {d.label}
                       </button>
@@ -553,7 +569,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                       <button
                         type="button"
                         onClick={restoreAllDefaults}
-                        className="flex w-full items-center gap-2 border-t border-zinc-800 px-3 py-2 text-left text-xs font-semibold text-emerald-400 transition-colors hover:bg-zinc-800"
+                        className="flex w-full items-center gap-2 border-t border-white/[0.06] px-3 py-2 text-left text-xs font-semibold text-dgreen transition-colors hover:bg-dbg-3"
                       >
                         <span aria-hidden="true">♻️</span> Restore all ({missingDefaults.length})
                       </button>
@@ -562,43 +578,43 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                 )}
               </div>
             )}
-            <Button size="sm" variant="outline" onClick={addCat} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+            <Button size="sm" variant="outline" onClick={addCat} className="border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0">
               <Plus className="h-4 w-4" aria-hidden="true" /> Category
             </Button>
           </div>
         </div>
         <div className="mt-5 space-y-3">
           {cats.map((cat, idx) => (
-            <div key={`${cat.id}-${idx}`} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div key={`${cat.id}-${idx}`} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
               <div className="grid gap-3 sm:grid-cols-[76px_1fr_1fr_140px]">
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Emoji</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Emoji</p>
                   <TextInput value={cat.emoji} onChange={(v) => updateCat(idx, { emoji: v })} placeholder="🎫" />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Label — button text members see</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Label — button text members see</p>
                   <TextInput value={cat.label} onChange={(v) => updateCat(idx, { label: v })} placeholder="Category label" />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                     <span className="truncate">ID — links products</span>
                     {cat.isDefault ? <Pill tone="amber">built-in</Pill> : null}
                   </p>
                   <TextInput value={cat.id} onChange={(v) => updateCat(idx, { id: v.toLowerCase().replace(/[^a-z0-9_-]/g, "") })} placeholder="id-slug" />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Button color</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Button color</p>
                   <Select value={cat.style} onChange={(v) => updateCat(idx, { style: v })} options={STYLE_OPTS} />
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-800/60 pt-3">
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
                 <div className="flex items-center gap-1">
                   <Button
                     size="icon"
                     variant="ghost"
                     onClick={() => moveCat(idx, -1)}
                     disabled={idx === 0}
-                    className="h-8 w-8 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                    className="h-8 w-8 text-dtx-3 hover:text-dtx-1 hover:bg-dbg-3"
                     title="Move up (changes the button order on the panel)"
                   >
                     <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
@@ -608,7 +624,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                     variant="ghost"
                     onClick={() => moveCat(idx, 1)}
                     disabled={idx === cats.length - 1}
-                    className="h-8 w-8 text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                    className="h-8 w-8 text-dtx-3 hover:text-dtx-1 hover:bg-dbg-3"
                     title="Move down (changes the button order on the panel)"
                   >
                     <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
@@ -620,8 +636,8 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                   title="A VIP key is required to open a ticket in this category"
                   className={`h-9 rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                     cat.requiresKey
-                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                      ? "border-blurple/40 bg-blurple/10 text-blurple-soft"
+                      : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
                   }`}
                 >
                   needs key
@@ -631,7 +647,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                   size="icon"
                   variant="ghost"
                   onClick={() => removeCat(idx)}
-                  className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                  className="h-9 w-9 text-dtx-3 hover:text-dred hover:bg-dred/10"
                   title={cat.isDefault ? "Delete this built-in category (stays deleted)" : "Delete category"}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -643,35 +659,35 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
       </section>
 
       {/* Products */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-zinc-100">Products / Price List</h3>
-            <p className="mt-1 text-xs text-zinc-500">Shown in the transaction ticket dropdown + the automatic price list.</p>
+            <h3 className="text-sm font-semibold text-dtx-0">Products / Price List</h3>
+            <p className="mt-1 text-xs text-dtx-3">Shown in the transaction ticket dropdown + the automatic price list.</p>
           </div>
-          <Button size="sm" variant="outline" onClick={addProduct} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+          <Button size="sm" variant="outline" onClick={addProduct} className="border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0">
             <Plus className="h-4 w-4" aria-hidden="true" /> Product
           </Button>
         </div>
         <div className="mt-5 space-y-3">
           {products.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No products yet — add one to start selling through tickets.
             </p>
           ) : null}
           {products.map((p, idx) => (
-            <div key={`${p.value}-${idx}`} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+            <div key={`${p.value}-${idx}`} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
               <div className="grid gap-3 sm:grid-cols-[1fr_110px_1fr_150px]">
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Product name</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Product name</p>
                   <TextInput value={p.label} onChange={(v) => updateProduct(idx, { label: v })} placeholder="Product name" />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Price</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Price</p>
                   <TextInput value={p.price} onChange={(v) => updateProduct(idx, { price: v })} placeholder="10,000 IDR" />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Ticket category</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Ticket category</p>
                   <Select
                     value={p.category}
                     onChange={(v) => updateProduct(idx, { category: v })}
@@ -679,7 +695,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                   />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Delivery</p>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Delivery</p>
                   <button
                     type="button"
                     onClick={() => updateProduct(idx, { requiresKey: !p.requiresKey })}
@@ -690,8 +706,8 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                     }
                     className={`h-9 w-full rounded-lg border px-2.5 text-[11px] font-medium transition-colors ${
                       p.requiresKey
-                        ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                        : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                        ? "border-blurple/40 bg-blurple/10 text-blurple-soft"
+                        : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
                     }`}
                   >
                     {p.requiresKey ? "send key" : "manual delivery"}
@@ -699,9 +715,9 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                 </div>
               </div>
               {/* v3.26.0: /set-product-role parity — auto-role + auto-expire per product. */}
-              <div className="mt-3 grid gap-3 border-t border-zinc-800/60 pt-3 sm:grid-cols-[1fr_150px]">
+              <div className="mt-3 grid gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-[1fr_150px]">
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                     Auto-role on purchase (set-product-role)
                   </p>
                   <RoleSelect
@@ -712,7 +728,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                   />
                 </div>
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                     Auto-remove after (days)
                   </p>
                   <TextInput
@@ -727,13 +743,13 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                 </div>
               </div>
               {p.roleId ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">
+                <p className="mt-1.5 text-[11px] leading-relaxed text-dtx-3">
                   {roleLabel(meta.roles, p.roleId)} is granted automatically when an admin clicks{" "}
-                  <span className="text-zinc-400">🔑 Set Key / 📦 Deliver Order / ✅ Order Success</span> in the ticket
+                  <span className="text-dtx-3">🔑 Set Key / 📦 Deliver Order / ✅ Order Success</span> in the ticket
                   {(p.days ?? 0) > 0 ? ` — auto-removed after ${(p.days ?? 0).toLocaleString()} days` : " — permanent"}.
                 </p>
               ) : null}
-              <div className="mt-3 flex items-center justify-end border-t border-zinc-800/60 pt-3">
+              <div className="mt-3 flex items-center justify-end border-t border-white/[0.06] pt-3">
                 <Button
                   size="icon"
                   variant="ghost"
@@ -742,7 +758,7 @@ export function TicketsModule({ draft, meta, setConfig, call, refresh, toast }: 
                       setConfig("products", products.filter((_, i) => i !== idx));
                     }
                   }}
-                  className="h-9 w-9 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                  className="h-9 w-9 text-dtx-3 hover:text-dred hover:bg-dred/10"
                   title="Delete product"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -905,11 +921,11 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
+    <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Installed Ticket Panels ({panels.length})</h3>
-          <p className="mt-1 text-xs text-zinc-500">
+          <h3 className="text-sm font-semibold text-dtx-0">Installed Ticket Panels ({panels.length})</h3>
+          <p className="mt-1 text-xs text-dtx-3">
             Full parity with /setup-ticket-panel · /update-panel · /refresh-panel · /delete-panel — install, restyle, re-render, or delete the live panel message.
           </p>
         </div>
@@ -917,21 +933,21 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
           size="sm"
           variant="outline"
           onClick={() => setInstallOpen((o) => !o)}
-          className="shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+          className="shrink-0 border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
         >
           {installOpen ? "Close" : <><Plus className="h-4 w-4" aria-hidden="true" /> Install Panel</>}
         </Button>
       </div>
 
       {installOpen ? (
-        <div className="mt-4 space-y-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+        <div className="mt-4 space-y-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
             <div className="min-w-0">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Target channel</p>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Target channel</p>
               <ChannelSelect value={channelId} onChange={setChannelId} channels={meta.channels} placeholder="Pick a channel…" />
             </div>
             <div className="min-w-0">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Panel title (optional)</p>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">Panel title (optional)</p>
               <TextInput value={title} onChange={setTitle} placeholder="Default: global ticket title" />
             </div>
             <div className="flex items-end">
@@ -941,7 +957,7 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
             </div>
           </div>
           <div>
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
               Categories on this panel ({pickedCats.length} picked — pick at least 1)
             </p>
             <div className="flex flex-wrap gap-1.5">
@@ -952,8 +968,8 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
                   onClick={() => toggleCat(cat.id)}
                   className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                     pickedCats.includes(cat.id)
-                      ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                      : "border-zinc-800 bg-zinc-900/50 text-zinc-500 hover:text-zinc-300"
+                      ? "border-blurple/40 bg-blurple/10 text-blurple-soft"
+                      : "border-white/[0.06] bg-dbg-1/50 text-dtx-3 hover:text-dtx-2"
                   }`}
                 >
                   {cat.emoji} {cat.label}
@@ -962,10 +978,10 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
             </div>
           </div>
           <div className="flex items-end gap-2">
-            <Button onClick={install} disabled={busy} className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300">
+            <Button onClick={install} disabled={busy} className="bg-blurple font-semibold text-white hover:bg-blurple-dark">
               {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Install Panel
             </Button>
-            <Button variant="ghost" onClick={() => setInstallOpen(false)} className="text-zinc-400 hover:text-zinc-100">
+            <Button variant="ghost" onClick={() => setInstallOpen(false)} className="text-dtx-3 hover:text-dtx-0">
               Cancel
             </Button>
           </div>
@@ -974,24 +990,24 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
 
       <div className="mt-5 space-y-3">
         {panels.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+          <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
             No ticket panels installed yet.
           </p>
         ) : null}
         {panels.map((p) => (
-          <div key={p.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+          <div key={p.id} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-sm font-medium text-zinc-200">{p.title || "Default ticket panel"}</p>
+              <p className="text-sm font-medium text-dtx-1">{p.title || "Default ticket panel"}</p>
               <Pill>{p.useDropdown ? "dropdown" : "buttons"}</Pill>
-              <span className="text-[11px] text-zinc-500">{channelLabel(meta.channels, p.channelId)}</span>
-              <span className="text-[11px] text-zinc-600">· {p.categoryIds.length} categories</span>
+              <span className="text-[11px] text-dtx-3">{channelLabel(meta.channels, p.channelId)}</span>
+              <span className="text-[11px] text-dtx-4">· {p.categoryIds.length} categories</span>
             </div>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => openEdit(p)}
-                className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                className="h-8 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
               >
                 {editId === p.id ? "Close editor" : "Edit style"}
               </Button>
@@ -999,7 +1015,7 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
                 size="sm"
                 variant="outline"
                 onClick={() => void refreshPanel(p.id)}
-                className="h-8 border-zinc-700 bg-transparent px-2.5 text-[11px] hover:bg-zinc-800 hover:text-zinc-100"
+                className="h-8 border-white/[0.1] bg-transparent px-2.5 text-[11px] hover:bg-dbg-3 hover:text-dtx-0"
                 title="Re-render the panel message with the latest categories & products"
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
@@ -1009,50 +1025,50 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
                 size="icon"
                 variant="ghost"
                 onClick={() => void removePanel(p.id)}
-                className="h-8 w-8 text-zinc-500 hover:bg-red-950/30 hover:text-red-400"
+                className="h-8 w-8 text-dtx-3 hover:bg-dred/10 hover:text-dred"
                 title="Delete panel + message"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </Button>
             </div>
             {editId === p.id ? (
-              <div className="mt-3 space-y-3 border-t border-zinc-800/60 pt-3">
-                <p className="text-[11px] leading-relaxed text-zinc-500">
+              <div className="mt-3 space-y-3 border-t border-white/[0.06] pt-3">
+                <p className="text-[11px] leading-relaxed text-dtx-3">
                   Leave a field untouched to keep its current value. Type a value to set the override — clear the text of a
-                  <span className="text-amber-300/80"> touched</span> field to remove it. The body supports{" "}
-                  <code className="text-amber-300/80">{"{price_list}"}</code>{" "}
-                  <code className="text-amber-300/80">{"{categories_list}"}</code>.
+                  <span className="text-blurple-soft"> touched</span> field to remove it. The body supports{" "}
+                  <code className="text-blurple-soft">{"{price_list}"}</code>{" "}
+                  <code className="text-blurple-soft">{"{categories_list}"}</code>.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="min-w-0">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Title
                     </p>
                     <TextInput value={edit.title} onChange={(v) => setEdit({ ...edit, title: v })} placeholder="Panel title override" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Color (hex)
                       {p.hasColor ? <Pill tone="amber">override set</Pill> : null}
                     </p>
                     <TextInput value={edit.color} onChange={(v) => setEditField("color", v)} placeholder="#e67e22" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Image URL
                       {p.hasImage ? <Pill tone="amber">override set</Pill> : null}
                     </p>
                     <TextInput value={edit.image} onChange={(v) => setEditField("image", v)} placeholder="https://… (large banner)" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Thumbnail URL
                       {p.hasThumbnail ? <Pill tone="amber">override set</Pill> : null}
                     </p>
                     <TextInput value={edit.thumbnail} onChange={(v) => setEditField("thumbnail", v)} placeholder="https://… (small corner)" />
                   </div>
                   <div className="min-w-0">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                       Footer text
                       {p.hasFooter ? <Pill tone="amber">override set</Pill> : null}
                     </p>
@@ -1060,7 +1076,7 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
                   </div>
                 </div>
                 <div>
-                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-dtx-3">
                     Body
                     {p.hasBody ? <Pill tone="amber">override set</Pill> : null}
                   </p>
@@ -1071,11 +1087,11 @@ function TicketPanelsSection({ draft, meta, call, refresh, toast }: {
                     size="sm"
                     onClick={() => void saveEdit(p.id)}
                     disabled={busy}
-                    className="bg-amber-400 font-semibold text-zinc-950 hover:bg-amber-300"
+                    className="bg-blurple font-semibold text-white hover:bg-blurple-dark"
                   >
                     {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null} Save Panel Style
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditId(null)} className="text-zinc-400 hover:text-zinc-100">
+                  <Button size="sm" variant="ghost" onClick={() => setEditId(null)} className="text-dtx-3 hover:text-dtx-0">
                     Cancel
                   </Button>
                 </div>
@@ -1174,12 +1190,12 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
           {a.linkAllowedChannels.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {a.linkAllowedChannels.map((id) => (
-                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-dbg-3/40 py-1 pl-3 pr-1.5 text-xs text-dtx-2">
                   <span>#{channelLabel(meta.channels, id)}</span>
                   <button
                     type="button"
                     onClick={() => setAutomod({ linkAllowedChannels: a.linkAllowedChannels.filter((x) => x !== id) })}
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-dtx-3 hover:bg-dred/10 hover:text-dred"
                     title="Remove the channel from the whitelist"
                   >
                     ×
@@ -1207,12 +1223,12 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
           {a.linkAllowedRoles.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {a.linkAllowedRoles.map((id) => (
-                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+                <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-dbg-3/40 py-1 pl-3 pr-1.5 text-xs text-dtx-2">
                   <span>@{roleLabel(meta.roles, id)}</span>
                   <button
                     type="button"
                     onClick={() => setAutomod({ linkAllowedRoles: a.linkAllowedRoles.filter((x) => x !== id) })}
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-dtx-3 hover:bg-dred/10 hover:text-dred"
                     title="Remove the role from the whitelist"
                   >
                     ×
@@ -1240,15 +1256,15 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
         </Field>
         <div className="md:col-span-2 space-y-2">
           <div className="flex flex-wrap gap-2">
-            {a.wordRules.length === 0 ? <p className="text-xs text-zinc-500">No blocked words yet.</p> : null}
+            {a.wordRules.length === 0 ? <p className="text-xs text-dtx-3">No blocked words yet.</p> : null}
             {a.wordRules.map((r, i) => (
-              <span key={`${r.word}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700/60 bg-zinc-800/40 py-1 pl-3 pr-1.5 text-xs text-zinc-300">
+              <span key={`${r.word}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-dbg-3/40 py-1 pl-3 pr-1.5 text-xs text-dtx-2">
                 <span className="font-mono">{r.word}</span>
-                <span className="text-[10px] text-zinc-500">{r.action ?? "default"}</span>
+                <span className="text-[10px] text-dtx-3">{r.action ?? "default"}</span>
                 <button
                   type="button"
                   onClick={() => setAutomod({ wordRules: a.wordRules.filter((_, idx) => idx !== i) })}
-                  className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-red-950/40 hover:text-red-400"
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-dtx-3 hover:bg-dred/10 hover:text-dred"
                   title="Remove word"
                 >
                   ×
@@ -1259,13 +1275,13 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
           <div className="flex flex-col gap-2 sm:flex-row">
             <TextInput value={wordInput} onChange={setWordInput} placeholder="word to block…" />
             <Select value={wordAction} onChange={setWordAction} options={ACTION_OPTS} />
-            <Button size="sm" onClick={addWord} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold shrink-0 h-10">
+            <Button size="sm" onClick={addWord} className="bg-blurple text-white hover:bg-blurple-dark font-semibold shrink-0 h-10">
               <Plus className="h-4 w-4" aria-hidden="true" /> Block
             </Button>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-1.5">
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-dtx-3">
                 Exempt words — cancel out a match (e.g. block “scam”, exempt “scamming_help”).
               </p>
               <TextInput value={exemptInput} onChange={setExemptInput} placeholder="add an exempt word…" />
@@ -1273,7 +1289,7 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
             <Button
               size="sm"
               variant="outline"
-              className="h-10 shrink-0 border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100"
+              className="h-10 shrink-0 border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0"
               onClick={() => {
                 const w = exemptInput.trim().toLowerCase();
                 if (!w || a.exemptWords.includes(w)) return;
@@ -1287,12 +1303,12 @@ export function AutoModModule({ draft, meta, setAutomod }: ModuleFormProps) {
           {a.exemptWords.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-1">
               {a.exemptWords.map((w, i) => (
-                <span key={`${w}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/5 py-1 pl-3 pr-1.5 text-xs text-emerald-300">
+                <span key={`${w}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-dgreen/25 bg-dgreen/5 py-1 pl-3 pr-1.5 text-xs text-dgreen">
                   <span className="font-mono">{w}</span>
                   <button
                     type="button"
                     onClick={() => setAutomod({ exemptWords: a.exemptWords.filter((_, idx) => idx !== i) })}
-                    className="flex h-4 w-4 items-center justify-center rounded-full text-emerald-500/70 hover:bg-red-950/40 hover:text-red-400"
+                    className="flex h-4 w-4 items-center justify-center rounded-full text-dgreen/70 hover:bg-dred/10 hover:text-dred"
                     title="Remove exemption"
                   >
                     ×
@@ -1347,12 +1363,12 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
         </Field>
       </Section>
 
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Role Rewards per Level</h3>
-        <p className="mt-1 text-xs text-zinc-500">Roles granted automatically when a member reaches a certain level.</p>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Role Rewards per Level</h3>
+        <p className="mt-1 text-xs text-dtx-3">Roles granted automatically when a member reaches a certain level.</p>
         <div className="mt-5 space-y-2">
           {c.levelRoles.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-5 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-5 text-center text-xs text-dtx-3">
               No role rewards yet — add one to appreciate active members.
             </p>
           ) : null}
@@ -1360,16 +1376,16 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
             .slice()
             .sort((x, y) => x.level - y.level)
             .map((lr, i) => (
-              <div key={`${lr.level}-${lr.roleId}-${i}`} className="flex items-center gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-3">
+              <div key={`${lr.level}-${lr.roleId}-${i}`} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-3">
                 <Pill tone="amber">Lv {lr.level}</Pill>
-                <span className="flex-1 truncate text-sm text-zinc-300">
+                <span className="flex-1 truncate text-sm text-dtx-2">
                   {meta.roles.find((r) => r.id === lr.roleId)?.name ?? `role ${lr.roleId.slice(0, 10)}…`}
                 </span>
                 <Button
                   size="icon"
                   variant="ghost"
                   onClick={() => setConfig("levelRoles", c.levelRoles.filter((x) => x !== lr))}
-                  className="h-8 w-8 text-zinc-500 hover:text-red-400 hover:bg-red-950/30"
+                  className="h-8 w-8 text-dtx-3 hover:text-dred hover:bg-dred/10"
                 >
                   <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                 </Button>
@@ -1381,7 +1397,7 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
           <RoleSelect value={newRole} onChange={setNewRole} roles={meta.roles} placeholder="Pick a reward role…" />
           <Button
             size="sm"
-            className="h-10 shrink-0 bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold"
+            className="h-10 shrink-0 bg-blurple text-white hover:bg-blurple-dark font-semibold"
             onClick={() => {
               const level = Number(newLevel);
               if (!Number.isInteger(level) || level < 1 || level > 1000) {
@@ -1407,23 +1423,23 @@ export function LevelingModule({ draft, meta, setConfig, toast }: ModuleFormProp
       </section>
 
       {/* v3.24.0: leveling leaderboard — the same data as /leaderboard-level. */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Leveling Leaderboard</h3>
-        <p className="mt-1 text-xs text-zinc-500">Top 10 members by total XP.</p>
-        <div className="mt-4 divide-y divide-zinc-800/60">
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Leveling Leaderboard</h3>
+        <p className="mt-1 text-xs text-dtx-3">Top 10 members by total XP.</p>
+        <div className="mt-4 divide-y divide-white/[0.06]">
           {(draft.levelTop ?? []).length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-5 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-5 text-center text-xs text-dtx-3">
               No XP data yet — enable leveling and let members chat.
             </p>
           ) : (
             (draft.levelTop ?? []).map((u, i) => (
               <div key={u.userId} className="flex items-center gap-3 py-2.5">
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${i === 0 ? "bg-amber-400/15 text-amber-300" : i < 3 ? "bg-zinc-700/40 text-zinc-300" : "bg-zinc-800/40 text-zinc-500"}`}>
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${i === 0 ? "bg-blurple/15 text-blurple-soft" : i < 3 ? "bg-dbg-3/40 text-dtx-2" : "bg-dbg-3/40 text-dtx-3"}`}>
                   {i + 1}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-zinc-300">{u.userId}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[13px] text-dtx-2">{u.userId}</span>
                 <span className="shrink-0"><Pill tone="amber">Lv {u.level}</Pill></span>
-                <span className="w-24 shrink-0 text-right text-[13px] font-medium tabular-nums text-zinc-100">{u.totalXp.toLocaleString("en-US")} XP</span>
+                <span className="w-24 shrink-0 text-right text-[13px] font-medium tabular-nums text-dtx-0">{u.totalXp.toLocaleString("en-US")} XP</span>
               </div>
             ))
           )}
@@ -1466,10 +1482,10 @@ export function MidmanModule({ draft, meta, setConfig }: ModuleFormProps) {
         <Field label="Deal Channel Category Name" hint="The category where middleman deal channels are created.">
           <TextInput value={m.category} onChange={(v) => setConfig("midman.category", v)} />
         </Field>
-        <div className="md:col-span-2 flex items-start gap-3 rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-400/80" aria-hidden="true" />
-          <p className="text-xs leading-relaxed text-zinc-500">
-            Middleman flow: anyone can open a deal via the <b className="text-zinc-300">Middleman</b> category in the
+        <div className="md:col-span-2 flex items-start gap-3 rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-blurple-soft" aria-hidden="true" />
+          <p className="text-xs leading-relaxed text-dtx-3">
+            Middleman flow: anyone can open a deal via the <b className="text-dtx-2">Middleman</b> category in the
             ticket panel → pick the buyer &amp; seller → the middleman locks the deal → the goods are delivered → the
             middleman releases the funds. Every click is recorded in the deal history.
           </p>
@@ -1477,25 +1493,25 @@ export function MidmanModule({ draft, meta, setConfig }: ModuleFormProps) {
       </Section>
 
       {/* v3.24.0: Active deals — the same data as /midman-deals. */}
-      <section className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-zinc-100">Active Deals ({deals.length})</h3>
-        <p className="mt-1 text-xs text-zinc-500">Unfinished middleman deals — the buyer's total = price + fee.</p>
+      <section className="rounded-2xl border border-white/[0.06] bg-dbg-1/30 p-5 md:p-6">
+        <h3 className="text-sm font-semibold text-dtx-0">Active Deals ({deals.length})</h3>
+        <p className="mt-1 text-xs text-dtx-3">Unfinished middleman deals — the buyer's total = price + fee.</p>
         <div className="mt-4 space-y-2">
           {deals.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+            <p className="rounded-xl border border-dashed border-white/[0.06] p-6 text-center text-xs text-dtx-3">
               No active middleman deals on this server.
             </p>
           ) : (
             deals.map((d) => (
-              <div key={d.id} className="rounded-xl border border-zinc-800/70 bg-zinc-950/40 p-4">
+              <div key={d.id} className="rounded-xl border border-white/[0.06] bg-dbg-0/40 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-[13px] font-medium text-zinc-100">#{channelLabel(meta.channels, d.channelId)}</p>
+                  <p className="text-[13px] font-medium text-dtx-0">#{channelLabel(meta.channels, d.channelId)}</p>
                   <Pill tone="green">{d.stateLabel}</Pill>
                 </div>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-dtx-3">
                   <span className="font-mono">{d.buyerId}</span> ⇄ <span className="font-mono">{d.sellerId}</span> · {d.item}
                 </p>
-                <p className="mt-0.5 text-xs text-zinc-400">
+                <p className="mt-0.5 text-xs text-dtx-3">
                   Buyer pays <b>{d.buyerPays.toLocaleString("en-US")}</b> · seller receives {d.sellerGets.toLocaleString("en-US")} · fee {d.fee.toLocaleString("en-US")}
                 </p>
               </div>

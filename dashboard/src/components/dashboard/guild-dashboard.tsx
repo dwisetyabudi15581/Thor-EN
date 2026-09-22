@@ -1,19 +1,32 @@
 "use client";
 
-// GuildDashboard — main per-server dashboard shell .
-// State architecture:
+// GuildDashboard — main per-server dashboard shell (v3.31.0 — Discord design
+// language rewrite).
+//
+// State architecture (UNCHANGED since v3.29.0/v3.30.0 — the two-way sync
+// machinery is the heart of the app and is deliberately untouched):
 //   payload  — fresh data from the bot (via /api/guilds/:id/dashboard)
 //   draft    — an editable copy (config + automod). Setters mark changes
 //              dirty via a set of dotPaths; the SaveBar saves them all at
 //              once: PUT config {updates}, then PUT automod (patch) if changed.
 //   CRUD actions (responder/announce/selfrole/etc.) do NOT go through the
 //   draft — they call() the proxy directly, then refresh the payload from the bot.
+//   Auto-poll every 15s (visible tab, silent, preserveDraft, save-in-flight
+//   skip, sequence guard) = Discord → Dashboard live sync.
 //
 // Two UX guarantees:
 //   1. No change is ever lost silently: the SaveBar is always visible while
 //      dirty > 0; switching modules never discards the draft.
 //   2. Bot errors are shown as-is (business messages from bot validation),
 //      and the payload is NOT reset when a save fails.
+//
+// NEW in v3.31.0:
+//   • a persistent TOP HEADER on every screen: live bot status (Online /
+//     Offline dot, gateway ping, guild count) + a "Live" auto-refresh chip
+//     (polled from /api/bot-status every 15s, in step with the data poll)
+//   • the sidebar gained a SERVER SWITCHER and a PROFILE CARD (see side-nav)
+//   • the Overview module became the Quick Toggles landing page (instant
+//     module ON/OFF — PUT straight to the bot, no SaveBar round-trip)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -22,13 +35,18 @@ import {
   LayoutDashboard, Settings2, Ticket, Hash, TrendingUp, MessageSquareReply,
   Palette, Mic, Megaphone, Handshake, BarChart3, Terminal, Archive,
   ShieldAlert, KeyRound, Gift, SquarePen, Vote, Wand2, Rocket, Trophy, Moon, Send,
-  ShieldCheck,
+  ShieldCheck, Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { AutoModConfig, DashboardPayload, GuildMeta } from "@/lib/bot-api";
+import type { AutoModConfig, BotStatus, DashboardPayload, GuildMeta } from "@/lib/bot-api";
+import type { UserInfo } from "./types";
 import {
   GeneralModule, TicketsModule, AutoModModule, LevelingModule, MidmanModule, type ModuleFormProps,
 } from "./modules/module-forms";
+// v3.31.0: the new Overview — summary cards + INSTANT quick toggles.
+import { ModuleOverview } from "./modules/module-overview";
+// v3.31.0: the logged-in viewer shape (fills the welcome preview's new-member data).
+import type { PreviewViewer } from "./modules/welcome-preview";
 // v3.21.0: Quick Start — server setup checklist from the web (mirrors the 🚀
 // category in /help): a form per step → the bot applies it directly.
 import { QuickStartModule } from "./modules/module-quickstart";
@@ -36,7 +54,7 @@ import { QuickStartModule } from "./modules/module-quickstart";
 // /boosters) + AFK (parity with /afk-list /afk-clear).
 import { StatsModule, AfkModule } from "./modules/module-insights";
 import {
-  RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule, ModuleOverview,
+  RespondersModule, SelfRolesModule, AnnounceModule, TempVoiceModule, ServerStatsModule,
   type ModuleActionProps,
 } from "./modules/module-actions";
 // v3.19.0: new modules — Command Manager + Giveaway/Poll/Embed/
@@ -46,7 +64,7 @@ import {
   BackupModule, ModerationModule, KeysModule, CustomCommandsModule, SendMessageModule,
 } from "./modules/module-tools";
 // v3.25.0: sidebar navigation — one menu shared by the desktop sidebar & the mobile drawer.
-import { SideNav } from "./side-nav";
+import { SideNav, type ServerItem } from "./side-nav";
 // v3.30.0 RBAC: the Access Control module (admin tier only) + the MEMBER
 // tier's personal profile view.
 import { AccessControlModule } from "./modules/module-access";
@@ -68,47 +86,50 @@ type ModuleId =
   // v3.30.0 RBAC
   | "access";
 
+// v3.31.0: regrouped into the six Discord-like sections — Overview /
+// Moderation / Automation / Economy / Logs & Insights / Admin Settings —
+// so anyone who has ever configured a server recognizes the map instantly.
 const MODULES: Array<{ id: ModuleId; label: string; icon: typeof LayoutDashboard; group: string }> = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Server" },
+  { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Overview" },
   // v3.21.0: mirrors the 🚀 Quick Start category (/help) — setup forms right from the web.
-  { id: "quickstart", label: "Quick Start", icon: Rocket, group: "Server" },
-  { id: "general", label: "General", icon: Settings2, group: "Server" },
-  // v3.30.0 RBAC: manage the three access tiers (admin/staff roles & users).
-  { id: "access", label: "Access Control", icon: ShieldCheck, group: "Server" },
-  { id: "commands", label: "Command Manager", icon: Terminal, group: "Server" },
-  { id: "backup", label: "Backup", icon: Archive, group: "Server" },
-  // v3.24.0: Statistics — leaderboards + boosters (parity with /stats /leaderboard /boosters).
-  { id: "stats", label: "Statistics", icon: Trophy, group: "Server" },
-  { id: "automod", label: "AutoMod", icon: Hash, group: "Protection" },
-  { id: "midman", label: "Middleman", icon: Handshake, group: "Protection" },
-  { id: "moderation", label: "Moderation", icon: ShieldAlert, group: "Protection" },
-  { id: "tickets", label: "Tickets & Products", icon: Ticket, group: "Community" },
-  { id: "keys", label: "VIP Keys", icon: KeyRound, group: "Community" },
-  { id: "leveling", label: "Leveling", icon: TrendingUp, group: "Community" },
-  { id: "responders", label: "Auto-Responder", icon: MessageSquareReply, group: "Community" },
-  { id: "selfroles", label: "Self Roles", icon: Palette, group: "Community" },
-  { id: "announce", label: "Announcements", icon: Megaphone, group: "Community" },
-  { id: "giveaway", label: "Giveaway", icon: Gift, group: "Community" },
-  { id: "tempvoice", label: "Temp Voice", icon: Mic, group: "Community" },
-  { id: "serverstats", label: "Server Stats", icon: BarChart3, group: "Community" },
+  { id: "quickstart", label: "Quick Start", icon: Rocket, group: "Overview" },
+  { id: "moderation", label: "Moderation", icon: ShieldAlert, group: "Moderation" },
+  { id: "tickets", label: "Tickets & Products", icon: Ticket, group: "Moderation" },
   // v3.24.0: AFK — list + clear (parity with /afk-list /afk-clear).
-  { id: "afk", label: "AFK", icon: Moon, group: "Community" },
-  { id: "embed", label: "Embed", icon: SquarePen, group: "Tools" },
-  { id: "custom", label: "Custom Command", icon: Wand2, group: "Tools" },
-  { id: "poll", label: "Poll", icon: Vote, group: "Tools" },
+  { id: "afk", label: "AFK", icon: Moon, group: "Moderation" },
+  { id: "automod", label: "AutoMod", icon: Hash, group: "Automation" },
+  { id: "responders", label: "Auto-Responder", icon: MessageSquareReply, group: "Automation" },
+  { id: "announce", label: "Announcements", icon: Megaphone, group: "Automation" },
+  { id: "tempvoice", label: "Temp Voice", icon: Mic, group: "Automation" },
+  { id: "serverstats", label: "Server Stats", icon: BarChart3, group: "Automation" },
+  { id: "selfroles", label: "Self Roles", icon: Palette, group: "Automation" },
+  { id: "leveling", label: "Leveling & XP", icon: TrendingUp, group: "Economy" },
+  { id: "keys", label: "VIP Keys", icon: KeyRound, group: "Economy" },
+  { id: "midman", label: "Middleman", icon: Handshake, group: "Economy" },
+  { id: "giveaway", label: "Giveaway", icon: Gift, group: "Economy" },
+  // v3.24.0: Statistics — leaderboards + boosters (parity with /stats /leaderboard /boosters).
+  { id: "stats", label: "Statistics", icon: Trophy, group: "Logs & Insights" },
+  { id: "general", label: "General Settings", icon: Settings2, group: "Admin Settings" },
+  // v3.30.0 RBAC: manage the three access tiers (admin/staff roles & users).
+  { id: "access", label: "Access Control", icon: ShieldCheck, group: "Admin Settings" },
+  { id: "commands", label: "Command Manager", icon: Terminal, group: "Admin Settings" },
+  { id: "backup", label: "Backup", icon: Archive, group: "Admin Settings" },
+  { id: "embed", label: "Embed", icon: SquarePen, group: "Admin Settings" },
+  { id: "custom", label: "Custom Command", icon: Wand2, group: "Admin Settings" },
+  { id: "poll", label: "Poll", icon: Vote, group: "Admin Settings" },
   // v3.24.4: /send-message parity — plain text (complements the Embed Builder).
-  { id: "send-message", label: "Send Message", icon: Send, group: "Tools" },
+  { id: "send-message", label: "Send Message", icon: Send, group: "Admin Settings" },
 ];
 
 const MODULE_DESC: Record<ModuleId, { title: string; desc: string }> = {
-  overview: { title: "Overview", desc: "A status snapshot of every module on this server." },
+  overview: { title: "Overview", desc: "The server at a glance — key numbers, instant module ON/OFF switches, and the status of every module." },
   quickstart: { title: "Quick Start", desc: "Set up your server from scratch via a 6-step checklist — roles (pick or paste the ID), products, ticket & verification panels, log channel. Every form is applied by the bot to the server instantly, exactly like the 🚀 category in /help." },
-  general: { title: "General Settings", desc: "Key roles, system channels, automatic messages, and embed colors." },
+  general: { title: "General Settings", desc: "Key roles, system channels, automatic messages (with a live Discord preview), and embed colors." },
   // v3.30.0 RBAC
   access: { title: "Access Control", desc: "The three access tiers — Super Admin, Moderator/Staff, Member — shared by Discord commands and this dashboard. Manage admin & staff roles and per-user access; grants apply instantly (no restart)." },
   tickets: { title: "Tickets & Products", desc: "Ticket panel, categories, and the product/price list." },
   automod: { title: "AutoMod", desc: "Anti-spam, link & word blocking, mention limits." },
-  leveling: { title: "Leveling", desc: "XP, level-up announcements, and role rewards." },
+  leveling: { title: "Leveling & XP", desc: "XP, level-up announcements, and role rewards." },
   responders: { title: "Auto-Responder", desc: "Trigger words → automatic replies from the bot." },
   selfroles: { title: "Self Roles", desc: "Panels where members pick their own roles." },
   announce: { title: "Scheduled Announcements", desc: "Send embeds automatically at a set time." },
@@ -139,6 +160,58 @@ function setPath(obj: Record<string, unknown>, dotPath: string, value: unknown) 
     cur = cur[parts[i]] as Record<string, unknown>;
   }
   cur[parts[parts.length - 1]] = value;
+}
+
+/* ============================================================
+ * v3.31.0: the header's live bot-status cluster.
+ *   ● Online · 42 ms · 3 servers   (or)   ● Offline
+ * Polled every 15s from /api/bot-status (in step with the data poll) so
+ * the admin always sees the REAL connection state, not a guess.
+ * `compact` — the narrow phone variant (dot + Online/Offline only).
+ * ============================================================ */
+function BotStatusCluster({ status, compact = false }: { status: BotStatus | null; compact?: boolean }) {
+  if (!status) {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-dtx-4" aria-live="polite">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        {compact ? null : "checking bot…"}
+      </span>
+    );
+  }
+  if (!status.online) {
+    return (
+      <span className="flex items-center gap-1.5 rounded-full border border-dred/40 bg-dred/10 px-2.5 py-1 text-[11px] font-semibold text-dred" aria-live="polite">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dred opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-dred" />
+        </span>
+        Bot Offline
+      </span>
+    );
+  }
+  const ping = typeof status.pingMs === "number" && status.pingMs >= 0 ? `${status.pingMs} ms` : "—";
+  const pingTone = typeof status.pingMs === "number" ? (status.pingMs < 100 ? "text-dgreen" : status.pingMs < 250 ? "text-dyellow" : "text-dred") : "text-dtx-3";
+  return (
+    <span className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-dbg-1 px-2.5 py-1 text-[11px]" aria-live="polite">
+      <span className="flex items-center gap-1.5 font-semibold text-dgreen">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dgreen opacity-60" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-dgreen" />
+        </span>
+        Online
+      </span>
+      {compact ? null : (
+        <>
+          <span className="text-dtx-4" aria-hidden="true">|</span>
+          <span className={`tabular-nums font-medium ${pingTone}`} title="Gateway ping (Discord websocket heartbeat)">{ping}</span>
+          <span className="text-dtx-4" aria-hidden="true">|</span>
+          <span className="font-medium tabular-nums text-dtx-2" title="Servers the bot is in">
+            {status.guildCount ?? "—"} server{(status.guildCount ?? 0) === 1 ? "" : "s"}
+          </span>
+        </>
+      )}
+    </span>
+  );
 }
 
 export function GuildDashboard({ guildId }: { guildId: string }) {
@@ -177,11 +250,62 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const payloadRef = useRef<DashboardPayload | null>(null);
   const loadSeqRef = useRef(0);
 
+  // v3.31.0: shell-level context — the logged-in user (profile card +
+  // welcome preview "new member"), every reachable server (server
+  // switcher), and the live bot health (header cluster + Overview uptime).
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [servers, setServers] = useState<ServerItem[]>([]);
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
+
   useEffect(() => { configUpdatesRef.current = configUpdates; }, [configUpdates]);
   useEffect(() => { automodPatchRef.current = automodPatch; }, [automodPatch]);
   useEffect(() => { payloadRef.current = payload; }, [payload]);
   // v3.28.3: clear the pending toast timer when the dashboard unmounts.
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  // v3.31.0: fetch the logged-in user + the reachable server list ONCE for
+  // the sidebar (profile card + server switcher). Silent best-effort — a
+  // failure just leaves the card/switcher in their fallback states.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/me?_=${Date.now()}`, { cache: "no-store" });
+        if (!alive) return;
+        if (res.ok) {
+          const data = (await res.json()) as { user?: UserInfo | null };
+          if (data.user) setUser(data.user);
+        }
+      } catch { /* offline — profile card falls back */ }
+      try {
+        const res = await fetch(`/api/guilds?_=${Date.now()}`, { cache: "no-store" });
+        if (!alive) return;
+        if (res.ok) {
+          const data = (await res.json()) as { guilds?: ServerItem[] };
+          if (Array.isArray(data.guilds)) setServers(data.guilds);
+        }
+      } catch { /* offline — switcher falls back to the picker page */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // v3.31.0: live bot health for the header — polled every 15s, in step with
+  // the data auto-refresh, and ONLY while the tab is visible (same rule as
+  // the data poll: no hidden-tab churn). Failures keep the last known state.
+  useEffect(() => {
+    let alive = true;
+    const fetchStatus = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/bot-status?_=${Date.now()}`, { cache: "no-store" });
+        if (!alive || !res.ok) return;
+        setBotStatus((await res.json()) as BotStatus);
+      } catch { /* keep the last known state */ }
+    };
+    void fetchStatus();
+    const timer = setInterval(fetchStatus, 15_000);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
 
   const openNav = useCallback(() => {
     navWasOpen.current = true;
@@ -561,9 +685,39 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     router.push("/app");
   }
 
+  // v3.31.0: switch servers straight from the sidebar switcher (dirty-guarded).
+  function switchServer(nextGuildId: string) {
+    if (nextGuildId === guildId) return;
+    if (!confirmIfDirty("switching servers")) return;
+    router.push(`/app/servers/${nextGuildId}`);
+  }
+
+  // v3.31.0: profile-card log out.
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* proceed to the redirect anyway — the cookie is client-side too */
+    }
+    router.replace("/");
+  }
+
+  const viewer: PreviewViewer | null = useMemo(
+    () =>
+      user
+        ? {
+            name: user.globalName || user.username,
+            avatar: user.avatar
+              ? `https://cdn.discordapp.com/avatars/${user.discordId}/${user.avatar}.png?size=128`
+              : null,
+          }
+        : null,
+    [user]
+  );
+
   const formProps: ModuleFormProps | null = useMemo(
-    () => (draft && meta ? { draft, meta, setConfig, setAutomod, setAutoroleRoleIds, toast: showToast, call, refresh } : null),
-    [draft, meta, setConfig, setAutomod, setAutoroleRoleIds, showToast, call, refresh]
+    () => (draft && meta ? { draft, meta, setConfig, setAutomod, setAutoroleRoleIds, toast: showToast, call, refresh, viewer } : null),
+    [draft, meta, setConfig, setAutomod, setAutoroleRoleIds, showToast, call, refresh, viewer]
   );
   const actionProps: ModuleActionProps | null = useMemo(
     () => (draft && meta ? { draft, meta, call, refresh, toast: showToast } : null),
@@ -584,9 +738,9 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   // ---- Render ----
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4">
-        <Loader2 className="h-8 w-8 text-amber-400 animate-spin" aria-hidden="true" />
-        <p className="text-sm text-zinc-400">Loading server data…</p>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-2 text-dtx-0 gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-blurple" aria-hidden="true" />
+        <p className="text-sm text-dtx-3">Loading server data…</p>
       </div>
     );
   }
@@ -598,16 +752,16 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
   if (loadError || !payload || !draft || !meta) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-950 text-zinc-100 gap-4 px-6">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-950/40 border border-red-900/50">
-          <AlertTriangle className="h-5 w-5 text-red-400" aria-hidden="true" />
+      <div className="min-h-screen flex flex-col items-center justify-center bg-dbg-2 text-dtx-0 gap-4 px-6">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-dred/40 bg-dred/10">
+          <AlertTriangle className="h-5 w-5 text-dred" aria-hidden="true" />
         </div>
-        <p className="max-w-md text-center text-sm leading-relaxed text-zinc-300">{loadError ?? "Data unavailable."}</p>
+        <p className="max-w-md text-center text-sm leading-relaxed text-dtx-1">{loadError ?? "Data unavailable."}</p>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push("/app")} className="border-zinc-700 bg-transparent hover:bg-zinc-800 hover:text-zinc-100">
+          <Button variant="outline" onClick={() => router.push("/app")} className="border-white/[0.1] bg-transparent hover:bg-dbg-3 hover:text-dtx-0">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back
           </Button>
-          <Button onClick={() => { setLoading(true); void load().finally(() => setLoading(false)); }} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+          <Button onClick={() => { setLoading(true); void load().finally(() => setLoading(false)); }} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
             Try Again
           </Button>
         </div>
@@ -619,15 +773,19 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
   const currentModule = visibleModules.find((m) => m.id === effectiveModule);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="flex h-dvh overflow-hidden bg-dbg-2 text-dtx-0">
       {/* Desktop sidebar — permanent, full height (v3.25.0) */}
-      <aside className="hidden w-64 shrink-0 border-r border-zinc-900/80 lg:block">
+      <aside className="hidden w-64 shrink-0 border-r border-white/[0.06] lg:block">
         <SideNav
           modules={visibleModules}
           current={effectiveModule}
           onSelect={(id) => setModule(id as ModuleId)}
           guildId={guildId}
           meta={meta}
+          servers={servers}
+          onSwitchServer={switchServer}
+          user={user}
+          onLogout={() => void logout()}
           onBack={goBack}
           onRefresh={() => void doRefresh()}
           refreshing={refreshing}
@@ -636,14 +794,16 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile header — ☰ opens the navigation drawer */}
-        <header className="flex h-14 shrink-0 items-center gap-1.5 border-b border-zinc-900/80 bg-zinc-950 px-2.5 lg:hidden">
+        {/* v3.31.0: the persistent status header — live bot health (Online /
+            Offline, ping, guild count) + the Live auto-refresh chip + manual
+            refresh, on EVERY screen size. Mobile keeps the ☰ + guild identity. */}
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.06] bg-dbg-2 px-2.5 sm:px-4">
           <Button
             ref={menuBtnRef}
             variant="ghost"
             size="icon"
             onClick={openNav}
-            className="h-10 w-10 text-zinc-300 hover:bg-zinc-800/60 hover:text-zinc-100"
+            className="h-10 w-10 text-dtx-2 hover:bg-white/[0.06] hover:text-dtx-0 lg:hidden"
             aria-label="Open navigation menu"
             aria-expanded={navOpen}
             aria-controls="mobile-nav-drawer"
@@ -651,15 +811,15 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
             <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
           {meta.icon ? (
-            <img src={`https://cdn.discordapp.com/icons/${guildId}/${meta.icon}.png?size=64`} alt="" className="h-8 w-8 shrink-0 rounded-lg" />
+            <img src={`https://cdn.discordapp.com/icons/${guildId}/${meta.icon}.png?size=64`} alt="" className="hidden h-8 w-8 shrink-0 rounded-lg sm:block lg:hidden" />
           ) : (
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-800 text-xs font-semibold text-zinc-300">
+            <div className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-dbg-3 text-xs font-semibold text-dtx-2 sm:block lg:hidden">
               {meta.name.slice(0, 2).toUpperCase()}
             </div>
           )}
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-sm font-semibold text-zinc-100">{meta.name}</p>
-            <p className="truncate text-[10px] text-zinc-500">
+            <p className="truncate text-sm font-semibold text-dtx-0">{meta.name}</p>
+            <p className="truncate text-[10px] text-dtx-3">
               {tier === 2 ? (
                 <span className="text-sky-300">Staff · moderation access</span>
               ) : (
@@ -667,16 +827,34 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
               )}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => void doRefresh()}
-            disabled={refreshing}
-            className="h-10 w-10 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
-            title="Reload data"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
-          </Button>
+
+          {/* The live status cluster + auto-refresh chip + refresh button. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className="hidden items-center gap-1.5 rounded-full border border-dgreen/30 bg-dgreen/[0.08] px-2.5 py-1 text-[11px] font-medium text-dgreen md:flex"
+              title="Data auto-refreshes from Discord every 15 seconds while this tab is visible"
+            >
+              <Radio className="h-3 w-3 animate-pulse" aria-hidden="true" />
+              Live · 15s
+            </span>
+            {/* Full cluster on ≥sm, compact dot variant on phones. */}
+            <span className="hidden sm:block">
+              <BotStatusCluster status={botStatus} />
+            </span>
+            <span className="sm:hidden">
+              <BotStatusCluster status={botStatus} compact />
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => void doRefresh()}
+              disabled={refreshing}
+              className="h-10 w-10 text-dtx-3 hover:bg-white/[0.06] hover:text-dtx-0"
+              title="Reload data"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+            </Button>
+          </div>
         </header>
 
         {/* Content — scrolls independently of the sidebar */}
@@ -696,14 +874,25 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
               </div>
             ) : null}
             <div className="mb-5">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-400/80">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-blurple-soft/80">
                 {currentModule?.group}
               </p>
-              <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">{currentDesc.title}</h1>
-              <p className="mt-1 text-sm leading-relaxed text-zinc-400">{currentDesc.desc}</p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-dtx-0">{currentDesc.title}</h1>
+              <p className="mt-1 text-sm leading-relaxed text-dtx-3">{currentDesc.desc}</p>
             </div>
 
-            {module === "overview" && tier === 3 ? <ModuleOverview draft={draft} meta={meta} /> : null}
+            {/* v3.31.0: the new Overview — summary cards + INSTANT quick toggles. */}
+            {module === "overview" && tier === 3 ? (
+              <ModuleOverview
+                draft={draft}
+                meta={meta}
+                botStatus={botStatus}
+                call={call}
+                refresh={refresh}
+                toast={showToast}
+                goTo={(m) => setModule(m as ModuleId)}
+              />
+            ) : null}
             {/* v3.21.0: Quick Start — all actions are immediate (call → refresh). */}
             {module === "quickstart" && actionProps ? <QuickStartModule {...actionProps} goTo={(m) => setModule(m as ModuleId)} /> : null}
             {module === "general" && formProps ? <GeneralModule {...formProps} /> : null}
@@ -754,7 +943,7 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           aria-modal="true"
           aria-label="Navigation menu"
           tabIndex={-1}
-          className={`absolute inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-zinc-800 bg-zinc-950 shadow-2xl transition-transform duration-200 ease-out ${
+          className={`absolute inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-white/[0.08] bg-dbg-1 shadow-2xl transition-transform duration-200 ease-out ${
             navOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -767,6 +956,13 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
             }}
             guildId={guildId}
             meta={meta}
+            servers={servers}
+            onSwitchServer={(id) => {
+              setNavOpen(false);
+              switchServer(id);
+            }}
+            user={user}
+            onLogout={() => void logout()}
             onBack={goBack}
             onRefresh={() => void doRefresh()}
             refreshing={refreshing}
@@ -777,17 +973,17 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
       {/* SaveBar */}
       {dirtyCount > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-amber-400/25 bg-zinc-950/95 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-blurple/30 bg-dbg-0/95 backdrop-blur">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-6">
-            <p className="text-[13px] text-zinc-300">
-              <span className="font-semibold text-amber-300">{dirtyCount}</span> unsaved change{dirtyCount > 1 ? "s" : ""}
-              <span className="hidden sm:inline text-zinc-500"> — changes only take effect once saved.</span>
+            <p className="text-[13px] text-dtx-1">
+              <span className="font-semibold text-blurple-soft">{dirtyCount}</span> unsaved change{dirtyCount > 1 ? "s" : ""}
+              <span className="hidden sm:inline text-dtx-3"> — changes only take effect once saved.</span>
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" onClick={discard} disabled={saving} className="text-zinc-400 hover:text-zinc-100">
+              <Button variant="ghost" onClick={discard} disabled={saving} className="text-dtx-3 hover:text-dtx-0">
                 <X className="h-4 w-4" aria-hidden="true" /> Discard
               </Button>
-              <Button onClick={save} disabled={saving} className="bg-amber-400 text-zinc-950 hover:bg-amber-300 font-semibold">
+              <Button onClick={save} disabled={saving} className="bg-blurple text-white hover:bg-blurple-dark font-semibold">
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
                 Save Changes
               </Button>
@@ -802,13 +998,13 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
           key={toast.id}
           className={`fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2.5 rounded-xl border px-4 py-3 text-sm shadow-xl ${
             toast.tone === "ok"
-              ? "border-emerald-500/40 bg-zinc-900 text-emerald-200"
-              : "border-red-500/40 bg-zinc-900 text-red-200"
+              ? "border-dgreen/40 bg-dbg-1 text-dgreen"
+              : "border-dred/40 bg-dbg-1 text-dred"
           }`}
           role="status"
         >
           {toast.tone === "ok" ? <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" /> : <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />}
-          {toast.msg}
+          <span className="text-dtx-1">{toast.msg}</span>
         </div>
       ) : null}
     </div>

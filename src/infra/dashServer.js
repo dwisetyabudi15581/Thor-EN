@@ -65,6 +65,8 @@ const crypto = require('crypto');
 
 // Data layer — the SAME single source of truth as the slash commands.
 const { getConfig, saveConfig, setField, DEFAULTS } = require('../data/configManager');
+// v3.31.0: per-guild command execution counter (Overview summary card).
+const commandStats = require('../data/commandStats');
 const automodManager = require('../data/automodManager');
 const responderManager = require('../data/responderManager');
 const selfRoleManager = require('../data/selfRoleManager');
@@ -701,7 +703,11 @@ function createDashHandler({ client, token, log = () => {} }) {
             // slim shapes, best-effort tags from the user cache (no bulk
             // fetch — the dashboard shows the ID when no tag is available).
             stats: {
-                server: statsManager.getServerStats(guildId),
+                server: {
+                    ...statsManager.getServerStats(guildId),
+                    // v3.31.0: total slash-command executions on this server.
+                    commandsExecuted: commandStats.getCount(guildId)
+                },
                 top: {
                     messages: statsManager.getTopUsers(guildId, 'messages', 10),
                     purchases: statsManager.getTopUsers(guildId, 'vipPurchases', 10),
@@ -878,12 +884,17 @@ function createDashHandler({ client, token, log = () => {} }) {
 
         // Health endpoint WITHOUT auth (for liveness checks from the same
         // host; it leaks nothing but the numbers).
+        // v3.31.0: pingMs — the gateway heartbeat latency (client.ws.ping),
+        // -1 while the heartbeat hasn't been measured yet (first seconds
+        // after startup). Feeds the dashboard header's live status cluster.
         if (method === 'GET' && url.pathname === '/health') {
+            const pingRaw = typeof client?.ws?.ping === 'number' && client.ws.ping >= 0 ? client.ws.ping : -1;
             return sendJson(res, 200, {
                 ok: true,
                 ready: !!client?.isReady?.() || !!client?.ws?.status,
                 guildCount: guildSummaries().length,
                 uptimeSec: Math.floor(process.uptime()),
+                pingMs: Math.max(-1, Math.round(pingRaw)),
                 version: BOT_VERSION
             });
         }

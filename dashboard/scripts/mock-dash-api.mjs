@@ -419,7 +419,7 @@ function seedGuild({ id, name, icon, memberCount }) {
     ],
     // v3.24.0: insight modules — statistics + leaderboards + boosters + AFK + deals.
     stats: {
-      server: { totalUsers: 128, totalMessages: 45210, totalPurchases: 89, totalRevenue: 12500000, totalGiveawaysWon: 34 },
+      server: { totalUsers: 128, totalMessages: 45210, totalPurchases: 89, totalRevenue: 12500000, totalGiveawaysWon: 34, commandsExecuted: 15230 },
       top: {
         messages: [
           { userId: "444444444444444444", value: 8214 },
@@ -508,7 +508,7 @@ const server = http.createServer(async (req, res) => {
     });
 
   if (req.method === "GET" && url.pathname === "/health") {
-    return send(200, { ok: true, ready: true, guildCount: guilds.size, uptimeSec: Math.floor(process.uptime()), version: "mock-3.16.0" });
+    return send(200, { ok: true, ready: true, guildCount: guilds.size, uptimeSec: Math.floor(process.uptime()), pingMs: 42, version: "mock-3.16.0" });
   }
 
   // Token auth
