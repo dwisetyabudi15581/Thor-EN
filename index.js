@@ -147,7 +147,14 @@ const eventHandlers = [
     require('./src/bot/events/channelCreate'),
     require('./src/bot/events/channelDelete'),
     require('./src/bot/events/guildRoleCreate'),
-    require('./src/bot/events/guildRoleDelete')
+    require('./src/bot/events/guildRoleDelete'),
+    // v3.29.0 (TAHAP 1 sync audit): guild lifecycle visibility — the bot
+    // being added to / removed from a server is now logged (kicked vs outage
+    // distinguished), matching what the dashboard's live guild cache already
+    // reflects. channelDelete/guildRoleDelete additionally report every
+    // stored setting left pointing at the deleted object.
+    require('./src/bot/events/guildCreate'),
+    require('./src/bot/events/guildDelete')
 ];
 
 for (const handler of eventHandlers) {

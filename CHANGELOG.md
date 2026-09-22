@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [3.29.0] — 2026-09-23
+
+### Added — 🔄 TAHAP 1: LIVE TWO-WAY SYNC (BOT ⇄ DATABASE ⇄ DASHBOARD)
+
+A full architecture audit of the Bot ↔ Dashboard communication as ONE system (per the owner's directive: the Dashboard and the Bot are ONE unified system — every status, configuration and activity must stay perfectly synchronized both ways). The audit confirmed the core design is sound — one shared data source written through a single validated API (web ⇄ slash commands never diverge), hot-reload config reads (web changes take effect in the bot INSTANTLY, no restart), live guild/channel/role lists from the gateway cache, OAuth token auto-refresh with rotated-token re-read, and atomic writes everywhere. Three real gaps were found and fixed:
+
+**🔴 The dashboard never refreshed itself — Discord-side changes were invisible until a manual Refresh.** The screen loaded ONCE on mount: member joins/leaves, role changes, channel creations/deletions/renames, booster changes, ended giveaways, AFK lists — none of it appeared on its own, which is exactly the "stale data" the two-way-sync requirement forbids. The dashboard now auto-refreshes every 15 seconds, with a safety rule for every hazard the audit identified:
+
+- Polls run only while the tab is visible (no hidden-tab churn) and fire an immediate catch-up poll the moment the tab becomes visible again.
+- Unsaved edits survive every poll — the refresh goes through the v3.28.3 `preserveDraft` machinery, so pending changes are re-applied onto the fresh payload; typing in a form is never wiped mid-edit (every keystroke is already in the pending-updates map).
+- A failed poll is silent — a transient error keeps the last-known data with NO toast spam every 15 s (401/403 stay hard stops; the manual Refresh button still reports loudly).
+- Polls are skipped while a Save is in flight (the save's own reload wins), and the sequence guard drops out-of-order responses.
+- `meta` (channels/roles) refreshes with every poll → pickers track Discord-side deletions and renames live, rendering the v3.28.3 "Deleted …" ghost options within seconds.
+
+**🟠 Deleted channels/roles no longer leave silent landmines.** Deleting a channel or role that stored settings still point at (welcome/goodbye/server-log channel, admin/booster/Verified role, auto-role join list, level reward roles, product auto-roles, AutoMod allow-lists, temp-voice creator/category, ticket & self-role panel messages, pending announcements) used to break features SILENTLY — welcome embeds just stopped, guards failed, panel buttons errored. Both events now scan every store via the new read-only `configOrphans` module (src/infra/configOrphans.js) and report each orphaned reference immediately — console + a server-log embed (🗑️ Channel Deleted / 🗑️ Role Deleted). Nothing is auto-cleared on purpose: the dashboard shows the same orphans as "Deleted …" options (now within seconds, thanks to the auto-refresh), so the admin decides what to re-point or clear. The scan itself is best-effort per store — a corrupt file can never break the event handler.
+
+**🟠 The bot being kicked or added is now visible.** `guildDelete` had no handler: a kick was completely silent and indistinguishable from a Discord outage. The new lifecycle handlers (src/bot/events/guildCreate.js / guildDelete.js) distinguish the two (`available === false` = outage, data untouched) and log a kick with an explicit audit trail — data retained for re-invite, pending scheduled work self-cleans on the next scheduler tick (verified: announcements, giveaways and role schedules already self-heal), and the dashboard's server picker reflects it automatically (live guild cache). `guildCreate` announces new guilds and warns when single-server mode (GUILD_ID set) will keep them inert.
+
+**Tests:** 17 new — tests/unit/configOrphans.test.js (scanner across all 7 stores + read-only guarantee + no-false-positive on sent announcements + handler resilience) and tests/unit/guildLifecycleEvents.test.js (outage-vs-kick distinction + single-server warning + defensive shapes). Total: 851.
+
 ## [3.28.3] — 2026-09-23
 
 ### Fixed — 🛡️ DASHBOARD HARDENING: THE SILENT DATA-LOSS & FORGERY SWEEP

@@ -43,7 +43,12 @@ const SERVER_LOG_EVENTS = {
     // v3.9.49: server booster add/remove (detected via guildMemberUpdate
     // premium_since diff — recorded even when no server-booster channel is set).
     BOOST_ADD: { color: 0xf472b6, title: '🚀 Boost Started' },
-    BOOST_REMOVE: { color: 0x95a5a6, title: '💔 Boost Ended' }
+    BOOST_REMOVE: { color: 0x95a5a6, title: '💔 Boost Ended' },
+    // v3.29.0 (TAHAP 1 sync audit): Discord-side deletions reported with the
+    // list of stored settings that now point at the deleted object — the
+    // admin sees the breakage the moment it happens instead of weeks later.
+    CHANNEL_DELETE: { color: 0xed4245, title: '🗑️ Channel Deleted' },
+    ROLE_DELETE: { color: 0xed4245, title: '🗑️ Role Deleted' }
 };
 
 /**

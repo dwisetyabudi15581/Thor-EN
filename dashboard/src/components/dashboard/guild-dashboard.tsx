@@ -177,7 +177,7 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     toastTimer.current = setTimeout(() => setToast(null), 3800);
   }, []);
 
-  const load = useCallback(async (opts?: { preserveDraft?: boolean }) => {
+  const load = useCallback(async (opts?: { preserveDraft?: boolean; silent?: boolean }) => {
     // v3.28.3: every load gets a sequence number — if a newer load starts
     // before this one finishes, this response is silently dropped (an older
     // response can never overwrite newer data; double-clicks are harmless).
@@ -185,7 +185,11 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
     // v3.28.3: a failed refresh keeps the data on screen when the dashboard
     // already shows something (toast + last-known data) instead of replacing
     // the whole screen — and any dirty draft — with a fatal error.
+    // v3.29.0: `silent` (the background auto-refresh) skips the toast entirely —
+    // a transient poll failure must not nag the admin every 15 seconds; the
+    // manual Refresh button still reports loudly.
     const softFail = (msg: string) => {
+      if (opts?.silent) return;
       if (payloadRef.current) {
         showToast(`${msg} Showing the last loaded data.`, "err");
       } else {
@@ -307,6 +311,48 @@ export function GuildDashboard({ guildId }: { guildId: string }) {
 
   useEffect(() => {
     void load().finally(() => setLoading(false));
+  }, [load]);
+
+  // v3.29.0: LIVE SYNC (Discord → Dashboard) — the two-way-sync audit found
+  // the dashboard only ever loaded data ONCE on mount: member joins/leaves,
+  // role & channel changes, deleted channels, ended giveaways, booster
+  // changes … were all invisible until the admin clicked Refresh manually.
+  // A background poll every 15s closes that gap ("changes on Discord show up
+  // on the dashboard within seconds, by themselves").
+  //
+  // Safety rules — each maps to a real hazard identified in the audit:
+  //   - only while the tab is VISIBLE (no hidden-tab churn; an immediate
+  //     catch-up poll fires when the tab becomes visible again)
+  //   - preserveDraft: unsaved edits are RE-APPLIED onto the fresh payload
+  //     (the v3.28.3 machinery) — typing in a form is never wiped mid-edit,
+  //     because every keystroke is already in the pending-updates map
+  //   - silent: a failed poll keeps the last-known data with NO toast
+  //     (401/403 remain hard stops — session/permission loss is not silent)
+  //   - skipped while a Save is in flight (the save's own reload wins;
+  //     mirrored to a ref so the interval itself is subscribed only once)
+  //   - load()'s sequence guard drops any out-of-order poll response
+  //   - meta refreshes too → channel/role pickers track Discord-side
+  //     deletions/renames live (they render "Deleted …" ghost options)
+  const POLL_MS = 15_000;
+  const savingRef = useRef(false);
+  useEffect(() => {
+    savingRef.current = saving;
+  }, [saving]);
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      if (savingRef.current) return;
+      void load({ preserveDraft: true, silent: true });
+    };
+    const timer = setInterval(tick, POLL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [load]);
 
   // ---- Draft setters (mark dirty) ----
