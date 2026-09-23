@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.2.0] — 2026-09-24
+
+### Changed — ✅ CHRONOS PARITY (TAHAP 1): THE CLASSIC VERIFICATION FEATURE IS RESTORED
+
+Owner's request: he prefers the classic CHRONOS-bot (v3.9.59) verification behavior. Gap analysis (CHRONOS vs Thor-EN) showed ~90% of CHRONOS already lives in Thor-EN — the true gaps were the dead `btn_verify` stub, the missing `/set-verify-button`, and the missing `verified` choice in `/set-role`. This release restores all three, **adapted to the modern architecture** (Role Engine, per-guild config, one-way panels). RBAC (v3.30.0), the DASH API, and multi-guild stay untouched.
+
+- 🟠 **`btn_verify` handler RESTORED** (`src/interactions/verify.js`): panels installed in the CHRONOS era carry a live `btn_verify` button — the click now GRANTS the Verified role again (one-way, exactly like CHRONOS). The grant flows through the **Role Engine** (hierarchy/managed/@everyone validation + structured failure logs), reads the per-guild config, keeps the v3.9.17 partial-member guard, and answers honestly per failure (role not set → `/setup-verify` guidance; already verified → friendly no-op; hierarchy failure → "bot role must be ABOVE"). The classic "Unverified marker disappears on verify" behavior is available via `/set-autorole action:add` + `action:toggle` (the join-role strip rule fires automatically when the Verified role lands).
+- 🟠 **`/set-verify-button` RESTORED** (`src/commands/selfrole.js` + registry + router): restyle the verification panel's button **live** — label / emoji / style, no delete + reinstall. v4.2.0 adaptation: the button now lives in the verify panel's role ENTRY (`panel.roles[0]`), so the command edits the panel, re-renders its message (the `/selfrole-update` pattern), logs the audit entry, and shows a disabled preview button. Emoji is validated before saving (v3.9.26 anti-poison-config).
+- 🟠 **`selfRoleManager.updatePanel` accepts a `roles` array** — defensively validated (snowflake roleId, non-empty label ≤80, sane emoji/style) so the new command (and future DASH/dashboard parity) can replace a panel's role entries atomically without delete + recreate.
+- 🟡 **`/set-role tipe:verified` + `/remove-role tipe:verified` restored** (choices in registry): the Discord-side setter is back — `roles.verified` also gates tickets & escrow for verified-only access, and the DASH API already accepted it (v3.28.0 contract), so web and Discord stay in sync. `unverified` stays removed (its concept was replaced by autorole + the toggle — config load-time cleanup would delete the key anyway).
+- 🟢 **`/help` catalog updated** — the Roles & Self-Roles category documents the restored commands and the legacy-panel revival.
+- 🟢 **Tests**: the `btn_verify` stub test → 5 real-handler tests (full decision tree with faked member/guild through the Role Engine); both anti-regression PINs flipped (commands registered; verified choice present, unverified absent). Total tests: 897 → **901**.
+
+**Compatibility:** config format unchanged; legacy CHRONOS panels keep working after a restart; DASH API contract untouched (no endpoint changed). Version: 4.1.0 → **4.2.0**.
+
 ## [4.1.0] — 2026-09-23
 
 ### Changed — 🏗️ REPOSITORY SPLIT: THOR-EN (BOT) + THOR-EN-DASHBOARD (WEB) — TWO SEPARATE REPOSITORIES

@@ -168,6 +168,8 @@ const COMMAND_TO_DOMAIN = {
     // selfrole
     // v3.28.0: /setup-verify re-added — the verification wizard (one-way panel).
     'setup-verify': 'selfrole',
+    // v4.2.0: /set-verify-button RESTORED — restyle the verify panel's button live.
+    'set-verify-button': 'selfrole',
     'setup-selfrole': 'selfrole',
     'selfrole-add': 'selfrole',
     'selfrole-remove': 'selfrole',

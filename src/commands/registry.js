@@ -79,7 +79,7 @@ function getCommands() {
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (admin / staff / midman / booster)',
+            description: 'Set roles (admin / staff / verified / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -88,10 +88,11 @@ function getCommands() {
                     description: 'Choose the role type',
                     required: true,
                     choices: [
-                        // v3.23.0: 'verified' & 'unverified' REMOVED — the
-                        // verify/unverified role concepts are gone (verified =
-                        // a self-role panel; new-member marker = /set-autorole
-                        // + the removeOnNewRole toggle).
+                        // v3.23.0: 'unverified' stays REMOVED (the marker concept
+                        // was replaced by /set-autorole + removeOnNewRole).
+                        // v4.2.0: 'verified' is BACK — the classic CHRONOS
+                        // choice, restored together with the btn_verify
+                        // handler (roles.verified also gates tickets/escrow).
                         { name: 'Admin', value: 'admin' },
                         // v3.30.0 RBAC: staff (moderator) role — members holding
                         // it get the STAFF tier: daily moderation commands on
@@ -102,7 +103,10 @@ function getCommands() {
                         // v3.9.59: booster role — granted automatically when a
                         // member boosts, removed when the boost ends. Applied
                         // retroactively to existing boosters when set.
-                        { name: 'Booster (auto role)', value: 'booster' }
+                        { name: 'Booster (auto role)', value: 'booster' },
+                        // v4.2.0: the verification role (btn_verify grants it;
+                        // /setup-verify's wizard also sets it).
+                        { name: 'Verified (verification role)', value: 'verified' }
                     ]
                 },
                 { type: 8, name: 'role', description: 'The role to use', required: true }
@@ -578,7 +582,7 @@ function getCommands() {
         // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Remove a role from the config (admin / staff / midman / booster)',
+            description: 'Remove a role from the config (admin / staff / verified / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -587,12 +591,16 @@ function getCommands() {
                     description: 'Choose the role type to remove',
                     required: true,
                     choices: [
-                        // v3.23.0: 'verified' & 'unverified' DIHAPUS — konsepnya
+                        // v3.23.0: 'unverified' stays DIHAPUS — konsepnya
                         // sudah dibersihkan otomatis dari config lama.
                         { name: 'Admin', value: 'admin' },
                         // v3.30.0 RBAC: remove the staff (moderator) role —
                         // members who held it lose the STAFF tier instantly.
                         { name: 'Staff (Moderator access)', value: 'staff' },
+                        // v4.2.0: 'verified' is BACK — removing it disables the
+                        // btn_verify handler + verified-only gates (tickets /
+                        // escrow) until set again.
+                        { name: 'Verified (verification role)', value: 'verified' },
                         // v3.9.32: remove the midman role from the config.
                         { name: 'Midman (Escrow)', value: 'midman' },
                         // v3.9.59: remove the booster role from config (roles
@@ -789,6 +797,31 @@ function getCommands() {
                     type: 3,
                     name: 'button_style',
                     description: 'Button color (default: Success)',
+                    required: false,
+                    choices: [
+                        { name: 'Blue (Primary)', value: 'Primary' },
+                        { name: 'Gray (Secondary)', value: 'Secondary' },
+                        { name: 'Green (Success)', value: 'Success' },
+                        { name: 'Red (Danger)', value: 'Danger' }
+                    ]
+                }
+            ]
+        },
+        {
+            // v4.2.0: /set-verify-button RESTORED (the classic CHRONOS command,
+            // removed in v3.22.0). v4.2.0 adaptation: it restyles the verify
+            // PANEL's button live (label/emoji/style) — not the old
+            // verifyButton config key (auto-cleaned since v3.23.0).
+            name: 'set-verify-button',
+            description: 'Change the verification panel button look (label / emoji / style) — live, no reinstall',
+            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
+            options: [
+                { type: 3, name: 'label', description: 'New button text', required: true, max_length: 80 },
+                { type: 3, name: 'emoji', description: 'New button emoji (e.g. ✅ or <:name:id>) — leave empty to keep', required: false, max_length: 64 },
+                {
+                    type: 3,
+                    name: 'style',
+                    description: 'Button color — leave empty to keep',
                     required: false,
                     choices: [
                         { name: 'Blue (Primary)', value: 'Primary' },

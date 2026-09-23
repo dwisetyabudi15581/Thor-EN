@@ -142,7 +142,13 @@ function makeCommandInteraction({ roleId = ROLE_VERIFIED, channelId = null, role
 test('contract: /setup-verify registered, admin-gated, role required, routed to selfrole', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
-    assert.strictEqual(cmds.length, 95, '95 commands (v3.28.0 — setup-verify re-added)');
+    // v4.2.0: 95 → 96 — /set-verify-button RESTORED (CHRONOS parity, Tahap 1).
+    assert.strictEqual(cmds.length, 96, '96 commands (v4.2.0 — set-verify-button restored)');
+    const svb = cmds.find((c) => c.name === 'set-verify-button');
+    assert.ok(svb, 'set-verify-button is registered (v4.2.0)');
+    assert.strictEqual(svb.defaultMemberPermissions !== undefined, true, 'set-verify-button is admin-gated');
+    const svbLabel = (svb.options || []).find((o) => o.name === 'label');
+    assert.ok(svbLabel && svbLabel.required, 'label is required');
     const cmd = cmds.find((c) => c.name === 'setup-verify');
     assert.ok(cmd, 'setup-verify is registered');
     assert.strictEqual(cmd.defaultMemberPermissions !== undefined, true, 'admin-gated');

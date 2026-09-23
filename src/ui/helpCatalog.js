@@ -196,7 +196,7 @@ const HELP_CATEGORIES = [
         name: 'Ticket Panels',
         short: 'Mount ticket panels',
         lines: [
-            '• `/setup-ticket-panel` — multi-category panel (`title` `body` `categories` `color` `image` `footer` `channel` `use_dropdown`)',
+            '• `/setup-ticket-panel` — multi-category panel (`title` `body` `categories` `color` `channel` `use_dropdown`)',
             '• `/list-panels` `/update-panel` `/refresh-panel` `/delete-panel` — manage panels',
             '• `/setup-ticket` — legacy single-category panel'
         ],
@@ -227,7 +227,7 @@ const HELP_CATEGORIES = [
             '• `/add-category id:service label:"Service" emoji:🎮 style:Success requires_key:false`',
             '• `/update-category id:service label:...` — edit · `/remove-category` · `/list-categories` · `/restore-category`',
             '💡 With products → dropdown; without → creates a ticket directly.',
-            '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS (products) · 🎫 ASSISTANCE · 🤝 ESCROW (deals). Custom names: `ticketCategoryKey` `ticketCategoryNoKey` `midman.category`'
+            '**Auto-Split** into 3 categories: 🎫 TRANSACTIONS · 🎫 ASSISTANCE · 🤝 ESCROW. Custom names: `ticketCategoryKey` `midman.category`'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -250,7 +250,7 @@ const HELP_CATEGORIES = [
             '• `/set-role midman @role` — MUST be set before deals can open',
             '• `/set-midman-fee mode:Percent value:5` — fee per deal (percent/flat, 0=free)',
             '• `/midman-deals` — all active deals',
-            '💡 3-party escrow: buyer ⇄ seller, midman holds funds. Open via the **🤝 Escrow** button on the panel — 3 steps until both sides **Agree Deal**.'
+            '💡 3-party escrow: buyer ⇄ seller, midman holds funds. Open via the **🤝 Escrow** button — 3 steps to **Agree Deal**.'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
@@ -352,20 +352,21 @@ const HELP_CATEGORIES = [
         name: 'Roles & Self-Roles',
         short: 'System roles + member-choice role panels',
         lines: [
-            '• `/setup-verify role` — verify · `/setup-selfrole` — panels · `/selfrole-update` — edit',
+            '• `/setup-verify` — verify panel · `/set-verify-button` — restyle it · `/setup-selfrole` — panels · `/selfrole-update` — edit',
             '• `/selfrole-add` `/selfrole-remove` — manage list · `/selfrole-list` `/selfrole-delete`',
-            '• `/set-role admin @role` — system roles (admin/midman/**booster**) · `/set-autorole add/toggle` — join roles',
+            '• `/set-role admin/midman/**booster** @role` — system roles (+ `verified`, v4.2.0) · `/set-autorole add/toggle` — join roles',
             '💡 `once:true` = 1-way · `requires_role` — gated'
         ],
         // v3.9.53: full self-contained guide (category view = detail only).
         detail: [
             '**Verification (new members)** — the one-way verify button:',
             '• `/setup-verify role:@Verified` (v3.28.0 — back by demand) — installs the verification panel in ONE command: a button that only GIVES the Verified role; repeat clicks never remove it (safe for Discord newcomers). Options: `channel`, `title`, `description`, `button_label`, `button_emoji`, `button_style`.',
-            '• While the Verified role is set, tickets & escrow accept verified members only. Deleting the verify panel (`/selfrole-delete`) clears the Verified role too — reinstall with `/setup-verify`.',
+            '• `/set-verify-button label:"Saya sudah baca" emoji:✅ style:Success` (v4.2.0 — RESTORED) — restyle the verification panel\'s button LIVE: change the text, emoji or color any time, no reinstall needed.',
+            '• While the Verified role is set, tickets & escrow accept verified members only. Deleting the verify panel (`/selfrole-delete`) clears the Verified role too — reinstall with `/setup-verify`. Old panels with a `btn_verify` button work again (v4.2.0) — the click grants the Verified role through the Role Engine.',
             '• New-member marker: `/set-autorole action:add role:@Member` + `action:toggle` — the join role disappears automatically once the member verifies.',
             '',
             '**System roles (bot logic)** — `/set-role tipe role`:',
-            '• `tipe:admin` — who may use admin commands · `tipe:midman` — escrow officers · `tipe:booster` — auto boost role. `/remove-role tipe` clears one. (The unverified concept was removed in v3.23.0 — verified is set by `/setup-verify`.)',
+            '• `tipe:admin` — who may use admin commands · `tipe:verified` (v4.2.0 — back) — the verification role · `tipe:midman` — escrow officers · `tipe:booster` — auto boost role. `/remove-role tipe` clears one. (The unverified concept was removed in v3.23.0 — new-member marker = `/set-autorole` + `action:toggle`.)',
             '• `/set-autorole action:add role:@Member` — roles granted automatically on join (max 10); `action:toggle` = "join roles removed when the member gets another role" — perfect for a new-member marker.',
             '• `tipe:booster` (v3.9.59) — Booster role: granted **automatically** when a member boosts & removed when the boost ends; applied right away to existing boosters when set. Test the chain: `/test-booster`.',
             '',

@@ -727,7 +727,7 @@ test('dash: dashboard payload includes commands (list + disabled + protected)', 
     const res = await api('GET', `/guilds/${GUILD_ID}/dashboard`);
     assert.strictEqual(res.status, 200);
     const data = await res.json();
-    assert.strictEqual(data.commands.list.length, 95, 'all commands from the registry');
+    assert.strictEqual(data.commands.list.length, 96, 'all commands from the registry');
     assert.ok(Array.isArray(data.commands.disabled), 'disabled is always an array');
     assert.ok(data.commands.protected.includes('commands'), '/commands is disable-proof');
     // Every command has a valid domain (for UI grouping)
@@ -742,7 +742,7 @@ test('dash: PUT /commands — save the disabled list', async () => {
     assert.strictEqual(res.status, 200);
     const data = await res.json();
     assert.deepStrictEqual(data.disabled, ['giveaway', 'poll']);
-    assert.strictEqual(data.total, 95);
+    assert.strictEqual(data.total, 96);
 
     // Read back through the payload
     const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();

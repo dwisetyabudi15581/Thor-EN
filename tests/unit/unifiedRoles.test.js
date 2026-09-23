@@ -430,51 +430,164 @@ test('/set-autorole toggle: explicit enabled:false → toggle turned off', async
 });
 
 // ====================================================
-// === 5. The btn_verify deprecation stub              ===
+// === 5. The btn_verify handler (v4.2.0 — RESTORED)  ===
 // ====================================================
+// The classic CHRONOS behavior is back: the click grants the Verified role
+// (through the Role Engine). These tests cover the full decision tree with
+// a faked member/guild — no Discord API needed.
 
-test('btn_verify stub: replies with the new /setup-verify migration guide (no crash)', async () => {
-    const verifyHandler = require('../../src/interactions/verify');
+function makeVerifyMember({ hasVerified = false, grantOk = true } = {}) {
+    const granted = [];
+    const member = {
+        id: 'user_verify',
+        user: { tag: 'verifier#1' },
+        roles: {
+            cache: {
+                has: (id) => (id === 'role_verified' ? hasVerified : false)
+            },
+            add: async (id) => {
+                if (!grantOk) throw new Error('Missing Permissions');
+                granted.push(id);
+                return member;
+            }
+        }
+    };
+    return { member, granted };
+}
+
+function makeVerifyInteraction({ member, config } = {}) {
     const replies = [];
-    await verifyHandler({
+    // getConfig(guildId) reads the sandboxed file — writeConfig() sets it up.
+    if (config !== undefined) writeConfig(config);
+    return {
         isButton: () => true,
         customId: 'btn_verify',
-        member: null, // the stub needs nothing — it must work on ANY legacy panel click
+        guildId: GUILD_ID,
+        member,
         reply: async opts => {
             replies.push(opts);
             return {};
         }
+    };
+}
+
+test('btn_verify (v4.2.0): Verified role not set → clear /setup-verify guidance', async () => {
+    const verifyHandler = require('../../src/interactions/verify');
+    const { member } = makeVerifyMember();
+    const itx = makeVerifyInteraction({ member, config: { roles: {} } });
+    const collected = [];
+    itx.reply = async opts => {
+        collected.push(opts);
+        return {};
+    };
+    await verifyHandler(itx);
+    assert.strictEqual(collected.length, 1);
+    assert.match(collected[0].content, /not set yet/i);
+    assert.match(collected[0].content, /\/setup-verify/);
+    assert.strictEqual(collected[0].flags, 64); // Ephemeral
+});
+
+test('btn_verify (v4.2.0): member already verified → friendly no-op', async () => {
+    const verifyHandler = require('../../src/interactions/verify');
+    const { member } = makeVerifyMember({ hasVerified: true });
+    const itx = makeVerifyInteraction({ member, config: { roles: { verified: 'role_verified' } } });
+    const collected = [];
+    itx.reply = async opts => {
+        collected.push(opts);
+        return {};
+    };
+    await verifyHandler(itx);
+    assert.strictEqual(collected.length, 1);
+    assert.match(collected[0].content, /already verified/i);
+});
+
+test('btn_verify (v4.2.0): grant lands through the Role Engine → success message', async () => {
+    const verifyHandler = require('../../src/interactions/verify');
+    const { member, granted } = makeVerifyMember();
+    // A full guild-shaped mock for roleEngine validation (@everyone + a
+    // assignable verified role below the bot's highest role).
+    const guild = makeGuild({
+        roles: [makeRole('role_verified', { position: 1 })],
+        botPosition: 10
     });
-    assert.strictEqual(replies.length, 1);
-    assert.match(replies[0].content, /no longer works/i);
-    // v3.28.0: the stub now points to the RE-ADDED /setup-verify wizard
-    // (previously it pointed to the manual /setup-selfrole + /selfrole-add chain).
-    assert.match(replies[0].content, /\/setup-verify/);
-    assert.strictEqual(replies[0].flags, 64); // Ephemeral
+    member.guild = guild;
+    member.client = { user: { id: 'bot' } };
+    guild.members = new Map([[member.id, member]]);
+    const me = {
+        id: 'bot',
+        roles: { highest: { position: 10 }, cache: new Map() }
+    };
+    guild.members.me = me;
+    member.roles.cache.set?.call?.(); // no-op guard for Map-based caches
+    const itx = makeVerifyInteraction({ member, config: { roles: { verified: 'role_verified' } } });
+    const collected = [];
+    itx.reply = async opts => {
+        collected.push(opts);
+        return {};
+    };
+    await verifyHandler(itx);
+    assert.strictEqual(collected.length, 1);
+    assert.match(collected[0].content, /Verification successful/i);
+});
+
+test('btn_verify (v4.2.0): engine failure → honest bot-hierarchy message', async () => {
+    const verifyHandler = require('../../src/interactions/verify');
+    const { member } = makeVerifyMember({ grantOk: false });
+    // Engine validation passes (assignable role) but discord.js add() throws —
+    // the engine reports it as failed and the handler explains the cause.
+    const guild = makeGuild({
+        roles: [makeRole('role_verified', { position: 1 })],
+        botPosition: 10
+    });
+    member.guild = guild;
+    member.client = { user: { id: 'bot' } };
+    guild.members = new Map([[member.id, member]]);
+    guild.members.me = { id: 'bot', roles: { highest: { position: 10 }, cache: new Map() } };
+    const itx = makeVerifyInteraction({ member, config: { roles: { verified: 'role_verified' } } });
+    const collected = [];
+    itx.reply = async opts => {
+        collected.push(opts);
+        return {};
+    };
+    await verifyHandler(itx);
+    assert.strictEqual(collected.length, 1);
+    assert.match(collected[0].content, /cannot give you the Verified role/i);
+});
+
+test('btn_verify (v4.2.0): incomplete member data → guarded reply', async () => {
+    const verifyHandler = require('../../src/interactions/verify');
+    const itx = makeVerifyInteraction({ member: null, config: { roles: { verified: 'role_verified' } } });
+    const collected = [];
+    itx.reply = async opts => {
+        collected.push(opts);
+        return {};
+    };
+    await verifyHandler(itx);
+    assert.strictEqual(collected.length, 1);
+    assert.match(collected[0].content, /Incomplete member data/i);
 });
 
 // ====================================================
 // === 6. Static contracts (anti-regression pins)     ===
 // ====================================================
 
-test('PIN (v3.28.0): /setup-verify is REGISTERED again — /set-verify-button stays removed', () => {
+test('PIN (v4.2.0): /setup-verify AND /set-verify-button are REGISTERED', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'registry.js'), 'utf8');
-    // v3.22.0 removed it; v3.28.0 RE-ADDED it (owner's request) — as a one-way
-    // wizard over the self-role panel, NOT the old duplicated system.
+    // v3.22.0 removed both; v3.28.0 re-added the wizard; v4.2.0 restored the
+    // classic companion command (live button restyling over the panel entry).
     assert.ok(/name:\s*'setup-verify'/.test(src), '/setup-verify is registered (v3.28.0)');
-    // The old companion command stays gone — the wizard covers its use.
-    assert.ok(!/name:\s*'set-verify-button'/.test(src), '/set-verify-button must be removed');
+    assert.ok(/name:\s*'set-verify-button'/.test(src), '/set-verify-button is registered (v4.2.0 RESTORE)');
     assert.ok(/name:\s*'set-autorole'/.test(src), '/set-autorole must be registered');
 });
 
-test('PIN: set-role & remove-role no longer offer verified/unverified choices', () => {
+test('PIN (v4.2.0): set-role & remove-role offer verified — unverified stays gone', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'commands', 'registry.js'), 'utf8');
     const setRoleBlock = src.slice(src.indexOf("name: 'set-role'"), src.indexOf("name: 'set-channel'"));
-    assert.ok(!/value:\s*'verified'/.test(setRoleBlock), 'the verified choice must be gone');
-    assert.ok(!/value:\s*'unverified'/.test(setRoleBlock), 'the unverified choice must be gone (v3.23.0)');
+    assert.ok(/value:\s*'verified'/.test(setRoleBlock), 'the verified choice is back (v4.2.0)');
+    assert.ok(!/value:\s*'unverified'/.test(setRoleBlock), 'the unverified choice must stay gone (v3.23.0)');
     const removeRoleBlock = src.slice(src.indexOf("name: 'remove-role'"), src.indexOf("name: 'set-midman-fee'"));
-    assert.ok(!/value:\s*'verified'/.test(removeRoleBlock), 'remove-role: verified must be gone');
-    assert.ok(!/value:\s*'unverified'/.test(removeRoleBlock), 'remove-role: unverified must be gone (v3.23.0)');
+    assert.ok(/value:\s*'verified'/.test(removeRoleBlock), 'remove-role: verified is back (v4.2.0)');
+    assert.ok(!/value:\s*'unverified'/.test(removeRoleBlock), 'remove-role: unverified must stay gone (v3.23.0)');
 });
 
 test('PIN: set-autorole registers the toggle action + enabled option', () => {

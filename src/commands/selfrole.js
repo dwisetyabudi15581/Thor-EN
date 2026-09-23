@@ -37,7 +37,9 @@ const {
 } = require('./_shared');
 
 // v3.9.25: convert literal \n → real newlines (PC multi-line feature)
-const { normalizeNewlines, joinCappedLines } = require('../infra/text');
+// v4.2.0: isValidEmoji — /set-verify-button (restored) validates emoji input
+// BEFORE saving (anti poison-config, v3.9.26 pattern).
+const { normalizeNewlines, joinCappedLines, isValidEmoji } = require('../infra/text');
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -185,6 +187,126 @@ module.exports = async function (interaction) {
                 `• Want a "new member" role that disappears once verified? \`/set-autorole action:add role:@Member\` then \`/set-autorole action:toggle\`.\n` +
                 `• Tickets & escrow are now limited to verified members while the Verified role is set.\n` +
                 `• Edit the panel anytime: \`/selfrole-update panel_id:${panel.id}\``
+        });
+    }
+
+    // ====================================================
+    // === VERIFY: /set-verify-button (v4.2.0 — RESTORED) ===
+    // ====================================================
+    // The classic CHRONOS command is back — restyle the verification panel's
+    // button LIVE (label/emoji/style) without delete + reinstall. v4.2.0
+    // adaptation: the button now lives in the verify panel's role ENTRY
+    // (panel.roles[0]), not the old verifyButton config key (auto-cleaned
+    // since v3.23.0) — so this edits the panel via selfRoleManager.updatePanel
+    // and re-renders its message (the /selfrole-update pattern).
+    if (interaction.commandName === 'set-verify-button') {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const guildId = interaction.guild.id;
+        const label = interaction.options.getString('label');
+        const emoji = interaction.options.getString('emoji'); // null = keep
+        const style = interaction.options.getString('style'); // null = keep
+
+        const config = getConfig(guildId);
+        const panelId = config?.roles?.verifyPanelId;
+        if (!panelId) {
+            return safeEditReply(interaction, {
+                content:
+                    '❌ No verification panel is installed yet. Run `/setup-verify role:@Verified` first — this command only restyles that panel\'s button.'
+            });
+        }
+        const panel = getPanel(panelId);
+        if (!panel || panel.guildId !== guildId) {
+            // Stale entry (panel deleted manually) — self-clear like /setup-verify.
+            setField(guildId, 'roles.verifyPanelId', null);
+            return safeEditReply(interaction, {
+                content:
+                    '❌ The verification panel was deleted. Run `/setup-verify role:@Verified` to install a new one.'
+            });
+        }
+        const entry = Array.isArray(panel.roles) ? panel.roles[0] : null;
+        if (!entry) {
+            return safeEditReply(interaction, {
+                content: `❌ The verification panel has no role entry — reinstall it: \`/selfrole-delete panel_id:${panelId}\` then \`/setup-verify\`.`
+            });
+        }
+
+        // v3.9.26 (kept): validate the emoji BEFORE saving — a poison value
+        // would break every future render of the panel.
+        if (emoji !== null && !isValidEmoji(emoji)) {
+            return safeEditReply(interaction, {
+                content: '❌ Invalid `emoji`. Use a unicode emoji (e.g. ✅) or a custom emoji in the format `<:name:id>`.'
+            });
+        }
+        if (!label || !label.trim()) {
+            return safeEditReply(interaction, { content: '❌ The `label` cannot be empty.' });
+        }
+
+        // Build the new entry (keep roleId — the button's TARGET never changes here).
+        const newEntry = {
+            ...entry,
+            label: label.trim().slice(0, 80),
+            ...(emoji !== null ? { emoji } : {}),
+            ...(style !== null ? { style } : {})
+        };
+        const updated = updatePanel(panelId, { roles: [newEntry, ...panel.roles.slice(1)] });
+        if (!updated) {
+            return safeEditReply(interaction, {
+                content: '❌ Failed to update the panel (invalid entry). The panel is unchanged.'
+            });
+        }
+
+        // Re-render the live panel message (the /selfrole-update pattern — best-effort).
+        let rendered = '';
+        let preview;
+        try {
+            const channel = interaction.guild.channels.cache.get(updated.channelId);
+            if (channel) {
+                const msg = updated.messageId
+                    ? await channel.messages.fetch(updated.messageId).catch(() => null)
+                    : null;
+                if (msg) {
+                    await msg.edit({
+                        embeds: [buildPanelEmbed(updated, interaction.client)],
+                        components: buildPanelComponents(updated)
+                    });
+                    rendered = '\n\n✅ The panel message has been updated.';
+                } else {
+                    rendered = '\n\n⚠️ The panel message could not be found (deleted?) — the config is saved.';
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to update verify panel message:', err.message);
+            rendered = '\n\n⚠️ Failed to update the panel message (the config is saved).';
+        }
+
+        await logAudit(interaction.client, {
+            action: 'SET_VERIFY_BUTTON',
+            actorId: interaction.user.id,
+            actorTag: interaction.user.tag,
+            details: `Update verify button — label: "${newEntry.label}", emoji: ${newEntry.emoji ?? '(kept)'}, style: ${newEntry.style ?? '(kept)'}`,
+            guildId
+        });
+
+        // Live preview of the new button (disabled — clicking it would verify the admin).
+        try {
+            const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = require('discord.js');
+            const STYLE_MAP = { Primary: ButtonStyle.Primary, Secondary: ButtonStyle.Secondary, Success: ButtonStyle.Success, Danger: ButtonStyle.Danger };
+            preview = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_verify_preview')
+                    .setLabel(newEntry.label)
+                    .setEmoji(newEntry.emoji || '✅')
+                    .setStyle(STYLE_MAP[newEntry.style] || ButtonStyle.Success)
+                    .setDisabled(true)
+            );
+        } catch (_) {
+            preview = undefined; // preview is cosmetic — never fail the command for it
+        }
+
+        return safeEditReply(interaction, {
+            content: `✅ Verify button updated!${rendered}\n\n**Preview:**`,
+            components: preview ? [preview] : undefined
         });
     }
 

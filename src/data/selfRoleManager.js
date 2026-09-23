@@ -208,6 +208,23 @@ function updatePanel(panelId, updates) {
     }
     if (updates.exclusive !== undefined) panel.exclusive = !!updates.exclusive;
     if (updates.once !== undefined) panel.once = !!updates.once;
+    // v4.2.0: full role-entry replacement — used by /set-verify-button (the
+    // restored classic command) to restyle a live panel's button without a
+    // delete + reinstall. Validated defensively: an entry must keep a
+    // snowflake roleId + a non-empty label (≤80), and an emoji/style that
+    // will not poison ButtonBuilder at render time.
+    if (updates.roles !== undefined) {
+        if (!Array.isArray(updates.roles)) return null;
+        for (const r of updates.roles) {
+            if (!r || typeof r !== 'object') return null;
+            if (typeof r.roleId !== 'string' || !/^\d{5,25}$/.test(r.roleId)) return null;
+            if (typeof r.label !== 'string' || !r.label.trim()) return null;
+            if (r.label.length > 80) r.label = r.label.slice(0, 80);
+            if (r.emoji !== undefined && r.emoji !== null && typeof r.emoji !== 'string') return null;
+            if (typeof r.style === 'string' && !['Primary', 'Secondary', 'Success', 'Danger'].includes(r.style)) return null;
+        }
+        panel.roles = updates.roles;
+    }
     savePanels(list);
     return panel;
 }
