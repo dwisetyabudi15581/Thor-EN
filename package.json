@@ -1,6 +1,6 @@
 {
   "name": "thor-bot",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "description": "Thor-EN — the Discord Bot repository (bot-only, v4.1.0 repo split). All-in-One Community Bot (ticket panel multi-category, auto-responder, anti-spam, AFK, leveling, key-driven VIP role, self-role, temp voice, giveaway, scheduled announcements, embed builder, backup, warn, stats, poll, midman/escrow) with the built-in DASH API server that feeds the web dashboard — the separate Thor-EN-Dashboard repository. Fully configurable from Discord OR the web — one shared data source.",
   "main": "index.js",
   "scripts": {

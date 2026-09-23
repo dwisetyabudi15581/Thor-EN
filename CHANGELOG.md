@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.2.1] — 2026-09-24
+
+### Added — 🌐 CHRONOS PARITY (TAHAP 2, SISI BOT): DASH API BISA ME-RESTYLE TOMBOL PANEL DARI WEB
+
+Tahap 2 persiapan dashboard: endpoint `PUT /guilds/:id/selfroles/:panelId` kini juga menerima **array `roles`** — kembaran `/set-verify-button` dari web. Dashboard (repo Thor-EN-Dashboard) bisa mengubah label/emoji/style tombol panel verifikasi yang sedang live tanpa delete + reinstall.
+
+- 🟠 **`PUT selfroles/:panelId` + `roles`** (`src/infra/dashServer.js`): validasi penuh di endpoint (roleId snowflake, label 1–80, emoji ≤64 opsional, style ∈ Primary/Secondary/Success/Danger, description ≤100, requiresRoleId snowflake opsional) lalu diteruskan ke `selfRoleManager.updatePanel` (yang sudah memvalidasi ulang sejak v4.2.0). Error 400 yang presisi per kasus; sukses → panel tersimpan + re-render + audit log seperti biasa.
+- 🟢 **2 test baru** (dashParityV326): jalur penuh via HTTP (400 untuk roles kosong/roleId buruk/label kosong/style tidak dikenal, lalu 200 + persist untuk restyle valid) + guard level manager (entri rusak → null, panel tidak berubah). Total tests: 901 → **903**.
+
+**Compatibility:** tidak ada endpoint yang berubah bentuk — hanya field body baru yang opsional. Bot lama tetap kompatibel dengan dashboard v4.3.x. Version: 4.2.0 → **4.2.1**.
+
 ## [4.2.0] — 2026-09-24
 
 ### Changed — ✅ CHRONOS PARITY (TAHAP 1): THE CLASSIC VERIFICATION FEATURE IS RESTORED

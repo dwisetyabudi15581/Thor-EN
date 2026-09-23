@@ -40,7 +40,9 @@
  *   POST   /guilds/:id/announce                 → schedule an announcement
  *   DELETE /guilds/:id/announce/:annId          → cancel an announcement
  *   POST   /guilds/:id/selfroles                → create a self-role panel (sends the message)
- *   PUT    /guilds/:id/selfroles/:panelId       → edit a live panel (v3.26.0 — /selfrole-update parity)
+ *   PUT    /guilds/:id/selfroles/:panelId       → edit a live panel (v3.26.0 — /selfrole-update parity;
+ *                                               v4.2.1: also accepts a full `roles` array — button restyling,
+ *                                               /set-verify-button parity from the web)
  *   POST   /guilds/:id/selfroles/:panelId/roles → add a role to a panel (re-renders)
  *   DELETE /guilds/:id/selfroles/:panelId/roles?roleId=... → remove a role from a panel
  *   DELETE /guilds/:id/selfroles/:panelId       → delete the panel + its message
@@ -1188,8 +1190,11 @@ function createDashHandler({ client, token, log = () => {} }) {
                         const hasExclusive = body?.exclusive !== undefined;
                         // v3.27.0: one-way (verification) mode.
                         const hasOnce = body?.once !== undefined;
-                        if (!hasTitle && !hasDescription && !hasType && !hasExclusive && !hasOnce) {
-                            return sendJson(res, 400, { error: 'Provide at least one of: title, description, type, exclusive, once' });
+                        // v4.2.1: full role-entry replacement (button restyling —
+                        // /set-verify-button parity from the web dashboard).
+                        const hasRoles = Array.isArray(body?.roles);
+                        if (!hasTitle && !hasDescription && !hasType && !hasExclusive && !hasOnce && !hasRoles) {
+                            return sendJson(res, 400, { error: 'Provide at least one of: title, description, type, exclusive, once, roles' });
                         }
                         const updates = {};
                         if (hasTitle) {
@@ -1210,6 +1215,40 @@ function createDashHandler({ client, token, log = () => {} }) {
                         }
                         if (hasExclusive) updates.exclusive = !!body.exclusive;
                         if (hasOnce) updates.once = !!body.once;
+                        // v4.2.1: role-entry replacement — validated HERE (the
+                        // manager re-validates too; this gives precise 400s).
+                        if (hasRoles) {
+                            if (body.roles.length === 0 || body.roles.length > 25) {
+                                return sendJson(res, 400, { error: 'A panel needs 1-25 roles' });
+                            }
+                            const cleanRoles = [];
+                            for (const r of body.roles) {
+                                if (!SNOWFLAKE_RE.test(String(r?.roleId || ''))) {
+                                    return sendJson(res, 400, { error: 'Invalid roleId in roles' });
+                                }
+                                const label = String(r?.label || '').trim();
+                                if (!label || label.length > 80) {
+                                    return sendJson(res, 400, { error: 'Each role label must be 1-80 characters' });
+                                }
+                                const emoji = r?.emoji === undefined || r?.emoji === null ? undefined : String(r.emoji).trim();
+                                if (emoji !== undefined && emoji.length > 64) {
+                                    return sendJson(res, 400, { error: 'Each role emoji must be at most 64 characters' });
+                                }
+                                const style = r?.style === undefined || r?.style === null ? 'Secondary' : String(r.style);
+                                if (!BUTTON_STYLES.includes(style)) {
+                                    return sendJson(res, 400, { error: 'style must be one of: ' + BUTTON_STYLES.join(', ') });
+                                }
+                                cleanRoles.push({
+                                    roleId: String(r.roleId),
+                                    label,
+                                    ...(emoji ? { emoji } : {}),
+                                    ...(r?.description ? { description: String(r.description).slice(0, 100) } : {}),
+                                    style,
+                                    ...(SNOWFLAKE_RE.test(String(r?.requiresRoleId || '')) ? { requiresRoleId: String(r.requiresRoleId) } : {})
+                                });
+                            }
+                            updates.roles = cleanRoles;
+                        }
 
                         const updated = selfRoleManager.updatePanel(rest[1], updates);
                         if (!updated) {

@@ -256,6 +256,96 @@ test('selfroles PUT: edit title/description/type/exclusive — applied + persist
     assert.strictEqual(live.exclusive, true);
 });
 
+// ====================================================
+// === PUT /selfroles/:panelId with a roles array   ===
+// === (v4.2.1 — /set-verify-button parity, web)    ===
+// ====================================================
+
+test('selfroles PUT roles: restyle the button entries — validated, applied, persisted', async () => {
+    const create = await api('POST', `/guilds/${GUILD_ID}/selfroles`, {
+        body: {
+            channelId: CHANNEL_ID,
+            title: 'Button Restyle Panel',
+            description: 'x',
+            type: 'button',
+            roles: [{ roleId: ROLE_ID, label: 'Old Label', style: 'Secondary' }]
+        }
+    });
+    assert.strictEqual(create.status, 201);
+    const { panel } = await create.json();
+
+    // Empty roles array → 400
+    assert.strictEqual(
+        (await api('PUT', `/guilds/${GUILD_ID}/selfroles/${panel.id}`, { body: { roles: [] } })).status,
+        400
+    );
+    // Bad roleId → 400
+    assert.strictEqual(
+        (await api('PUT', `/guilds/${GUILD_ID}/selfroles/${panel.id}`, {
+            body: { roles: [{ roleId: 'abc', label: 'X' }] }
+        })).status,
+        400
+    );
+    // Empty label → 400
+    assert.strictEqual(
+        (await api('PUT', `/guilds/${GUILD_ID}/selfroles/${panel.id}`, {
+            body: { roles: [{ roleId: ROLE_ID, label: '   ' }] }
+        })).status,
+        400
+    );
+    // Bad style → 400
+    assert.strictEqual(
+        (await api('PUT', `/guilds/${GUILD_ID}/selfroles/${panel.id}`, {
+            body: { roles: [{ roleId: ROLE_ID, label: 'X', style: 'Neon' }] }
+        })).status,
+        400
+    );
+
+    // Valid restyle (the /set-verify-button flow from the web).
+    const edit = await api('PUT', `/guilds/${GUILD_ID}/selfroles/${panel.id}`, {
+        body: {
+            roles: [{ roleId: ROLE_ID, label: 'Verify Me', emoji: '✅', style: 'Success' }],
+            actor: ACTOR
+        }
+    });
+    assert.strictEqual(edit.status, 200);
+    const data = await edit.json();
+    assert.strictEqual(data.panel.roles.length, 1);
+    assert.strictEqual(data.panel.roles[0].label, 'Verify Me');
+    assert.strictEqual(data.panel.roles[0].emoji, '✅');
+    assert.strictEqual(data.panel.roles[0].style, 'Success');
+
+    // Persisted: a fresh payload read keeps the new look.
+    const dash = await (await api('GET', `/guilds/${GUILD_ID}/dashboard`)).json();
+    const live = dash.selfroles.find((p) => p.id === panel.id);
+    assert.strictEqual(live.roles[0].label, 'Verify Me');
+    assert.strictEqual(live.roles[0].style, 'Success');
+});
+
+test('selfroles PUT roles: manager-level validation (bad entry → null, panel unchanged)', () => {
+    const selfRoleManager = require('../../src/data/selfRoleManager');
+    const panel = selfRoleManager.createPanel({
+        guildId: GUILD_ID,
+        channelId: CHANNEL_ID,
+        title: 'Manager Roles Guard',
+        description: 'temp',
+        type: 'button'
+    });
+    // Non-array → null
+    assert.strictEqual(selfRoleManager.updatePanel(panel.id, { roles: 'nope' }), null);
+    // Entry without roleId → null
+    assert.strictEqual(selfRoleManager.updatePanel(panel.id, { roles: [{ label: 'X' }] }), null);
+    // Entry with a non-snowflake roleId → null
+    assert.strictEqual(
+        selfRoleManager.updatePanel(panel.id, { roles: [{ roleId: '1234', label: 'X' }] }),
+        null
+    );
+    // Panel unchanged after the rejected writes.
+    const p = selfRoleManager.getPanel(panel.id);
+    assert.deepStrictEqual(p.roles, []);
+    selfRoleManager.deletePanel(panel.id);
+});
+
 test('selfroles roles: add with requiresRoleId (gated role) + remove', async () => {
     const create = await api('POST', `/guilds/${GUILD_ID}/selfroles`, {
         body: {
