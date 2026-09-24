@@ -128,8 +128,9 @@ const COMMAND_TO_DOMAIN = {
     help: 'help',
 
     // config
-    // v3.22.0: 'setup-verify' REMOVED — verification is now a self-role panel.
-    'set-autorole': 'config',
+    // v4.3.0: 'set-autorole' REMOVED — the join auto-role feature was deleted
+    // (owner's request, CHRONOS parity); the new-member marker is the classic
+    // `tipe:unverified` role again (granted on join, removed on verify).
     'setup-ticket': 'config',
     'set-role': 'config',
     'set-channel': 'config',

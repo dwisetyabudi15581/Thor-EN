@@ -11,6 +11,12 @@
  *     button and must WORK again. The grant now flows through the Role
  *     Engine (hierarchy/managed/@everyone checks + structured failure logs)
  *     and reads the per-guild config (v3.10.0 multi-guild).
+ *   - v4.3.0 (auto-role deleted — CHRONOS parity): the Unverified role is
+ *     removed DIRECTLY here again, exactly like CHRONOS — no more relying on
+ *     the autorole.removeOnNewRole toggle (deleted together with the whole
+ *     auto-role feature). The v3.9.17 honesty pattern is kept: the reply
+ *     says whether the Unverified role was actually removed, never claims
+ *     success on failure, and notes when no Unverified role is configured.
  *
  * RBAC note: verification is a MEMBER-level action — this handler is
  * intentionally NOT admin/staff gated (same as CHRONOS).
@@ -24,7 +30,7 @@
 
 const { MessageFlags } = require('discord.js');
 const { getConfig } = require('../commands/_shared');
-const { grantRoles } = require('../services/roleEngine');
+const { grantRoles, revokeRoles } = require('../services/roleEngine');
 
 module.exports = async function (interaction) {
     // The router calls this handler ONLY for customId === 'btn_verify'.
@@ -50,7 +56,7 @@ module.exports = async function (interaction) {
 
     // v4.2.0: through the Role Engine — the single gateway for every grant
     // (validation + per-role retry + failure logs, shared with self-role
-    // panels / autorole / level rewards).
+    // panels / level rewards).
     const res = await grantRoles(interaction.member, [config.roles.verified], {
         reason: 'verification (btn_verify)'
     });
@@ -62,13 +68,30 @@ module.exports = async function (interaction) {
         });
     }
 
-    // The v3.23.0 replacement for the old Unverified-marker: with
-    // `/set-autorole action:toggle` ON, any join-role marker (e.g.
-    // @Unverified put in the join list) is stripped automatically by the
-    // guildMemberUpdate rule the moment this grant lands — the classic
-    // CHRONOS behavior without a second config concept.
+    // v4.3.0: the classic CHRONOS finish — remove the Unverified role
+    // directly (previously delegated to the autorole.removeOnNewRole toggle,
+    // deleted with the auto-role feature). The v3.9.17 honesty pattern:
+    // track whether it actually happened and say so.
+    let unverifiedNote = '';
+    const unverifiedId = config.roles.unverified;
+    if (unverifiedId) {
+        const rm = await revokeRoles(interaction.member, [unverifiedId], {
+            reason: 'verification complete (btn_verify)'
+        });
+        if (rm.ok && rm.revoked.length > 0) {
+            unverifiedNote = ' The Unverified role has been removed.';
+        } else if (!rm.ok) {
+            unverifiedNote =
+                '\n⚠️ The bot cannot remove the Unverified role. Make sure the bot\'s role is ABOVE the Unverified role. Contact an admin to remove it manually.';
+        }
+        // ok-but-skipped = the member didn't hold it (e.g. joined before the
+        // role was set) — nothing to report, not an error.
+    } else {
+        unverifiedNote = '\nℹ️ The Unverified role is not set in config — only the Verified role was given.';
+    }
+
     return interaction.reply({
-        content: '✅ Verification successful! The Verified role has been given to you.',
+        content: `✅ Verification successful! The Verified role has been given to you.${unverifiedNote}`,
         flags: MessageFlags.Ephemeral
     });
 };

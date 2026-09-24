@@ -1,7 +1,8 @@
 /**
  * Unit tests for the Phase 1+2+3 features:
- * - config.autorole (v3.23.0: join auto-role list + removeOnNewRole toggle
- *   — replaces verifyButton AND the unverified role concept)
+ * - v4.3.0: auto-role DELETED (CHRONOS parity) — no autorole defaults, the
+ *   classic roles.unverified marker restored (granted on join, removed on
+ *   the verify click), stale autorole keys cleaned on load
  * - config.ticketCategories (default + custom)
  * - config.messages.ticketPriceHeader
  * - ticketManager.createTicket with category & isHelp flag
@@ -16,47 +17,47 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-test('configManager: v3.23.0 — verifyButton & the unverified role REMOVED + autorole defaults', () => {
+test('configManager: v4.3.0 — verifyButton gone + NO autorole defaults + unverified unset by default', () => {
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig('g_phase_features');
-    // v3.22.0: the dedicated verification feature was removed. v3.23.0: the unverified concept too.
-    // v3.28.0: roles.verified is BACK (set by /setup-verify) — default config
-    // still has no verified role set until the wizard runs.
+    // v3.22.0 removed the dedicated verification feature's message keys;
+    // v4.3.0 removed the autorole replacement (CHRONOS parity).
     assert.strictEqual(config.verifyButton, undefined, 'verifyButton must NOT exist anymore');
     assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle must NOT exist anymore');
     assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody must NOT exist anymore');
     assert.strictEqual(config.roles.verified, undefined, 'roles.verified unset by default (no /setup-verify yet)');
-    // The join auto-role list + toggle replace it.
-    assert.ok(config.autorole, 'autorole should exist');
-    assert.ok(Array.isArray(config.autorole.roleIds), 'autorole.roleIds should be an array');
-    assert.strictEqual(config.autorole.roleIds.length, 0, 'autorole.roleIds defaults to empty');
-    assert.strictEqual(config.autorole.removeOnNewRole, false, 'autorole.removeOnNewRole defaults to false (permanent, )');
+    assert.strictEqual(config.roles.unverified, undefined, 'roles.unverified unset by default (no /set-role unverified yet)');
+    assert.ok(!config.autorole, 'autorole must NOT exist anymore (feature deleted in v4.3.0)');
 });
 
-test('configManager: v3.28.0 — legacy verify keys cleaned on load, but roles.verified PRESERVED', () => {
+test('configManager: v4.3.0 — legacy verify keys cleaned on load, roles.verified AND roles.unverified PRESERVED', () => {
     const { configPathFor } = require('../../src/data/configManager');
     const fs = require('fs');
     const guildId = 'g_legacy_verify';
     const file = configPathFor(guildId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    // An old config with all the removed keys + the reintroduced verified key.
+    // An old config with the removed panel keys + both restored role keys +
+    // a stale autorole section (v3.23.0–v4.2.x era).
     fs.writeFileSync(
         file,
         JSON.stringify({
             roles: { verified: '111', unverified: '222', admin: '333' },
             messages: { verifyTitle: 'OLD', verifyBody: 'OLD BODY' },
-            verifyButton: { label: 'Old', emoji: 'x', style: 'Success' }
+            verifyButton: { label: 'Old', emoji: 'x', style: 'Success' },
+            autorole: { roleIds: ['999'], removeOnNewRole: true }
         })
     );
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig(guildId);
     // v3.28.0: roles.verified survives the load again (/setup-verify is back).
     assert.strictEqual(config.roles.verified, '111', 'roles.verified PRESERVED (v3.28.0 — /setup-verify re-added)');
-    assert.strictEqual(config.roles.unverified, undefined, 'roles.unverified cleaned (v3.23.0 — now autorole + toggle)');
+    // v4.3.0: roles.unverified survives too (the classic CHRONOS marker is back).
+    assert.strictEqual(config.roles.unverified, '222', 'roles.unverified PRESERVED (v4.3.0 — classic marker restored)');
     assert.strictEqual(config.roles.admin, '333', 'roles.admin untouched');
     assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle cleaned');
     assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody cleaned');
     assert.strictEqual(config.verifyButton, undefined, 'verifyButton cleaned');
+    assert.ok(!config.autorole, 'the stale autorole section cleaned (v4.3.0 migration)');
     // Cleanup the test file.
     try {
         fs.unlinkSync(file);

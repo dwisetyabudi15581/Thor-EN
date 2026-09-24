@@ -39,47 +39,10 @@ function getCommands() {
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild
         },
 
-        // === SET AUTOROLE (v3.23.0 —  auto-role on join + toggle) ===
-        // The Unverified marker concept was REMOVED (v3.23.0): a "marker"
-        // role now just goes into the auto-role list + the removeOnNewRole
-        // toggle — join roles disappear automatically once the member
-        // receives another role.
-        {
-            name: 'set-autorole',
-            description: 'Manage auto-role on join + the "roles removed on a new role" toggle',
-            defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
-            options: [
-                {
-                    type: 3,
-                    name: 'action',
-                    description: 'Add / remove a join role, view the list, or flip the remove-on-new-role toggle',
-                    required: true,
-                    choices: [
-                        { name: 'Add role', value: 'add' },
-                        { name: 'Remove role', value: 'remove' },
-                        { name: 'List', value: 'list' },
-                        { name: 'Toggle: remove on a new role', value: 'toggle' }
-                    ]
-                },
-                {
-                    type: 8,
-                    name: 'role',
-                    description: 'The role to add/remove (not needed for List / Toggle)',
-                    required: false
-                },
-                {
-                    type: 5,
-                    name: 'enabled',
-                    description: 'Toggle only: on / off — leave empty to flip the current value',
-                    required: false
-                }
-            ]
-        },
-
         // === SET ROLE ===
         {
             name: 'set-role',
-            description: 'Set roles (admin / staff / verified / midman / booster)',
+            description: 'Set roles (admin / staff / verified / unverified / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -88,11 +51,11 @@ function getCommands() {
                     description: 'Choose the role type',
                     required: true,
                     choices: [
-                        // v3.23.0: 'unverified' stays REMOVED (the marker concept
-                        // was replaced by /set-autorole + removeOnNewRole).
-                        // v4.2.0: 'verified' is BACK — the classic CHRONOS
-                        // choice, restored together with the btn_verify
-                        // handler (roles.verified also gates tickets/escrow).
+                        // v4.3.0: 'unverified' is BACK — the classic CHRONOS
+                        // marker role, restored together with the auto-role
+                        // deletion (owner's request: "delete auto-role, make it
+                        // the same as CHRONOS"). Granted automatically on
+                        // join, removed directly by the verify click.
                         { name: 'Admin', value: 'admin' },
                         // v3.30.0 RBAC: staff (moderator) role — members holding
                         // it get the STAFF tier: daily moderation commands on
@@ -106,7 +69,10 @@ function getCommands() {
                         { name: 'Booster (auto role)', value: 'booster' },
                         // v4.2.0: the verification role (btn_verify grants it;
                         // /setup-verify's wizard also sets it).
-                        { name: 'Verified (verification role)', value: 'verified' }
+                        { name: 'Verified (verification role)', value: 'verified' },
+                        // v4.3.0: the new-member marker (classic CHRONOS) —
+                        // granted on join, held until the member verifies.
+                        { name: 'Unverified (held until verify)', value: 'unverified' }
                     ]
                 },
                 { type: 8, name: 'role', description: 'The role to use', required: true }
@@ -582,7 +548,7 @@ function getCommands() {
         // === REMOVE ROLE (remove a role from the config) ===
         {
             name: 'remove-role',
-            description: 'Remove a role from the config (admin / staff / verified / midman / booster)',
+            description: 'Remove a role from the config (admin / staff / verified / unverified / midman / booster)',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -591,8 +557,6 @@ function getCommands() {
                     description: 'Choose the role type to remove',
                     required: true,
                     choices: [
-                        // v3.23.0: 'unverified' stays DIHAPUS — konsepnya
-                        // sudah dibersihkan otomatis dari config lama.
                         { name: 'Admin', value: 'admin' },
                         // v3.30.0 RBAC: remove the staff (moderator) role —
                         // members who held it lose the STAFF tier instantly.
@@ -601,6 +565,10 @@ function getCommands() {
                         // btn_verify handler + verified-only gates (tickets /
                         // escrow) until set again.
                         { name: 'Verified (verification role)', value: 'verified' },
+                        // v4.3.0: 'unverified' is BACK (classic CHRONOS marker) —
+                        // removing it stops the on-join grant + the verify-click
+                        // removal. Roles already on members are NOT revoked.
+                        { name: 'Unverified (held until verify)', value: 'unverified' },
                         // v3.9.32: remove the midman role from the config.
                         { name: 'Midman (Escrow)', value: 'midman' },
                         // v3.9.59: remove the booster role from config (roles

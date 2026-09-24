@@ -24,7 +24,7 @@
  *      duplicate → 409; invalid role → 400; DELETE selfroles/:id clears
  *      the verify config too.
  *   8. PUT config: roles.verified accepted again (snowflake);
- *      roles.unverified still 422; roles.verifyPanelId rejected (managed).
+ *      roles.unverified accepted again (v4.3.0 — classic marker); roles.verifyPanelId rejected (managed).
  *
  * Data safety: selfRoles.json + the guild config file are snapshotted &
  * restored (established pattern).
@@ -142,8 +142,8 @@ function makeCommandInteraction({ roleId = ROLE_VERIFIED, channelId = null, role
 test('contract: /setup-verify registered, admin-gated, role required, routed to selfrole', () => {
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
-    // v4.2.0: 95 → 96 — /set-verify-button RESTORED (CHRONOS parity, Tahap 1).
-    assert.strictEqual(cmds.length, 96, '96 commands (v4.2.0 — set-verify-button restored)');
+    // v4.2.0: 95 → 96 — /set-verify-button restored. v4.3.0: 96 → 95 — /set-autorole REMOVED (CHRONOS parity).
+    assert.strictEqual(cmds.length, 95, '95 commands (v4.3.0 — set-autorole removed, CHRONOS parity)');
     const svb = cmds.find((c) => c.name === 'set-verify-button');
     assert.ok(svb, 'set-verify-button is registered (v4.2.0)');
     assert.strictEqual(svb.defaultMemberPermissions !== undefined, true, 'set-verify-button is admin-gated');
@@ -417,7 +417,7 @@ test('dash API: POST verify-panel validation — bad role / unknown role / above
     assert.match((await high.json()).error, /ABOVE the bot/i);
 });
 
-test('dash API: PUT config — roles.verified accepted again; unverified + verifyPanelId rejected', async () => {
+test('dash API: PUT config — roles.verified AND roles.unverified accepted; verifyPanelId rejected', async () => {
     resetGuildConfig();
     const ok = await api('PUT', `/guilds/${GUILD_ID}/config`, {
         body: { actor: { id: '42', tag: 'tester' }, updates: { 'roles.verified': ROLE_VERIFIED } }
@@ -425,11 +425,13 @@ test('dash API: PUT config — roles.verified accepted again; unverified + verif
     assert.strictEqual(ok.status, 200);
     assert.strictEqual(configManager.getConfig(GUILD_ID).roles.verified, ROLE_VERIFIED, 'roles.verified saved via PUT');
 
+    // v4.3.0: roles.unverified is BACK (the classic CHRONOS marker — granted
+    // on join, removed on the verify click). Accepted like any named role.
     const unverified = await api('PUT', `/guilds/${GUILD_ID}/config`, {
         body: { actor: { id: '42', tag: 'tester' }, updates: { 'roles.unverified': '888000111222333444' } }
     });
-    assert.strictEqual(unverified.status, 422);
-    assert.match(JSON.stringify(await unverified.json()), /removed in v3\.23\.0/i);
+    assert.strictEqual(unverified.status, 200);
+    assert.strictEqual(configManager.getConfig(GUILD_ID).roles.unverified, '888000111222333444', 'roles.unverified saved via PUT (v4.3.0)');
 
     const managedKey = await api('PUT', `/guilds/${GUILD_ID}/config`, {
         body: { actor: { id: '42', tag: 'tester' }, updates: { 'roles.verifyPanelId': '123456789012345678' } }

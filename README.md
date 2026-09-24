@@ -76,7 +76,7 @@ cd Thor-EN-Dashboard && ./setup.sh     # then fill its .env (DATABASE_URL, OAuth
 - Node.js v18+ (v20+ if you also run the dashboard)
 - A Discord bot token ([how to get one](https://discord.com/developers/applications))
 - **2 Privileged Intents** enabled in the Developer Portal (**Bot** tab):
-    - ✅ **Server Members Intent** — welcome/goodbye + auto-role
+    - ✅ **Server Members Intent** — welcome/goodbye + the Unverified role on join
     - ✅ **Message Content Intent** — **REQUIRED** for auto-responder, word/link anti-spam, AFK replies
 - The bot invited with: `Manage Roles`, `Manage Channels`, `Send Messages`, `Embed Links`, `View Audit Log`, `Moderate Members`, `Move Members` — and its role placed **above** every role it manages
 

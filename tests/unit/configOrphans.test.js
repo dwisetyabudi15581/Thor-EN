@@ -14,7 +14,7 @@
  *      automod linkAllowedChannels, temp voice (creator + category), ticket
  *      panels, self-role panels, PENDING scheduled announcements.
  *   2. Already-sent announcements are NOT flagged (no false positives).
- *   3. findRoleRefs finds: config roles.*, autorole join list, levelRoles,
+ *   3. findRoleRefs finds: config roles.* (admin/unverified/…), levelRoles,
  *      product auto-roles, automod linkAllowedRoles, self-role panel buttons
  *      AND their requiresRoleId visibility gates.
  *   4. A guild with no data at all → empty arrays (no crash, no phantom refs).
@@ -100,9 +100,10 @@ const ROLE_PANEL_GATE = '789012345678901234';
 
 /** Write one rich fixture with EVERY kind of reference, via the real managers. */
 function buildFixture() {
-    // 1. Guild config — channels, named roles, autorole, levelRoles, products.
+    // 1. Guild config — channels, named roles (incl. the restored unverified
+    // marker, v4.3.0), levelRoles, products.
     saveConfig(GUILD, {
-        roles: { admin: ROLE_ADMIN, verified: null },
+        roles: { admin: ROLE_ADMIN, verified: null, unverified: ROLE_AUTOROLE },
         channels: {
             welcome: CH_WELCOME,
             goodbye: null,
@@ -111,7 +112,6 @@ function buildFixture() {
         },
         messages: { welcomeTitle: 'T', welcomeBody: 'B' },
         colors: {},
-        autorole: { roleIds: [ROLE_AUTOROLE], removeOnNewRole: false },
         leveling: {
             enabled: true,
             xpPerMessage: 15,
@@ -262,10 +262,10 @@ test('findRoleRefs: finds every role reference across all stores', () => {
         `roles.admin: ${admin.join(' | ')}`
     );
 
-    const auto = findRoleRefs(GUILD, ROLE_AUTOROLE);
+    const unverified = findRoleRefs(GUILD, ROLE_AUTOROLE);
     assert.ok(
-        auto.some(r => r.includes('join role list')),
-        `autorole: ${auto.join(' | ')}`
+        unverified.some(r => r.includes('unverified')),
+        `roles.unverified (v4.3.0 marker): ${unverified.join(' | ')}`
     );
 
     const lvl = findRoleRefs(GUILD, ROLE_LEVEL);

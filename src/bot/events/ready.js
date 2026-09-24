@@ -286,7 +286,7 @@ async function onReady(client) {
         }
         const active = getAllActive();
         if (active.length > 0) {
-            console.log(`📋 ${active.length} active scheduled auto-role(s).`);
+            console.log(`📋 ${active.length} active scheduled role-expiry task(s).`);
         }
     } catch (err) {
         console.error('Startup: offline catch-up role error:', err.message);

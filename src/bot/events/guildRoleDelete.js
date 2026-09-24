@@ -7,8 +7,8 @@
  *      channel (rate-limit safe). Cheap no-op when /serverstats is not
  *      set up.
  *   2. v3.29.0 (TAHAP 1 sync audit): every stored setting that still POINTS
- *      at the deleted role (admin/booster/verified role, auto-role join
- *      list, level reward roles, product auto-roles, automod exempt list,
+ *      at the deleted role (admin/booster/verified/unverified role, level
+ *      reward roles, product auto-roles, automod exempt list,
  *      self-role panel buttons + visibility gates) is reported IMMEDIATELY
  *      — console + the server-log channel. READ-ONLY: nothing is
  *      auto-cleared; the admin fixes what matters via the dashboard, where

@@ -43,17 +43,11 @@ const DEFAULTS = {
         // v3.9.11 Phase 1: ticket header is configurable (previously hardcoded "PRICE LIST KEY")
         ticketPriceHeader: '💰 PRICE LIST 💰'
     },
-    // v3.23.0: auto-role on join. The admin's chosen roles are
-    // granted automatically to every new member. The removeOnNewRole toggle
-    // (default OFF): while ON, EVERY join role is stripped automatically the
-    // moment the member receives any OTHER role (see
-    // bot/events/guildMemberUpdate.js). The Unverified marker concept
-    // (roles.unverified) is REMOVED — a "marker" role now just goes into
-    // this list with the toggle turned on.
-    autorole: {
-        roleIds: [],
-        removeOnNewRole: false
-    },
+    // v4.3.0: the `autorole` section (join auto-role list + removeOnNewRole
+    // toggle, v3.23.0) was DELETED — the owner asked for CHRONOS parity: the
+    // new-member marker is the classic `roles.unverified` again (granted on
+    // join by memberHandler, removed on the verify click). A load-time
+    // migration below cleans the stale `autorole` key from old configs.
     // v3.9.18: ticket categories (4 built-in default categories)
     // - "Bantuan Staff" → "Help" (rename, simpler & international)
     // - "Laporkan Member" → "Report" (rename)
@@ -231,10 +225,11 @@ function getConfig(guildId) {
     let didV1Migration = false;
     if (raw.verifiedRoleId || raw.invoiceChannelId) {
         if (!raw.roles) raw.roles = {};
-        // v3.23.0: verifiedRoleId / unverifiedRoleId are no longer mapped
-        // anywhere — the verified & unverified role concepts are gone
-        // (verified = a plain role on a self-role panel; unverified =
-        // auto-role + toggle).
+        // v4.3.0: verifiedRoleId / unverifiedRoleId map to their classic keys
+        // again (both concepts restored — CHRONOS parity). A CHRONOS-era
+        // config that was never loaded by a v3.23.0+ build keeps its marker.
+        if (raw.verifiedRoleId && !raw.roles.verified) raw.roles.verified = raw.verifiedRoleId;
+        if (raw.unverifiedRoleId && !raw.roles.unverified) raw.roles.unverified = raw.unverifiedRoleId;
         if (raw.adminRoleId && !raw.roles.admin) raw.roles.admin = raw.adminRoleId;
 
         if (!raw.channels) raw.channels = {};
@@ -261,39 +256,38 @@ function getConfig(guildId) {
         didV1Migration = true;
     }
 
-    // === v3.23.0 MIGRATION: the Unverified marker concept was REMOVED ===
-    // (admin's request: "don't set an unverified role — just use auto-role
-    // on join + a toggle for the role to disappear on a new role"). Stale
-    // keys are cleaned here so they don't linger in
-    // data/config/<guildId>.json: if you used @Unverified as a marker, add
-    // that role to the /set-autorole list and turn the removeOnNewRole
-    // toggle on — the behavior is identical.
-    // v3.23.0 MIGRATION (updated v3.28.0): the Unverified marker concept was
-    // REMOVED (admin's request — replacement: /set-autorole + removeOnNewRole
-    // toggle). roles.verified is PRESERVED again since v3.28.0: /setup-verify
-    // is back and stores the Verified role there (it also gates tickets/escrow
-    // for verified-only access). Only unverified + the old verify-panel keys
-    // stay cleaned.
-    let didVerifyCleanup = false;
-    if (raw.roles && 'unverified' in raw.roles) {
-        delete raw.roles.unverified;
-        didVerifyCleanup = true;
-    }
+    // === v3.23.0 → v4.3.0 VERIFICATION-KEY CLEANUP ===
+    // v3.23.0 removed the dedicated verification feature and cleaned its keys.
+    // v4.2.0 restored roles.verified; v4.3.0 restored roles.unverified (the
+    // classic CHRONOS marker — granted on join, removed on verify) and DELETED
+    // the autorole replacement (join list + removeOnNewRole toggle). This
+    // block therefore now ONLY cleans the obsolete verify-panel message keys
+    // (the panel look lives in the self-role panel entry since v3.28.0) and
+    // the stale `autorole` section from configs saved by v3.23.0–v4.2.x.
+    let didPanelKeyCleanup = false;
     if (raw.messages && ('verifyTitle' in raw.messages || 'verifyBody' in raw.messages)) {
         delete raw.messages.verifyTitle;
         delete raw.messages.verifyBody;
-        didVerifyCleanup = true;
+        didPanelKeyCleanup = true;
     }
     if ('verifyButton' in raw) {
         delete raw.verifyButton;
-        didVerifyCleanup = true;
+        didPanelKeyCleanup = true;
     }
-    if (didVerifyCleanup) {
-        console.log('🧹 [v3.23.0] Removed the legacy unverified role config for this guild (now: autorole + toggle; verify = /setup-verify).');
+    if (didPanelKeyCleanup) {
+        console.log('🧹 [v4.3.0] Cleaned obsolete verification-panel keys for this guild (verifyTitle/verifyBody/verifyButton).');
+    }
+    if (raw.autorole) {
+        delete raw.autorole;
+        console.log(
+            '🧹 [v4.3.0] Removed the legacy autorole (join auto-role) config for this guild — ' +
+                'the new-member marker is /set-role tipe:unverified again (CHRONOS parity).'
+        );
     }
 
     // === MERGE with DEFAULTS (deep for messages) ===
-    // v3.22.0: verifyButton merge REMOVED (feature deleted); autorole added.
+    // v3.22.0: verifyButton merge REMOVED (feature deleted).
+    // v4.3.0: autorole merge REMOVED (feature deleted — CHRONOS parity).
     // v3.9.13: added merge for leveling & levelRoles
     // v3.9.17 FIX: preserve custom fields (ticketCategoryKey, ticketCategoryNoKey,
     //   and other non-standard fields). Before, only keys present in DEFAULTS were
@@ -306,7 +300,6 @@ function getConfig(guildId) {
         channels: { ...DEFAULTS.channels, ...(raw.channels || {}) },
         messages: { ...DEFAULTS.messages, ...(raw.messages || {}) },
         colors: { ...DEFAULTS.colors, ...(raw.colors || {}) },
-        autorole: { ...DEFAULTS.autorole, ...(raw.autorole || {}) },
         ticketCategories:
             Array.isArray(raw.ticketCategories) && raw.ticketCategories.length > 0
                 ? raw.ticketCategories

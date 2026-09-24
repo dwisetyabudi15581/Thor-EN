@@ -442,8 +442,8 @@ test('helpNav: old content intact in the catalog (regression v3.9.37/v3.9.38)', 
     assert.match(allText, /set-midman-fee/);
     assert.match(allText, /midman-deals/);
     assert.match(allText, /set-role midman/);
-    // v3.9.59: the set-role line mentions booster; v3.23.0: verified/
-    // unverified removed from the system role list (now autorole + toggle).
+    // v3.9.59: the set-role line mentions booster; v4.2.0/v4.3.0: verified +
+    // unverified are back in the system role list (classic CHRONOS).
     assert.match(allText, /admin\/midman\/\*\*booster\*\*/);
     // Panels & popular commands.
     assert.match(allText, /list-panels/);

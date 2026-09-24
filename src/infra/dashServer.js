@@ -173,13 +173,11 @@ function isStr(v, max) {
  */
 const SECTION_VALIDATORS = {
     roles: (key, value) => {
-        // v3.23.0: the unverified marker concept was REMOVED — reject with a
-        // message pointing to the replacement (autorole + removeOnNewRole).
-        if (key === 'unverified') {
-            return { ok: false, error: 'roles.unverified was removed in v3.23.0 — join roles are now managed via autorole (list + removeOnNewRole toggle)' };
-        }
-        // v3.28.0: roles.verified is back (set by /setup-verify and the
-        // verify-panel endpoint). The panel link (verifyPanelId) stays
+        // v4.3.0: roles.unverified is BACK (classic CHRONOS marker — granted
+        // on join, removed on the verify click). The generic name/ID checks
+        // below are enough; no special-casing needed.
+        // v3.28.0: roles.verified is set by /setup-verify and the
+        // verify-panel endpoint. The panel link (verifyPanelId) stays
         // managed-only: pointing it at an arbitrary panel by hand could
         // desync the verified-role lifecycle.
         if (key === 'verifyPanelId') {
@@ -226,18 +224,10 @@ const SECTION_VALIDATORS = {
     // v3.22.0: verifyButton section REMOVED — the verification feature was
     // deleted (self-role panels now). Old dashboard builds that still send
     // verifyButton.* get a clean "Unknown section" 422.
-    // v3.23.0: autorole — the join auto-role list (web parity with
-    // /set-autorole) + the removeOnNewRole toggle (keyed path, see
-    // validateUpdate).
-    autorole: (key, value) => {
-        if (key !== '__array__') return { ok: false, error: 'autorole can only be set as a whole array (autorole.roleIds) or the autorole.removeOnNewRole toggle' };
-        if (!Array.isArray(value)) return { ok: false, error: 'autorole must be an array of role IDs' };
-        if (value.length > 10) return { ok: false, error: 'autorole accepts at most 10 roles' };
-        for (const id of value) {
-            if (!isSnowflakeOrNull(id) || !id) return { ok: false, error: 'autorole must contain Discord role IDs (no nulls)' };
-        }
-        return { ok: true, value: { roleIds: value } };
-    },
+    // v4.3.0: autorole section REMOVED — the join auto-role feature was
+    // deleted (CHRONOS parity); stale dashboard builds that still PUT an
+    // `autorole` path get a clean "Unknown section" 422, and configs saved
+    // by v3.23.0–v4.2.x are cleaned at load time (configManager migration).
     leveling: (key, value) => {
         switch (key) {
             case 'enabled':
@@ -379,14 +369,9 @@ function validateUpdate(dotPath, value) {
     if (!validator) return { ok: false, error: `Unknown section: ${section}` };
 
     // Array sections (levelRoles / ticketCategories / products) — always a whole array.
-    // v3.23.0: autorole has TWO shapes: a whole array (the join role list)
-    // and the keyed path `autorole.removeOnNewRole` (boolean toggle). Both
-    // can arrive together in a single PUT from the SaveBar.
-    if (section === 'autorole' && parts.length === 2 && parts[1] === 'removeOnNewRole') {
-        if (typeof value !== 'boolean') return { ok: false, error: 'autorole.removeOnNewRole must be a boolean (true/false)' };
-        return { ok: true, section: 'autorole', key: 'removeOnNewRole', value };
-    }
-    if (['levelRoles', 'ticketCategories', 'products', 'autorole'].includes(section)) {
+    // v4.3.0: the autorole special paths (whole array + removeOnNewRole
+    // toggle) were REMOVED together with the feature.
+    if (['levelRoles', 'ticketCategories', 'products'].includes(section)) {
         if (parts.length !== 1) return { ok: false, error: `${section} can only be set as a whole array` };
         const r = validator('__array__', value);
         return r.ok ? { ok: true, section, key: null, value: r.value } : r;
@@ -408,15 +393,7 @@ function applyUpdates(config, updates) {
             continue;
         }
         if (v.key === null) {
-            // v3.23.0: setting the autorole whole array must NOT wipe the
-            // removeOnNewRole toggle — both paths (autorole +
-            // autorole.removeOnNewRole) can arrive together in one PUT;
-            // merge, don't replace.
-            if (v.section === 'autorole') {
-                config.autorole = { ...(config.autorole || {}), ...v.value };
-            } else {
-                config[v.section] = v.value; // whole array
-            }
+            config[v.section] = v.value; // whole array
             // /remove-category semantics: the built-in claim_giveaway & midman
             // categories are automatically re-added by getConfig() as long as
             // the dismissal flag is not set. The dashboard must set/unset the

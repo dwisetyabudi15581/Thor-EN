@@ -421,10 +421,8 @@ async function hookLeveling(message) {
         const toAdd = roleIds.filter(id => !message.member.roles.cache.has(id));
         if (toAdd.length > 0) {
             // v3.22.0: level-role grants go through the Role Engine — the same
-            // gateway as self-role/auto-role, with hierarchy/managed checks and
-            // actionable failure logs. Granting a level role can also trigger
-            // the removal of the member's join roles (the
-            // autorole.removeOnNewRole toggle).
+            // gateway as self-role/verification, with hierarchy/managed checks and
+            // actionable failure logs.
             const { grantRoles } = require('../../services/roleEngine');
             const res = await grantRoles(message.member, toAdd, {
                 reason: `level up — reached level ${newLevel}`

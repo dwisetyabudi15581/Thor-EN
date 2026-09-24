@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.3.0] — 2026-09-24
+
+### Changed — 🗑️ AUTO-ROLE DELETED · CLASSIC UNVERIFIED RESTORED (CHRONOS PARITY, TAHAP 3)
+
+Owner's request: *"Auto rolenya delete saja soalnya ga terlalu butuh samain kaya di CHRONOS"* — the whole join auto-role feature (introduced in v3.23.0 as the replacement for the Unverified marker after verification was deleted) is removed, and the classic CHRONOS chain is fully restored. With verification back since v4.2.0, the two concepts had become redundant: the marker is ONE role again, exactly like CHRONOS v3.9.59.
+
+**The classic chain (CHRONOS semantics):** `/set-role tipe:unverified role:@Unverified` → new members get the role on join (`memberHandler`) → the verify click (`btn_verify` AND the verify panel's button) grants Verified + removes Unverified directly. No list, no toggle.
+
+- 🔴 **`/set-autorole` REMOVED** (registry + `config.js` handler + router): the join auto-role list (max 10) and the `action:toggle` "remove on a new role" rule are gone. Command count: 96 → **95**. Discord still shows the stale command until the next registration sync — it answers "Unknown command".
+- 🔴 **The `autorole` config section is deleted + auto-cleaned on load** (`configManager`): DEFAULTS no longer carry it, and a v4.3.0 migration removes the stale `autorole` key from configs saved by v3.23.0–v4.2.x (one console line, CHRONOS-parity pointer). Roles already granted to members are NOT revoked — only the automation stops.
+- 🟠 **The guildMemberUpdate strip rule is deleted**: no role is ever auto-stripped on "member received another role" anymore. The event handler is back to pure logging + boost detection. `roleEngine.joinRoleIds()` removed (engine exports `grantRoles`/`revokeRoles` only).
+- 🟠 **`tipe:unverified` is BACK in `/set-role` + `/remove-role`**: the classic marker — granted automatically on join, removed automatically on verify. The set reply explains the chain; `/config-show` displays the Unverified line again. `roles.unverified` survives config load again (the v3.23.0 cleanup no longer deletes it), and the legacy v1 flat `unverifiedRoleId` maps to it once more.
+- 🟠 **`btn_verify` removes the Unverified role directly** (`interactions/verify.js`): the classic CHRONOS finish — previously delegated to the autorole toggle. v3.9.17 honesty pattern kept: the reply says "removed" only when it actually happened, warns when the bot's role is too low, and notes when no Unverified role is configured.
+- 🟠 **The verify PANEL button does the same** (`interactions/selfrole.js`): a `kind:'verify'` panel grant strips the marker directly (regular self-role panels never touch it).
+- 🟡 **DASH API**: `roles.unverified` accepted again (classic named-role contract — the 422 "removed in v3.23.0" is gone); the `autorole` / `autorole.removeOnNewRole` PUT paths now answer a clean 422 "Unknown section" (stale dashboard builds can't resurrect the feature).
+- 🟢 **`/help` catalog, `/setup-verify` tips, reset-config onboarding** — every `/set-autorole` mention replaced by the classic guidance (`/set-role tipe:unverified` + `/setup-verify`). Quick Start step 1 is the verification chain again. `configOrphans` no longer scans the join list (the marker is a named role — already covered). README: the Members Intent line explains the Unverified grant.
+- 🟢 **Tests**: 903 → **895** — 13 obsolete auto-role/toggle tests removed; new coverage: the classic chain end-to-end (join grant, btn_verify grant+strip+failure notes, verify-panel strip, plain-panel purity, NO-strip regression pins, config migration incl. v1 flat keys, registry/config/API pins, `/set-role unverified` reply+persist). 895/895 green, eslint clean.
+
+**Migration for live servers that used the join list:** set the marker role explicitly — `/set-role tipe:unverified role:@YourOldJoinRole`. Members who already have it keep it; the verify click removes it from now on. Version: 4.2.1 → **4.3.0**.
+
 ## [4.2.1] — 2026-09-24
 
 ### Added — 🌐 CHRONOS PARITY (TAHAP 2, SISI BOT): DASH API BISA ME-RESTYLE TOMBOL PANEL DARI WEB

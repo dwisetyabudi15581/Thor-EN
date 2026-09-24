@@ -16,12 +16,35 @@
  */
 
 const { MessageFlags } = require('discord.js');
-const { getPanel, buildPanelComponents } = require('../commands/_shared');
+const { getPanel, buildPanelComponents, getConfig } = require('../commands/_shared');
 // v3.22.0: the Role Engine — single gateway for every role grant/revoke.
-// Self-role panels, verification, auto-role on join, VIP purchases… all
-// funnel through here so hierarchy/managed/@everyone checks + failure logs
-// are identical everywhere.
+// Self-role panels, verification, the unverified join grant, VIP purchases…
+// all funnel through here so hierarchy/managed/@everyone checks + failure
+// logs are identical everywhere.
 const { grantRoles, revokeRoles } = require('../services/roleEngine');
+
+/**
+ * v4.3.0 (CHRONOS parity): finish a verification-panel grant the classic way —
+ * remove the Unverified role directly. Called after the Verified role landed
+ * on a kind:'verify' panel. Silent on success (the reply below mentions it),
+ * honest on failure (a warning line is appended).
+ * @returns {string} '' | ' The Unverified role has been removed.' | warning line
+ */
+async function stripUnverifiedAfterVerify(interaction) {
+    const config = getConfig(interaction.guildId || interaction.guild?.id);
+    const unverifiedId = config?.roles?.unverified;
+    if (!unverifiedId) return '';
+    const rm = await revokeRoles(interaction.member, [unverifiedId], {
+        reason: 'verification complete (verify panel)'
+    });
+    if (rm.ok && rm.revoked.length > 0) return ' The Unverified role has been removed.';
+    if (!rm.ok) {
+        return (
+            '\n⚠️ The bot cannot remove the Unverified role. Make sure the bot\'s role is ABOVE the Unverified role.'
+        );
+    }
+    return ''; // ok-but-skipped = the member never held it — not an error.
+}
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -101,10 +124,10 @@ async function handleSelfRoleButton(interaction) {
     }
 
     // v3.22.0: all grant/revoke calls go through the Role Engine — same
-    // checks, same failure logging as every other feature. Granting a role
-    // here can also trigger the automatic removal of the member's join
-    // roles (the autorole.removeOnNewRole toggle in guildMemberUpdate) —
-    // no special handling needed.
+    // checks, same failure logging as every other feature. v4.3.0: on the
+    // verification panel, a successful grant ALSO removes the Unverified
+    // role directly (classic CHRONOS semantics — the autorole toggle that
+    // used to do this was deleted with the auto-role feature).
     if (panel.exclusive && !hasRole) {
         // Exclusive mode: remove all other panel roles first, then add this one
         const toRemove = panel.roles
@@ -138,7 +161,8 @@ async function handleSelfRoleButton(interaction) {
         return interaction.reply({ content: `✅ Role ${role} removed.`, flags: MessageFlags.Ephemeral });
     }
     if (!panel.exclusive && !hasRole) {
-        // Multi + doesn't have it → add
+        // Multi + doesn't have it → add. This is ALSO the verification
+        // panel's path (setup-verify mounts once:true + exclusive:false).
         const res = await grantRoles(member, [roleId], { reason: 'self-role panel' });
         if (!res.ok) {
             return interaction.reply({
@@ -146,8 +170,11 @@ async function handleSelfRoleButton(interaction) {
                 flags: MessageFlags.Ephemeral
             });
         }
+        // v4.3.0: the verification panel finishes the classic way — the
+        // Unverified role is stripped directly on the grant.
+        const verifyNote = panel.kind === 'verify' ? await stripUnverifiedAfterVerify(interaction) : '';
         return interaction.reply({
-            content: `✅ Role ${role} added.${panel.once ? '\n💡 One-way panel — clicking again never removes it.' : ''}`,
+            content: `✅ Role ${role} added.${panel.once ? '\n💡 One-way panel — clicking again never removes it.' : ''}${verifyNote}`,
             flags: MessageFlags.Ephemeral
         });
     }

@@ -30,10 +30,9 @@ const { Events } = require('discord.js');
 const { logServerEvent, snip } = require('../../infra/serverLog');
 // v3.12.0: single GUILD_ID guard (single-server / public mode).
 const { isGuildAllowed } = require('../../infra/guild');
-// v3.23.0: "join roles removed when the member gets another role" rule —
-// Role Engine + guild config (toggle autorole.removeOnNewRole).
-const { revokeRoles, joinRoleIds } = require('../../services/roleEngine');
-const { getConfig } = require('../../data/configManager');
+// v4.3.0: the join-role strip rule (the v3.23.0 auto-role toggle) was DELETED
+// together with the auto-role feature (CHRONOS parity) — the Unverified marker
+// is now removed directly by the verify click, not by a role-diff rule.
 // v3.9.49: boost notifications (server-booster channel + server log + history).
 // v3.9.59: applyBoostRole — booster auto role (called AFTER the notification
 // so the history stays recorded even when the role assignment fails).
@@ -80,46 +79,6 @@ async function onEvent(oldMember, newMember) {
             const removed = [...oldMember.roles.cache.values()].filter(
                 r => !newMember.roles.cache.has(r.id)
             );
-
-            // === v3.23.0: TOGGLE "JOIN ROLES REMOVED ON A NEW ROLE" ===
-            // Replaces the Unverified marker concept (v3.22.0 — removed at
-            // the admin's request: "don't set an unverified role, just use
-            // auto-role on join + a toggle"). While `autorole.removeOnNewRole`
-            // is ON, EVERY join role the member holds is stripped the moment
-            // they receive ANOTHER role — from ANY source: a self-role panel,
-            // an admin granting it manually, leveling, a VIP purchase, a
-            // boost, or another bot. Removal is silent (admin's choice:
-            // silent + logged).
-            //
-            // Exemptions (roles that do NOT count as "another role"):
-            //   - the join roles themselves (granted/re-configured at join) —
-            //     otherwise granting @Member at join would immediately strip
-            //     the role itself and the toggle would be useless.
-            // Toggle OFF (default) → nothing is stripped: auto-roles are
-            // permanent, .
-            const config = getConfig(newMember.guild.id);
-            const joinIds = joinRoleIds(config);
-            if (
-                config.autorole?.removeOnNewRole === true &&
-                joinIds.length > 0 &&
-                added.length > 0 &&
-                added.some(r => !joinIds.includes(r.id))
-            ) {
-                const held = joinIds.filter(id => newMember.roles.cache.has(id));
-                if (held.length > 0) {
-                    const res = await revokeRoles(newMember, held, {
-                        reason: 'Join roles removed automatically — member received another role'
-                    });
-                    if (res.revoked.length > 0) {
-                        console.log(
-                            `✅ [auto-role] ${user.tag} received another role — ${res.revoked.length} join role(s) removed.`
-                        );
-                    }
-                    // The removal itself fires guildMemberUpdate again → the standard
-                    // ROLE_UPDATE server log below records it on that pass (➖ join
-                    // roles). No DM, no announcement — admin's choice: silent + logged.
-                }
-            }
 
             if (added.length > 0 || removed.length > 0) {
                 const lines = [];

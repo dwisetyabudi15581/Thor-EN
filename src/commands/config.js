@@ -1,6 +1,6 @@
 /**
  * Domain: config
- * Slash commands: /set-autorole, /setup-ticket, /set-role, /set-channel,
+ * Slash commands: /setup-ticket, /set-role, /set-channel,
  *                 /set-message, /remove-role, /remove-channel, /list-messages,
  *                 /reset-message, /reset-config, /config-show, /test-welcome
  *
@@ -51,141 +51,6 @@ module.exports = async function (interaction) {
     // writes the config of the guild that ran the command.
     const guildId = resolveGuildId(interaction);
     const config = getConfig(guildId);
-
-    // === SET AUTOROLE (v3.23.0 — auto-role on join,  + toggle) ===
-    // One command, four actions: add / remove / list / toggle. The list is
-    // granted automatically to every new member by memberHandler → the
-    // Role Engine. The removeOnNewRole toggle (replacement for the removed
-    // Unverified marker concept): while ON, join roles are stripped the
-    // moment the member receives another role.
-    if (interaction.commandName === 'set-autorole') {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        const action = interaction.options.getString('action'); // add | remove | list | toggle
-        const role = interaction.options.getRole('role');
-        const MAX_AUTOROLE = 10;
-
-        if ((action === 'add' || action === 'remove') && !role) {
-            return safeEditReply(interaction, {
-                content: '❌ A role is required for `add` / `remove`. Use `/set-autorole action:list` to just view the list.'
-            });
-        }
-
-        const current = Array.isArray(config.autorole?.roleIds) ? [...config.autorole.roleIds] : [];
-
-        // ---- LIST ----
-        if (action === 'list') {
-            const list =
-                current.length > 0
-                    ? current.map(id => `• <@&${id}>`).join('\n')
-                    : '_empty — no auto-role on join yet_';
-            const toggleState =
-                config.autorole?.removeOnNewRole === true
-                    ? 'ON ✅ — join roles disappear automatically once the member gets another role'
-                    : 'OFF ⛔ — join roles are permanent';
-            return safeEditReply(interaction, {
-                content:
-                    `🎁 **AUTO-ROLE ON JOIN** (${current.length}/${MAX_AUTOROLE})\n${list}\n\n` +
-                    `♻️ Remove on another role: ${toggleState}\n\n` +
-                    '💡 `action:add role:@role` to add · `action:remove` to remove · `action:toggle` flips the toggle.'
-            });
-        }
-
-        // ---- TOGGLE (v3.23.0 — replacement for the Unverified marker concept) ----
-        // "Remove join roles when the member gets another role". Without the
-        // enabled option → flips the current value (on↔off) — one keystroke,
-        // no thinking required.
-        if (action === 'toggle') {
-            const explicit = interaction.options.getBoolean('enabled');
-            const next = typeof explicit === 'boolean' ? explicit : config.autorole?.removeOnNewRole !== true;
-            setField(guildId, 'autorole.removeOnNewRole', next);
-            await logAudit(interaction.client, {
-                action: 'SET_AUTOROLE',
-                actorId: interaction.user.id,
-                actorTag: interaction.user.tag,
-                details: `Auto-role on join: "remove on another role" toggle → ${next ? 'ON' : 'OFF'}`,
-                guildId: interaction.guild.id
-            });
-            return safeEditReply(interaction, {
-                content:
-                    `✅ **Remove join roles when the member gets another role: ${next ? 'ON ✅' : 'OFF ⛔'}**\n\n` +
-                    (next
-                        ? 'Every role in the auto-role list is stripped automatically once the member receives any other role — self-role panels, level rewards, admin grants, even other bots. Perfect for a "new member" marker role.'
-                        : 'Auto-roles are permanent — they stick with the member until removed manually.')
-            });
-        }
-
-        // ---- ADD / REMOVE share the /set-role validation (v3.9.38) —
-        // @everyone, integration-managed roles and roles above the bot must be
-        // rejected up front, otherwise the join grant would silently fail on
-        // every new member.
-        if (role.id === interaction.guild.id) {
-            return safeEditReply(interaction, { content: '❌ @everyone cannot be used. Pick a regular role.' });
-        }
-        if (role.managed) {
-            return safeEditReply(interaction, {
-                content: '❌ This role is managed by another integration/bot — it cannot be assigned by the bot.'
-            });
-        }
-        const botHighestPos = interaction.guild.members.me?.roles?.highest?.position ?? 0;
-        if ((role.position ?? 0) >= botHighestPos) {
-            return safeEditReply(interaction, {
-                content:
-                    '❌ This role is positioned ABOVE the bot highest role — the bot cannot assign it. ' +
-                    'Move the bot role up in Server Settings → Roles, or pick another role.'
-            });
-        }
-
-        // ---- ADD ----
-        if (action === 'add') {
-            if (current.includes(role.id)) {
-                return safeEditReply(interaction, { content: `ℹ️ ${role} is already in the auto-role list.` });
-            }
-            if (current.length >= MAX_AUTOROLE) {
-                return safeEditReply(interaction, {
-                    content: `❌ The auto-role list is full (${MAX_AUTOROLE} roles). Remove one first with \`/set-autorole action:remove\`.`
-                });
-            }
-            current.push(role.id);
-            setField(guildId, 'autorole.roleIds', current);
-            await logAudit(interaction.client, {
-                action: 'SET_AUTOROLE',
-                actorId: interaction.user.id,
-                actorTag: interaction.user.tag,
-                details: `Auto-role on join: added ${role.name} (\`${role.id}\`) — list now ${current.length} role(s)`,
-                guildId: interaction.guild.id
-            });
-            return safeEditReply(interaction, {
-                content:
-                    `✅ ${role} added to the **auto-role on join** list (${current.length}/${MAX_AUTOROLE}).\n\n` +
-                    `Every new member now receives it automatically. Current list:\n${current
-                        .map(id => `• <@&${id}>`)
-                        .join('\n')}`
-            });
-        }
-
-        // ---- REMOVE ----
-        const idx = current.indexOf(role.id);
-        if (idx === -1) {
-            return safeEditReply(interaction, { content: `ℹ️ ${role} is not in the auto-role list.` });
-        }
-        current.splice(idx, 1);
-        setField(guildId, 'autorole.roleIds', current);
-        await logAudit(interaction.client, {
-            action: 'SET_AUTOROLE',
-            actorId: interaction.user.id,
-            actorTag: interaction.user.tag,
-            details: `Auto-role on join: removed ${role.name} (\`${role.id}\`) — list now ${current.length} role(s)`,
-            guildId: interaction.guild.id
-        });
-        return safeEditReply(interaction, {
-            content:
-                `✅ ${role} removed from the auto-role list.\n\n` +
-                (current.length > 0
-                    ? `Current list:\n${current.map(id => `• <@&${id}>`).join('\n')}`
-                    : 'The list is now empty — no roles are granted automatically on join.')
-        });
-    }
 
     // === SETUP TICKET ===
     if (interaction.commandName === 'setup-ticket') {
@@ -354,8 +219,8 @@ module.exports = async function (interaction) {
 
         // v3.9.38 FIX: validate that the bot can actually assign the role — previously managed/
         // @everyone/roles positioned above the bot passed validation → got saved to config,
-        // then auto-role silently failed on every member join/verify (no
-        // error until the admin checked manually).
+        // then the grant silently failed on every join/verify (no error until
+        // the admin checked manually).
         if (role.id === interaction.guild.id) {
             return safeEditReply(interaction, {
                 content: '❌ @everyone cannot be used. Pick a regular role.'
@@ -406,6 +271,19 @@ module.exports = async function (interaction) {
             details: `Role **${tipe}** set to ${role.name} (\`${role.id}\`)`,
             guildId: interaction.guild.id
         });
+
+        // v4.3.0: the classic CHRONOS marker is back — the Unverified role is
+        // granted automatically on join and removed directly by the verify
+        // click (btn_verify + the verify panel's button).
+        if (tipe === 'unverified') {
+            return safeEditReply(interaction, {
+                content:
+                    `✅ Role **unverified** set to ${role} (\`${role.id}\`)\n\n` +
+                    '🎭 New members now receive it automatically when they join, and it is removed automatically the moment they verify.\n' +
+                    '💡 Pair it with `/setup-verify role:@Verified` — the full classic verification chain.\n' +
+                    '⚠️ Roles already on current members are not touched.'
+            });
+        }
 
         // v3.9.59: setting the booster role ALSO applies it retroactively to
         // everyone CURRENTLY boosting (the admin shouldn't wait for the next
@@ -708,7 +586,10 @@ module.exports = async function (interaction) {
                             // removed when the boost ends).
                             `• Booster (auto): ${fmt(config.roles.booster, '@&')}`,
                             // v3.28.0: the Verified role is back (/setup-verify).
-                            `• Verified: ${fmt(config.roles.verified, '@&')}`
+                            `• Verified: ${fmt(config.roles.verified, '@&')}`,
+                            // v4.3.0: the Unverified marker is back (classic
+                            // CHRONOS — granted on join, removed on verify).
+                            `• Unverified (until verify): ${fmt(config.roles.unverified, '@&')}`
                         ].join('\n')
                     ),
                     inline: false

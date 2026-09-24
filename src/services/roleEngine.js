@@ -3,9 +3,9 @@
  *
  * v3.22.0: before this module, 13+ call sites did raw `member.roles.add/remove`
  * each with its own try/catch and error message (verify button, self-role
- * panels, join auto-role, booster role, VIP keys, product delivery, leveling,
- * temp-role scheduler, the DASH API…). The engine centralizes what they all
- * duplicated:
+ * panels, the unverified join grant, booster role, VIP keys, product
+ * delivery, leveling, temp-role scheduler, the DASH API…). The engine
+ * centralizes what they all duplicated:
  *
  *   - resolve the role (skip gracefully when the guild cache is unavailable)
  *   - reject @everyone, integration-managed roles, and roles positioned
@@ -170,21 +170,4 @@ function revokeRoles(member, roleIds, options = {}) {
     return apply(member, roleIds, 'remove', options);
 }
 
-/**
-/**
- * The join-role list for a guild config — the contents of `autorole.roleIds`
- * (the /set-autorole list), deduped, order preserved. v3.23.0: the Unverified
- * marker concept is REMOVED — this list is now purely the join auto-roles,
- * and the "join roles disappear when the member gets another role" rule is
- * driven by the `autorole.removeOnNewRole` toggle (guildMemberUpdate). Roles
- * the system itself grants at join must never count as "another role" for
- * that rule — granting @Member at join must not immediately strip it.
- */
-function joinRoleIds(config) {
-    const ids = [];
-    const autorole = Array.isArray(config?.autorole?.roleIds) ? config.autorole.roleIds.filter(Boolean) : [];
-    for (const id of autorole) if (!ids.includes(id)) ids.push(id);
-    return ids;
-}
-
-module.exports = { grantRoles, revokeRoles, joinRoleIds };
+module.exports = { grantRoles, revokeRoles };

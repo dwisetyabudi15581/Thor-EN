@@ -135,8 +135,10 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
     const { getConfig } = require('../../src/data/configManager');
     // MIXED config: leftover v1 flat keys + v2 modern fields — previously the
     // auto-save migration only wrote the 5 main keys → ticketCategories/leveling were lost from disk.
-    // v3.22.0: verifyButton is REMOVED (the verification feature was deleted) —
-    // the fixture now uses autorole (its replacement) as the modern field.
+    // v4.3.0: the legacy FLAT verifiedRoleId maps to roles.verified again
+    // (classic verification restored), and the autorole section (v3.23.0
+    // fixture field) is cleaned on load — the modern-field guard now uses
+    // levelRoles + a stale autorole key to prove BOTH behaviors.
     writeDataJSON('config/g_v26.json', {
         verifiedRoleId: 'r_verified_old',
         invoiceChannelId: 'c_invoice_old',
@@ -147,27 +149,28 @@ test('v3.9.26 v1→v2 migration: modern fields are no longer DROPPED', () => {
             { id: 'jasa', label: 'Jasa', emoji: '🛠️', style: 'Success', requiresKey: false, isDefault: false }
         ],
         leveling: { enabled: true, xpPerMessage: 25 },
+        levelRoles: [{ level: 5, roleId: 'r_lvl' }],
         autorole: { roleIds: ['r_member'] },
         customFieldAdmin: 'preserve-me'
     });
 
     const config = getConfig('g_v26');
-    // Flat v1 → dipindah ke nested. v3.22.0: verifiedRoleId is no longer mapped
-    // anywhere (the old flat key is gone). v3.28.0: roles.verified is BACK as a
-    // nested key (set by /setup-verify) — but the legacy FLAT verifiedRoleId is
-    // still dropped (the wizard sets the nested key when it runs).
-    assert.strictEqual(config.roles.verified, undefined, 'the legacy FLAT verifiedRoleId is not mapped (roles.verified is set by /setup-verify)');
+    // Flat v1 → moved to nested. v4.3.0: verifiedRoleId maps to roles.verified
+    // again (the classic verification chain is back — CHRONOS parity).
+    assert.strictEqual(config.roles.verified, 'r_verified_old', 'v4.3.0: the legacy FLAT verifiedRoleId maps to roles.verified again');
     assert.strictEqual(config.channels.invoice, 'c_invoice_old');
     // Modern fields must be present in the merged result
     assert.strictEqual(config.leveling.enabled, true);
-    assert.deepStrictEqual(config.autorole.roleIds, ['r_member']);
+    assert.deepStrictEqual(config.levelRoles, [{ level: 5, roleId: 'r_lvl' }]);
+    assert.ok(!config.autorole, 'v4.3.0: a stale autorole section is cleaned on load');
     assert.strictEqual(config.customFieldAdmin, 'preserve-me');
     const ids = config.ticketCategories.map(c => c.id);
     assert.ok(ids.includes('jasa'), 'custom ticketCategories must be preserved');
 
-    // Dan yang tersimpan di disk harus BEBAS flat key v1 (idempotent)
+    // And what is saved to disk must be FREE of v1 flat keys (idempotent)
     const saved = readDataJSON('config/g_v26.json');
     assert.strictEqual(saved.verifiedRoleId, undefined, 'the v1 flat keys must be gone from disk after the migration');
+    assert.ok(!saved.autorole, 'the stale autorole section is gone from disk after the migration');
     assert.ok(Array.isArray(saved.ticketCategories));
 });
 

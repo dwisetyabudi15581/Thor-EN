@@ -276,8 +276,8 @@ test('help v3.9.37: Auto-Split 3 categories (TRANSACTIONS/SUPPORT/ESCROW) + Midm
     assert.match(allText, /midman-deals/);
     assert.match(allText, /set-role midman/);
 
-    // The role list mentions midman (+ booster since v3.9.59; verified/
-    // unverified removed in v3.23.0 — now autorole + toggle).
+    // The role list mentions midman (+ booster since v3.9.59; verified and
+    // unverified restored in v4.2.0/v4.3.0 — classic CHRONOS chain).
     assert.match(allText, /admin\/midman\/\*\*booster\*\*/);
 
     // Dynamic version from package.json.

@@ -611,7 +611,7 @@ test('CONTRACT registry/router: /serverstats registered with 3 subcommands, admi
     resetManager();
     const { getCommands } = require('../../src/commands/registry');
     const cmds = getCommands();
-    assert.strictEqual(cmds.length, 96, '96 commands (v4.2.0 — set-verify-button restored)');
+    assert.strictEqual(cmds.length, 95, '95 commands (v4.3.0 — set-autorole removed, CHRONOS parity)');
 
     const cmd = cmds.find(c => c.name === 'serverstats');
     assert.ok(cmd, '/serverstats exists in the registry');

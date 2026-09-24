@@ -1,5 +1,5 @@
 /**
- * Member Handler — welcome/goodbye + auto-role on join.
+ * Member Handler — welcome/goodbye + the Unverified role on join.
  *
  * Called by:
  *   - src/bot/events/guildMemberAdd.js
@@ -7,14 +7,15 @@
  *   - src/commands/config.js (/test-welcome preview, v3.9.48)
  *
  * Logic:
- *   - onMemberAdd: grant the join roles (the /set-autorole list) via the
- *     Role Engine + send a welcome embed to the welcome channel.
+ *   - onMemberAdd: grant the Unverified role (config.roles.unverified — the
+ *     classic CHRONOS marker, restored in v4.3.0 with the auto-role deletion)
+ *     via the Role Engine + send a welcome embed to the welcome channel.
  *   - onMemberRemove: check the audit log (kick/ban vs voluntary leave) + send a goodbye embed.
  *
- * v3.23.0: the join grant is now PURELY the /set-autorole list (the
- * Unverified marker concept was removed). If the autorole.removeOnNewRole
- * toggle is on, these join roles are stripped automatically by
- * guildMemberUpdate the moment the member receives any OTHER role.
+ * v4.3.0: the /set-autorole join list + the removeOnNewRole toggle were
+ * DELETED (owner's request — CHRONOS parity). The marker is again ONE role:
+ * set it with `/set-role tipe:unverified`, it disappears automatically when
+ * the member verifies (btn_verify / the verify panel's button).
  *
  * v3.9.0 FIX: skip bot accounts.
  * v3.9.8 FIX: AuditLogEvent enum (not magic number 20/22), 10s window (was 5s),
@@ -29,7 +30,7 @@
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getConfig, fillTemplate } = require('../data/configManager');
 // v3.22.0: the Role Engine — single gateway for every role grant/revoke.
-const { grantRoles, joinRoleIds } = require('../services/roleEngine');
+const { grantRoles } = require('../services/roleEngine');
 
 /**
  * Template variables for the welcome/goodbye embeds (v3.9.48 — shared by the
@@ -91,16 +92,16 @@ async function onMemberAdd(member) {
         recordJoin(guild.id, user.id);
     } catch (_) {}
 
-    // v3.23.0: auto-role on join — the admin's /set-autorole list, granted
-    // in ONE engine call. Hierarchy / managed / @everyone checks and
-    // actionable failure logs live in the engine, so this handler stays
-    // tiny. The "remove on another role" toggle (autorole.removeOnNewRole)
-    // is handled by guildMemberUpdate.
-    const joinIds = joinRoleIds(config);
-    if (joinIds.length > 0) {
-        const res = await grantRoles(member, joinIds, { reason: 'auto-role on join' });
+    // v4.3.0: the classic CHRONOS marker — the Unverified role
+    // (config.roles.unverified) is granted in ONE engine call. Hierarchy /
+    // managed / @everyone checks and actionable failure logs live in the
+    // engine, so this handler stays tiny. The role is removed automatically
+    // by the verify click (btn_verify handler / the verify panel's button).
+    const unverifiedId = config.roles?.unverified;
+    if (unverifiedId) {
+        const res = await grantRoles(member, [unverifiedId], { reason: 'unverified role on join (until verification)' });
         if (res.granted.length > 0) {
-            console.log(`✅ Join roles granted to ${user.tag}: ${res.granted.length} role(s).`);
+            console.log(`🎭 Unverified role granted to ${user.tag} (until they verify).`);
         }
     }
 

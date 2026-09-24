@@ -184,7 +184,7 @@ module.exports = async function (interaction) {
                 `🎟️ Mode: **One-way** — members can only GAIN the role; repeat clicks never remove it (safe for Discord newcomers).\n` +
                 `🎨 Look: **classic embed** — clean & green, like the old verification panel.\n\n` +
                 `💡 **Tips:**\n` +
-                `• Want a "new member" role that disappears once verified? \`/set-autorole action:add role:@Member\` then \`/set-autorole action:toggle\`.\n` +
+                `• Want a "new member" marker that disappears once verified? \`/set-role tipe:unverified role:@Unverified\` — granted automatically on join, removed the moment they click Verify.\n` +
                 `• Tickets & escrow are now limited to verified members while the Verified role is set.\n` +
                 `• Edit the panel anytime: \`/selfrole-update panel_id:${panel.id}\``
         });

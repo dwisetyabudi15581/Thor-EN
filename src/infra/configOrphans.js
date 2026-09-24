@@ -8,7 +8,7 @@
  * "orphaned references" are the #1 source of silent breakage:
  *   - config.channels.welcome → a deleted channel = welcome embeds silently stop
  *   - roles.admin / roles.booster / roles.verified → a deleted role = guards fail
- *   - automod allow-lists, autorole join roles, levelRoles, product auto-roles,
+ *   - automod allow-lists, levelRoles, product auto-roles,
  *     temp voice, ticket/self-role panels, scheduled announcements …
  *
  * This module SCANS every store and returns human-readable labels for each
@@ -158,17 +158,13 @@ function findRoleRefs(guildId, roleId) {
                     if (value === id) refs.push(`General → ${key} role`);
                 }
             }
-            // 2. Auto-role join list.
-            if (config.autorole && Array.isArray(config.autorole.roleIds) && config.autorole.roleIds.includes(id)) {
-                refs.push('Auto-Role → join role list');
-            }
-            // 3. Leveling reward roles.
+            // 2. Leveling reward roles.
             if (Array.isArray(config.levelRoles)) {
                 for (const lr of config.levelRoles) {
                     if (lr && lr.roleId === id) refs.push(`Leveling → level ${lr.level} reward role`);
                 }
             }
-            // 4. Product auto-roles (set via /set-product-role).
+            // 3. Product auto-roles (set via /set-product-role).
             if (Array.isArray(config.products)) {
                 for (const p of config.products) {
                     if (p && p.roleId === id) refs.push(`Product "${p.label || p.value}" auto-role`);
@@ -179,7 +175,7 @@ function findRoleRefs(guildId, roleId) {
         /* unreadable config — skip this source */
     }
 
-    // 5. AutoMod exempt role list.
+    // 4. AutoMod exempt role list.
     try {
         const automod = safeCall('../data/automodManager', 'getGuildConfig', guildId);
         if (automod && Array.isArray(automod.linkAllowedRoles) && automod.linkAllowedRoles.includes(id)) {
