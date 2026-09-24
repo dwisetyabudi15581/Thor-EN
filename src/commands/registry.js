@@ -131,7 +131,7 @@ function getCommands() {
         // === SET MESSAGE ===
         {
             name: 'set-message',
-            description: 'Edit the welcome / goodbye / ticket embed text',
+            description: 'Edit the welcome / goodbye / verify / ticket embed text',
             defaultMemberPermissions: PermissionFlagsBits.ManageGuild,
             options: [
                 {
@@ -144,6 +144,10 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
+                        // v4.4.0: the classic verify panel text is config-driven
+                        // again (CHRONOS parity — copied from CHRONOS v3.9.59).
+                        { name: 'Verify Title', value: 'verifyTitle' },
+                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         // v3.9.11 Phase 1: ticket price header configurable
@@ -419,6 +423,9 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
+                        // v4.4.0: the classic verify panel text (CHRONOS parity).
+                        { name: 'Verify Title', value: 'verifyTitle' },
+                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         { name: 'Ticket Price Header', value: 'ticketPriceHeader' }
@@ -658,6 +665,9 @@ function getCommands() {
                         { name: 'Welcome Body', value: 'welcomeBody' },
                         { name: 'Goodbye Title', value: 'goodbyeTitle' },
                         { name: 'Goodbye Body', value: 'goodbyeBody' },
+                        // v4.4.0: the classic verify panel text (CHRONOS parity).
+                        { name: 'Verify Title', value: 'verifyTitle' },
+                        { name: 'Verify Body', value: 'verifyBody' },
                         { name: 'Ticket Title', value: 'ticketTitle' },
                         { name: 'Ticket Body', value: 'ticketBody' },
                         { name: '⚡ Reset ALL', value: 'ALL' }

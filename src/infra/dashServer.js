@@ -77,6 +77,9 @@ const announcements = require('../data/scheduledAnnouncements');
 const serverstatsManager = require('../data/serverstatsManager');
 const { buildPanelEmbed, buildPanelComponents } = require('../ui/selfRolePanelBuilder');
 const { normalizeNewlines, isValidEmoji } = require('./text');
+// v4.4.0 (CHRONOS parity): the classic verify panel text — config is the
+// source of truth, the live panel re-renders from it (and writes back).
+const { resolveServer, syncVerifyPanelFromConfig, writeVerifyTextToConfig } = require('../services/verifyPanelText');
 // v3.19.0: new modules for the Command Manager + web Giveaway / Poll /
 // Embed / Backup / Moderation / Keys modules.
 const giveawayManager = require('../data/giveawayManager');
@@ -1039,6 +1042,12 @@ function createDashHandler({ client, token, log = () => {} }) {
                             invalidateAdminRoleCache();
                         } catch (_) { /* not loaded yet — ignore */ }
                     }
+                    // v4.4.0 (CHRONOS parity): a verify panel TEXT change from the
+                    // web re-renders the LIVE panel immediately (better than
+                    // CHRONOS — there the config only affected the next install).
+                    if (applied.some((p) => p === 'messages.verifyTitle' || p === 'messages.verifyBody')) {
+                        await syncVerifyPanelFromConfig(guildId, client);
+                    }
                     log(`[dash] config ${guildId} updated (${applied.length} fields) by ${body?.actor?.tag || body?.actor?.id || 'unknown'}`);
                     return sendJson(res, 200, { ok: true, applied, config: getConfig(guildId) });
                 }
@@ -1231,6 +1240,12 @@ function createDashHandler({ client, token, log = () => {} }) {
                         if (!updated) {
                             return sendJson(res, 422, { error: 'Failed to update the panel (empty title?) — nothing was changed' });
                         }
+                        // v4.4.0 (CHRONOS parity): a verify panel TEXT edit writes back
+                        // to config.messages.verifyTitle/verifyBody — /list-messages
+                        // and the next /setup-verify stay in sync with the live panel.
+                        if (hasTitle || hasDescription) {
+                            writeVerifyTextToConfig(guildId, updated);
+                        }
                         await reRenderPanel(rest[1]);
                         await logAudit(client, {
                             action: 'SELFROLE_UPDATE',
@@ -1419,11 +1434,21 @@ function createDashHandler({ client, token, log = () => {} }) {
                         setField(guildId, 'roles.verified', null);
                     }
 
-                    // v3.28.2: defaults = the OLD dedicated verification text
-                    // (parity with /setup-verify — classic green embed look).
-                    const title = String(body?.title || '✅ SERVER VERIFICATION').slice(0, 256);
+                    // v4.4.0 (CHRONOS parity — the classic behavior): the default
+                    // text comes from CONFIG — messages.verifyTitle / verifyBody
+                    // (template with {server}) — exactly like CHRONOS's /setup-verify
+                    // reads its config. Explicit body fields still override.
+                    const cfgDefaults = cfg?.messages || {};
+                    const title = String(body?.title || resolveServer(cfgDefaults.verifyTitle || '✅ SERVER VERIFICATION', g.name)).slice(0, 256);
                     const description = normalizeNewlines(
-                        String(body?.description || `Welcome to **${g.name}**!\n\nClick the button below to get verified and gain full access to all channels.`)
+                        String(
+                            body?.description ||
+                                resolveServer(
+                                    cfgDefaults.verifyBody ||
+                                        'Welcome to **{server}**!\n\nClick the button below to get verified and gain full access to all channels.',
+                                    g.name
+                                )
+                        )
                     ).slice(0, 4000);
                     const label = String(body?.label || 'Verify Me').slice(0, 80);
                     const emoji = body?.emoji ? String(body.emoji).slice(0, 64) : '✅';

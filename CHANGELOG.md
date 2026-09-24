@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.4.0] — 2026-09-24
+
+### Changed — ✅ CHRONOS PARITY (TAHAP 4): TEKS PANEL VERIFIKASI KLASIK DIPULIHKAN — `messages.verifyTitle` / `verifyBody` (COPY PERSIS DARI CHRONOS)
+
+Owner's request: *"Biar lebih simple ga belibet kamu tinggal copy code dari repo CHRONOS terus di paste ke Thor-EN dan nanti tinggal sesuaikan lagi dashboard nya"* — potongan CHRONOS terakhir yang belum dipulihkan: di CHRONOS v3.9.59 teks panel verifikasi (judul + isi + placeholder `{server}`) adalah **config** yang bisa diubah (`/set-message`, `/edit-message`, `/list-messages`, `/reset-message`), sedangkan Thor-EN justru menghapus key-nya (cleanup v4.3.0). Sekarang key itu dipulihkan persis seperti CHRONOS, plus satu penyesuaian: panel yang sudah terpasang **langsung ter-render ulang** saat teksnya diubah (di CHRONOS perubahan hanya berlaku untuk install berikutnya).
+
+**Rantai klasiknya sekarang lengkap 100%:** `/setup-verify` membaca teks dari config (persis perilaku CHRONOS — opsi command tetap jadi override opsional) → panel hijau klasik ter-render → klik tombol = Verified masuk + Unverified hilang. Teks, tombol, dan role semuanya bisa diubah kapan saja tanpa hapus-pasang ulang.
+
+- 🟠 **`messages.verifyTitle` / `messages.verifyBody` DIPULIHKAN di DEFAULTS** (`configManager`): teks default-nya disalin verbatim dari CHRONOS v3.9.59 (`✅ SERVER VERIFICATION` + `Welcome to **{server}**!...`). Cleanup load-time v4.3.0 untuk kedua key ini DIHAPUS — config lama yang masih menyimpan teks kustom dari era CHRONOS dipertahankan kembali (cleanup `verifyButton` top-level + `autorole` tetap jalan).
+- 🟠 **`/set-message`, `/edit-message` (modal), `/reset-message` mendapat pilihan `Verify Title` / `Verify Body`** + label `✅ Verify Title` / `✅ Verify Body` di `/list-messages` — semua disalin dari CHRONOS. Handler-nya sudah generik (`messages.<tipe>`), jadi tinggal dibuka pilihannya.
+- 🟠 **Panel live ter-render ulang saat teks verify berubah** (`src/services/verifyPanelText.js` — helper baru): `/set-message`, modal `/edit-message`, `/reset-message` (termasuk `ALL`), dan `PUT /guilds/:id/config` dari web → `syncVerifyPanelFromConfig()` memperbarui panel + me-render ulang pesannya (best-effort, pola `/set-verify-button`). Balasan admin diberi catatan jujur: ter-render ulang / gagal render / tidak ada panel terpasang.
+- 🟠 **Writeback dua arah**: edit teks panel dari `/selfrole-update` atau `PUT selfroles/:panelId` (title/description) menulis balik ke `config.messages` — `/list-messages` dan `/setup-verify` berikutnya selalu sinkron dengan yang tampil live (tidak pernah drift).
+- 🟡 **`POST /guilds/:id/verify-panel` (DASH API) membaca default dari config** — persis `/setup-verify` baru: tanpa `title`/`description` di body, teksnya diambil dari `messages.verifyTitle`/`verifyBody` dengan `{server}` di-resolve ke nama server (sebelumnya hardcode teks yang sama).
+- 🟡 **`PUT /guilds/:id/config` menerima `messages.verifyTitle`/`verifyBody`** — validator `messages.*` memang sudah generik (1–4000 char); kini perubahan verify text otomatis memicu re-render panel live. Jalur ini yang dipakai dashboard v4.6.0.
+- 🟢 **Placeholder `{server}`** di-resolve di titik install/sync (pola CHRONOS — `setup-verify`-nya CHRONOS me-resolve saat membangun embed; config menyimpan template). `resolveServer()` = replace global, jadi semua kemunculan tergantikan.
+- 🟢 **Tests**: 895 → **903** — 2 pin lama di `phaseFeatures` dibalik (key verify text kini ADA dan DIPERTAHANKAN saat load), plus 8 test baru (`verifyText.test.js`): resolveServer, isVerifyTextKey, sync tanpa panel, sync dengan panel (+`{server}` ter-resolve), writeback hanya untuk panel `kind:'verify'` (+guard lintas guild), pilihan registry keempat command, VALID_TYPES modal, dan end-to-end HTTP penuh (PUT config → panel tersinkron; PUT selfroles → config ter-update). 903/903 hijau, eslint bersih (1 warning lama).
+
+**Compatibility:** format config tidak berubah (hanya key yang hidup kembali + merge dari DEFAULTS); panel yang sudah terpasang tetap valid; DASH API tidak ada endpoint yang berubah bentuk. Dashboard butuh bot **v4.4.0+** agar editor teksnya berfungsi penuh (re-render live). Version: 4.3.0 → **4.4.0**.
+
 ## [4.3.0] — 2026-09-24
 
 ### Changed — 🗑️ AUTO-ROLE DELETED · CLASSIC UNVERIFIED RESTORED (CHRONOS PARITY, TAHAP 3)

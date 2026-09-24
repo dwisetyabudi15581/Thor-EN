@@ -33,6 +33,10 @@ const {
     EMBED_LIMITS
 } = require('./_shared');
 
+// v4.4.0 (CHRONOS parity): the classic verify panel text sync — config
+// change → live panel re-render, panel change → config writeback.
+const { isVerifyTextKey, syncVerifyPanelFromConfig } = require('../services/verifyPanelText');
+
 // v3.9.48: /test-welcome previews the embed via the SAME builders the live
 // event uses (memberHandler) — the preview can never drift from the real thing.
 const { buildWelcomeEmbed, buildGoodbyeEmbed } = require('../bot/memberHandler');
@@ -461,8 +465,15 @@ module.exports = async function (interaction) {
             details: `Set message **${tipe}** (${teks.length} char)`,
             guildId: interaction.guild.id
         });
+        // v4.4.0 (CHRONOS parity): a verify panel text change re-renders the
+        // LIVE panel — better than CHRONOS (which only affected the next
+        // install), same source of truth (config.messages).
+        const verifySync = isVerifyTextKey(tipe)
+            ? await syncVerifyPanelFromConfig(guildId, interaction.client)
+            : { note: '' };
         return safeEditReply(interaction, {
-            content: `✅ Message **${tipe}** updated.\n\nPreview:\n\`\`\`\n${teks}\n\`\`\`\nAvailable variables: \`{user}\` \`{username}\` \`{server}\` \`{count}\` \`{action}\``
+            content:
+                `✅ Message **${tipe}** updated.\n\nPreview:\n\`\`\`\n${teks}\n\`\`\`\nAvailable variables: \`{user}\` \`{username}\` \`{server}\` \`{count}\` \`{action}\`${verifySync.note}`
         });
     }
 
@@ -728,6 +739,10 @@ module.exports = async function (interaction) {
             welcomeBody: '👋 Welcome Body',
             goodbyeTitle: '👋 Goodbye Title',
             goodbyeBody: '👋 Goodbye Body',
+            // v4.4.0 (CHRONOS parity — copied from CHRONOS v3.9.59):
+            // the verification panel text is config-driven again.
+            verifyTitle: '✅ Verify Title',
+            verifyBody: '✅ Verify Body',
             ticketTitle: '🎫 Ticket Title',
             ticketBody: '🎫 Ticket Body',
             // v3.9.11 Phase 1: ticket price header configurable
@@ -765,7 +780,9 @@ module.exports = async function (interaction) {
                 details: `Reset ALL messages to default`,
                 guildId: interaction.guild.id
             });
-            return safeEditReply(interaction, { content: '✅ **ALL messages** reset to default.' });
+            // v4.4.0: ALL now includes the verify panel text → live re-render.
+            const verifySyncAll = await syncVerifyPanelFromConfig(guildId, interaction.client);
+            return safeEditReply(interaction, { content: `✅ **ALL messages** reset to default.${verifySyncAll.note}` });
         }
 
         const before = config.messages[tipe];
@@ -778,8 +795,11 @@ module.exports = async function (interaction) {
             details: `Reset message **${tipe}** to default`,
             guildId: interaction.guild.id
         });
+        const verifySync = isVerifyTextKey(tipe)
+            ? await syncVerifyPanelFromConfig(guildId, interaction.client)
+            : { note: '' };
         return safeEditReply(interaction, {
-            content: `✅ Message **${tipe}** reset to default.\n\n**Before:**\n\`\`\`\n${before}\n\`\`\`\n**Now:**\n\`\`\`\n${config.messages[tipe]}\n\`\`\``
+            content: `✅ Message **${tipe}** reset to default.\n\n**Before:**\n\`\`\`\n${before}\n\`\`\`\n**Now:**\n\`\`\`\n${config.messages[tipe]}\n\`\`\`${verifySync.note}`
         });
     }
 

@@ -3,6 +3,9 @@
  * - v4.3.0: auto-role DELETED (CHRONOS parity) — no autorole defaults, the
  *   classic roles.unverified marker restored (granted on join, removed on
  *   the verify click), stale autorole keys cleaned on load
+ * - v4.4.0: the classic verify panel TEXT restored (CHRONOS parity) —
+ *   messages.verifyTitle/verifyBody exist again, survive the load, and the
+ *   live panel re-renders from them (verifyPanelText sync)
  * - config.ticketCategories (default + custom)
  * - config.messages.ticketPriceHeader
  * - ticketManager.createTicket with category & isHelp flag
@@ -17,27 +20,33 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-test('configManager: v4.3.0 — verifyButton gone + NO autorole defaults + unverified unset by default', () => {
+test('configManager: v4.3.0 + v4.4.0 — verifyButton gone + NO autorole defaults + unverified unset + classic verify text defaults', () => {
     const { getConfig } = require('../../src/data/configManager');
     const config = getConfig('g_phase_features');
     // v3.22.0 removed the dedicated verification feature's message keys;
-    // v4.3.0 removed the autorole replacement (CHRONOS parity).
-    assert.strictEqual(config.verifyButton, undefined, 'verifyButton must NOT exist anymore');
-    assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle must NOT exist anymore');
-    assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody must NOT exist anymore');
+    // v4.3.0 removed the autorole replacement (CHRONOS parity);
+    // v4.4.0 RESTORED the classic verify panel text (CHRONOS parity — copied
+    // verbatim from CHRONOS v3.9.59, template with {server}).
+    assert.strictEqual(config.verifyButton, undefined, 'verifyButton must NOT exist anymore (the button look lives in the panel entry)');
+    assert.strictEqual(config.messages.verifyTitle, '✅ SERVER VERIFICATION', 'messages.verifyTitle is BACK (v4.4.0 — CHRONOS default)');
+    assert.strictEqual(
+        config.messages.verifyBody,
+        'Welcome to **{server}**!\n\nClick the button below to get verified and gain full access to all channels.',
+        'messages.verifyBody is BACK (v4.4.0 — CHRONOS default, {server} template)'
+    );
     assert.strictEqual(config.roles.verified, undefined, 'roles.verified unset by default (no /setup-verify yet)');
     assert.strictEqual(config.roles.unverified, undefined, 'roles.unverified unset by default (no /set-role unverified yet)');
     assert.ok(!config.autorole, 'autorole must NOT exist anymore (feature deleted in v4.3.0)');
 });
 
-test('configManager: v4.3.0 — legacy verify keys cleaned on load, roles.verified AND roles.unverified PRESERVED', () => {
+test('configManager: v4.4.0 — legacy verify text keys PRESERVED on load, verifyButton + autorole cleaned', () => {
     const { configPathFor } = require('../../src/data/configManager');
     const fs = require('fs');
     const guildId = 'g_legacy_verify';
     const file = configPathFor(guildId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    // An old config with the removed panel keys + both restored role keys +
-    // a stale autorole section (v3.23.0–v4.2.x era).
+    // An old config with custom verify text + both restored role keys + the
+    // obsolete verifyButton key + a stale autorole section (v3.23.0–v4.2.x era).
     fs.writeFileSync(
         file,
         JSON.stringify({
@@ -54,9 +63,11 @@ test('configManager: v4.3.0 — legacy verify keys cleaned on load, roles.verifi
     // v4.3.0: roles.unverified survives too (the classic CHRONOS marker is back).
     assert.strictEqual(config.roles.unverified, '222', 'roles.unverified PRESERVED (v4.3.0 — classic marker restored)');
     assert.strictEqual(config.roles.admin, '333', 'roles.admin untouched');
-    assert.strictEqual(config.messages.verifyTitle, undefined, 'messages.verifyTitle cleaned');
-    assert.strictEqual(config.messages.verifyBody, undefined, 'messages.verifyBody cleaned');
-    assert.strictEqual(config.verifyButton, undefined, 'verifyButton cleaned');
+    // v4.4.0: the classic verify panel text is config again — PRESERVED (the
+    // v4.3.0 cleanup no longer deletes it; CHRONOS parity).
+    assert.strictEqual(config.messages.verifyTitle, 'OLD', 'messages.verifyTitle PRESERVED (v4.4.0 — config is the source of truth)');
+    assert.strictEqual(config.messages.verifyBody, 'OLD BODY', 'messages.verifyBody PRESERVED (v4.4.0 — config is the source of truth)');
+    assert.strictEqual(config.verifyButton, undefined, 'verifyButton still cleaned (the button look lives in the panel entry)');
     assert.ok(!config.autorole, 'the stale autorole section cleaned (v4.3.0 migration)');
     // Cleanup the test file.
     try {

@@ -40,6 +40,8 @@ const {
 // v4.2.0: isValidEmoji — /set-verify-button (restored) validates emoji input
 // BEFORE saving (anti poison-config, v3.9.26 pattern).
 const { normalizeNewlines, joinCappedLines, isValidEmoji } = require('../infra/text');
+// v4.4.0 (CHRONOS parity): {server} resolution for the config-driven verify text.
+const { resolveServer, writeVerifyTextToConfig } = require('../services/verifyPanelText');
 
 module.exports = async function (interaction) {
     // ====================================================
@@ -51,13 +53,21 @@ module.exports = async function (interaction) {
         const guildId = interaction.guild.id;
         const role = interaction.options.getRole('role');
         const channel = interaction.options.getChannel('channel') || interaction.channel;
-        // v3.28.2: defaults = the OLD dedicated verification feature's exact
-        // text (verifyTitle / verifyBody from before the v3.22.0 removal), so a
-        // plain `/setup-verify role:@Verified` looks identical to the old days.
-        const title = interaction.options.getString('title') || '✅ SERVER VERIFICATION';
+        // v4.4.0 (CHRONOS parity — the classic behavior): the default text now
+        // comes from CONFIG — messages.verifyTitle / verifyBody (template with
+        // {server}), exactly like CHRONOS's /setup-verify reads its config.
+        // The command options stay as optional overrides (superset of CHRONOS).
+        const config = getConfig(guildId);
+        const title =
+            interaction.options.getString('title') ||
+            resolveServer(config?.messages?.verifyTitle || '✅ SERVER VERIFICATION', interaction.guild.name);
         const description =
             normalizeNewlines(interaction.options.getString('description')) ||
-            `Welcome to **${interaction.guild.name}**!\n\nClick the button below to get verified and gain full access to all channels.`;
+            resolveServer(
+                config?.messages?.verifyBody ||
+                    'Welcome to **{server}**!\n\nClick the button below to get verified and gain full access to all channels.',
+                interaction.guild.name
+            );
         const label = interaction.options.getString('button_label') || 'Verify Me';
         const emoji = interaction.options.getString('button_emoji') || '✅';
         const style = interaction.options.getString('button_style') || 'Success';
@@ -87,7 +97,6 @@ module.exports = async function (interaction) {
         // One verification panel per guild — tracked via config.roles.verifyPanelId.
         // (If the tracked panel was already deleted manually on Discord, the
         // entry is stale → the guard self-clears and a new install is allowed.)
-        const config = getConfig(guildId);
         const existingId = config?.roles?.verifyPanelId;
         if (existingId) {
             const existingPanel = getPanel(existingId);
@@ -606,6 +615,13 @@ module.exports = async function (interaction) {
             return safeEditReply(interaction, {
                 content: '❌ Failed to update the panel (empty title?). The panel is unchanged.'
             });
+        }
+
+        // v4.4.0 (CHRONOS parity): editing the VERIFICATION panel's text writes
+        // back to config.messages.verifyTitle/verifyBody — /list-messages and
+        // the next /setup-verify stay in sync with what's actually live.
+        if (title !== null || description !== null) {
+            writeVerifyTextToConfig(interaction.guild.id, updated);
         }
 
         // Re-render the panel message so the change is visible immediately

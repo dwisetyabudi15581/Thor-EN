@@ -7,6 +7,7 @@
  *
  * CustomId: modal_edit_message:<type>
  * type: welcomeTitle, welcomeBody, goodbyeTitle, goodbyeBody,
+ *       verifyTitle, verifyBody (v4.4.0 — CHRONOS parity),
  *       ticketTitle, ticketBody, ticketPriceHeader
  */
 
@@ -19,11 +20,18 @@ const {
     EMBED_LIMITS
 } = require('../commands/_shared');
 
+// v4.4.0 (CHRONOS parity): the verify panel text sync — config change →
+// live panel re-render.
+const { isVerifyTextKey, syncVerifyPanelFromConfig } = require('../services/verifyPanelText');
+
 const VALID_TYPES = new Set([
     'welcomeTitle',
     'welcomeBody',
     'goodbyeTitle',
     'goodbyeBody',
+    // v4.4.0: the classic verify panel text (CHRONOS parity).
+    'verifyTitle',
+    'verifyBody',
     'ticketTitle',
     'ticketBody',
     'ticketPriceHeader'
@@ -84,8 +92,13 @@ module.exports = async function (interaction) {
             }
 
             // Reply with a preview
+            // v4.4.0 (CHRONOS parity): a verify panel text change re-renders
+            // the LIVE panel (same as /set-message).
+            const verifySync = isVerifyTextKey(tipe)
+                ? await syncVerifyPanelFromConfig(guildId, interaction.client)
+                : { note: '' };
             return interaction.reply({
-                content: `✅ Message **${tipe}** updated via the modal editor.\n\n**Preview:**\n\`\`\`\n${newText.slice(0, 1500)}${newText.length > 1500 ? '\n...(truncated for preview)' : ''}\n\`\`\``,
+                content: `✅ Message **${tipe}** updated via the modal editor.\n\n**Preview:**\n\`\`\`\n${newText.slice(0, 1500)}${newText.length > 1500 ? '\n...(truncated for preview)' : ''}\n\`\`\`${verifySync.note}`,
                 flags: MessageFlags.Ephemeral
             });
         } catch (err) {

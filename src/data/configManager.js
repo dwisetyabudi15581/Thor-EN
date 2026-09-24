@@ -35,6 +35,13 @@ const DEFAULTS = {
         goodbyeTitle: '👋 FAREWELL',
         goodbyeBody:
             '**{username}** has {action} the server.\n\nSee you again! 👋\n\n📊 Remaining members: **{count}**',
+        // v4.4.0 RESTORED (copied verbatim from CHRONOS v3.9.59): the classic
+        // verification panel text — configurable via /set-message, editable
+        // from the web dashboard, and the source of truth the live verify
+        // panel re-renders from. {server} is resolved at render time.
+        verifyTitle: '✅ SERVER VERIFICATION',
+        verifyBody:
+            'Welcome to **{server}**!\n\nClick the button below to get verified and gain full access to all channels.',
         ticketTitle: '🎫 TICKET SYSTEM & PRICE LIST',
         // v3.9.12: the ticket body now supports template variables.
         // Available variables: {server}, {price_list}, {price_list:<category>}, {price_header}, {categories_list}
@@ -260,22 +267,16 @@ function getConfig(guildId) {
     // v3.23.0 removed the dedicated verification feature and cleaned its keys.
     // v4.2.0 restored roles.verified; v4.3.0 restored roles.unverified (the
     // classic CHRONOS marker — granted on join, removed on verify) and DELETED
-    // the autorole replacement (join list + removeOnNewRole toggle). This
-    // block therefore now ONLY cleans the obsolete verify-panel message keys
-    // (the panel look lives in the self-role panel entry since v3.28.0) and
-    // the stale `autorole` section from configs saved by v3.23.0–v4.2.x.
-    let didPanelKeyCleanup = false;
-    if (raw.messages && ('verifyTitle' in raw.messages || 'verifyBody' in raw.messages)) {
-        delete raw.messages.verifyTitle;
-        delete raw.messages.verifyBody;
-        didPanelKeyCleanup = true;
-    }
+    // the autorole replacement (join list + removeOnNewRole toggle).
+    // v4.4.0: messages.verifyTitle / verifyBody are BACK (classic CHRONOS panel
+    // text, copied verbatim — the live verify panel re-renders from them), so
+    // this block no longer touches the messages keys. It ONLY cleans the stale
+    // top-level `verifyButton` key (the button look lives in the panel's role
+    // entry since v3.28.0 — /set-verify-button restyles it live) and the
+    // `autorole` section from configs saved by v3.23.0–v4.2.x.
     if ('verifyButton' in raw) {
         delete raw.verifyButton;
-        didPanelKeyCleanup = true;
-    }
-    if (didPanelKeyCleanup) {
-        console.log('🧹 [v4.3.0] Cleaned obsolete verification-panel keys for this guild (verifyTitle/verifyBody/verifyButton).');
+        console.log('🧹 [v4.3.0] Cleaned the obsolete top-level verifyButton key for this guild (the button look lives in the panel entry).');
     }
     if (raw.autorole) {
         delete raw.autorole;
