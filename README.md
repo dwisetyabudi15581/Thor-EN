@@ -1,10 +1,10 @@
 # ⚡ Thor-EN — Discord Bot (bot-only repository)
 
-An All-in-One Discord **community bot** — 93 slash commands covering tickets, shop transactions, moderation, anti-spam, leveling, giveaways, and much more — for shop servers, gaming, content creators, and general communities. Everything is configured directly from Discord via slash commands, **or** from the web dashboard (the separate [Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard) repository) — both write to **one shared data source**, so they can never conflict.
+An All-in-One Discord **community bot** — 95 slash commands covering tickets, shop transactions, moderation, anti-spam, leveling, giveaways, and much more — for shop servers, gaming, content creators, and general communities. Everything is configured directly from Discord via slash commands, **or** from the web dashboard (the separate [Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard) repository) — both write to **one shared data source**, so they can never conflict.
 
 > **v4.1.0 — REPOSITORY SPLIT.** This repository contains the **Discord bot ONLY**: the entry point, command handlers, event listeners, the JSON persistence layer (`data/`), and the built-in DASH API server. The web dashboard was **cut & moved** into its own repository: **[Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** (Next.js + OAuth2 + `DATABASE_URL`). The two connect **only** through the DASH API (HTTP + shared token) — a UI change can never break the bot's process, and vice versa. Full history of both halves (v3.x – v4.1.0) stays in this repo's [CHANGELOG](./CHANGELOG.md).
 >
-> 93 slash commands (+ unlimited custom commands made on the web) · 897 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode · **100% FREE — every feature unlocked**
+> 95 slash commands (+ unlimited custom commands made on the web) · 903 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode · **100% FREE — every feature unlocked**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** · 🌐 **[Web dashboard repository](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** · 🚀 **[Deployment guide (production)](./DEPLOY.md)** · 📜 **[Changelog](./CHANGELOG.md)**
 
@@ -17,7 +17,7 @@ An All-in-One Discord **community bot** — 93 slash commands covering tickets, 
  ──────────────────────────────          ─────────────────────────────────────────────
  node index.js                           Next.js :3000 (Discord OAuth2 login)
  ├─ discord.js client                    ├─ 3-tier RBAC: Admin/Staff/Member
- ├─ 93 slash commands, 20 events         ├─ Prisma SQLite (dashboard users — DATABASE_URL)
+ ├─ 95 slash commands, 20 events         ├─ Prisma SQLite (dashboard users — DATABASE_URL)
  ├─ data/  ← ONE data source             │
  │  (config/<guildId>.json,              │
  │   tickets, warns, levels, …)          │
@@ -126,7 +126,7 @@ Thor-EN/                      # 🤖 THE BOT REPOSITORY (v4.1.0 — flat, bot-on
 │   └── infra/                #   dashServer (DASH API), safeWrite, permissions
 │                             #    (3-tier RBAC resolver), auditLog, configOrphans
 ├── data/                     #   runtime JSON files (gitignored — server data)
-├── tests/unit/               #   897 unit tests (node:test, sandboxed)
+├── tests/unit/               #   903 unit tests (node:test, sandboxed)
 ├── scripts/                  #   dev tools (registry validation, embed measures)
 ├── docs/                     #   ADMIN_GUIDE.md + docs index
 ├── setup.sh · start.sh · dev.sh · ecosystem.config.cjs (pm2)

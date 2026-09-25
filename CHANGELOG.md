@@ -11,6 +11,7 @@ Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 Full parity audit against CHRONOS v3.9.59 (fresh clone, file-by-file diff of all 108 vs 95 `src/` files, command-route map, dependency manifest, feature checklist, 903/903 tests, dashboard v4.6.0 build) re-verified that **Thor-EN is a complete functional superset of CHRONOS v3.9.59** — verification chain, booster auto-role, `/test-booster`, self-role toggle semantics, decimal prices: all present; the only leftovers were Thor-EN's own improvements (multi-guild, RBAC, Role Engine, DASH API, custom commands). The single fix shipped here is the cosmetic one the v4.4.0 changelog still carried ("1 old warning"):
 
 - 🟢 `dashServer.js` — `reRenderTicketPanel(panel, actorLabel)`: the second argument was received-but-never-read (both call sites pass an actor tag purely to document who triggered the re-render). Renamed to `_actorLabel` per the ESLint `no-unused-vars` `^_` convention — zero behavior change, the call sites are untouched. `npm run lint` is now **0 errors / 0 warnings**.
+- 🟢 `README.md` — stale badge refreshed: **95** slash commands (test-pinned: `commandManager`/`dashParityV326`/`dashServer` all assert 95) & **903** unit tests (was 93/897 — numbers from the v4.1.0 split era).
 
 **Compatibility:** no API, config, or behavior changes — safe to skip if you don't care about a lint-clean tree. Version: 4.4.0 → **4.4.1**.
 
