@@ -2247,8 +2247,14 @@ function createDashHandler({ client, token, log = () => {} }) {
                     return p && p.guildId === guildId ? p : null;
                 }
 
-                /** Re-render a ticket panel message with the latest config (best-effort). */
-                async function reRenderTicketPanel(panel, actorLabel) {
+                /**
+                 * Re-render a ticket panel message with the latest config (best-effort).
+                 * v4.4.1: the `actorLabel` argument is intentionally received-but-unused
+                 * (the two call sites pass `body?.actor?.tag` / 'web' to document WHO
+                 * triggered the re-render); it is prefixed `_` so ESLint's
+                 * no-unused-vars accepts it as a deliberate API-shape placeholder.
+                 */
+                async function reRenderTicketPanel(panel, _actorLabel) {
                     const config = getConfig(guildId);
                     const build = buildTicketPanel(panel, { guild: g, client, config });
                     const channel = await client.channels.fetch(panel.channelId).catch(() => null);
