@@ -4,7 +4,7 @@ An All-in-One Discord **community bot** — 95 slash commands covering tickets, 
 
 > **v4.1.0 — REPOSITORY SPLIT.** This repository contains the **Discord bot ONLY**: the entry point, command handlers, event listeners, the JSON persistence layer (`data/`), and the built-in DASH API server. The web dashboard was **cut & moved** into its own repository: **[Thor-EN-Dashboard](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** (Next.js + OAuth2 + `DATABASE_URL`). The two connect **only** through the DASH API (HTTP + shared token) — a UI change can never break the bot's process, and vice versa. Full history of both halves (v3.x – v4.1.0) stays in this repo's [CHANGELOG](./CHANGELOG.md).
 >
-> 95 slash commands (+ unlimited custom commands made on the web) · 903 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode · **100% FREE — every feature unlocked**
+> 95 slash commands (+ unlimited custom commands made on the web) · 906 unit tests · discord.js v14 · Node.js 18+ · single-server / public mode · **100% FREE — every feature unlocked**
 >
 > 📖 **[Complete Admin Guide](./docs/ADMIN_GUIDE.md)** · 🌐 **[Web dashboard repository](https://github.com/dwisetyabudi15581/Thor-EN-Dashboard)** · 🚀 **[Deployment guide (production)](./DEPLOY.md)** · 📜 **[Changelog](./CHANGELOG.md)**
 
@@ -126,7 +126,7 @@ Thor-EN/                      # 🤖 THE BOT REPOSITORY (v4.1.0 — flat, bot-on
 │   └── infra/                #   dashServer (DASH API), safeWrite, permissions
 │                             #    (3-tier RBAC resolver), auditLog, configOrphans
 ├── data/                     #   runtime JSON files (gitignored — server data)
-├── tests/unit/               #   903 unit tests (node:test, sandboxed)
+├── tests/unit/               #   906 unit tests (node:test, sandboxed)
 ├── scripts/                  #   dev tools (registry validation, embed measures)
 ├── docs/                     #   ADMIN_GUIDE.md + docs index
 ├── setup.sh · start.sh · dev.sh · ecosystem.config.cjs (pm2)

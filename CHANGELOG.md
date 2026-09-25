@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file. Format based on
 
 Legend: 🔴 critical · 🟠 high · 🟡 medium · 🟢 improvement
 
+## [4.4.2] — 2026-09-25
+
+### 🌐 DASHBOARD SYNC PARITY: BOOSTER ROLE DARI WEB → RETROACTIVE (kembaran penuh `/set-role booster`)
+
+Mengikuti dashboard v4.7.0 (kolom **Booster Role** baru di modul General — sebelumnya hanya `server-booster` channel-nya yang bisa diatur dari web, role auto-booster-nya hanya via Discord): kini menyetel `roles.booster` dari dashboard **sama persis** perilaku `/set-role booster` di config.js — role langsung diterapkan retroaktif ke semua member yang sedang boosting saat itu juga, tidak menunggu boost berikutnya atau restart.
+
+- 🟠 **`PUT /guilds/:id/config` dengan `updates["roles.booster"]`** kini memicu `syncBoostRoles(guild, [])` setelah config tersimpan — roster di-fetch dulu (gateway cache bisa parsial, pola config.js), lalu setiap booster hidup yang belum punya role langsung digranti. Boost yang sudah berakhir TIDAK disentuh (`removedUserIds` kosong — semantik `/set-role booster`: set = aktifkan + retroaktif grant, bukan sweep). Grant manual admin ke member biasa juga tidak pernah dicabut (kontrak syncBoostRoles).
+- 🟡 **Best-effort, tidak pernah gagalkan PUT**: kalau roster fetch / sync melempar error, perubahan config TETAP tersimpan dan dijawab 200 — kegagalan hanya di-log (`[dash] booster role retroactive sync FAILED …`); startup sync di ready.js akan mengejar saat restart berikutnya.
+- 🟢 **PUT yang tidak menyentuh `roles.booster` tidak pernah masuk jalur sync** — tidak ada roster fetch tambahan, nol overhead untuk save biasa.
+- 🟢 **Tests**: 903 → **906** (`boosterDashSync.test.js`, HTTP end-to-end penuh lewat `createDashHandler`): (1) PUT `roles.booster` → config tersimpan + tepat SATU grant ke booster hidup (member biasa & boost-berakhir tidak tersentuh); (2) PUT tanpa `roles.booster` → fetch roster tidak pernah dipanggil; (3) sync meledak → PUT tetap 200 + role tetap tersimpan. 906/906 hijau, eslint 0/0.
+
+**Compatibility:** tidak ada endpoint/route baru, tidak ada perubahan bentuk kontrak — hanya efek samping aman pada satu dotPath yang sudah ada. Bot lama + dashboard v4.7.0 tetap jalan (role tersimpan, retroaktif menunggu restart). Dashboard memakai fitur penuhnya dengan bot **v4.4.2+**. Version: 4.4.1 → **4.4.2**.
+
 ## [4.4.1] — 2026-09-25
 
 ### 🟢 Hygiene — the last ESLint warning is gone (0 errors · 0 warnings)

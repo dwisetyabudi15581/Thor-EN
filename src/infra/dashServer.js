@@ -1048,6 +1048,24 @@ function createDashHandler({ client, token, log = () => {} }) {
                     if (applied.some((p) => p === 'messages.verifyTitle' || p === 'messages.verifyBody')) {
                         await syncVerifyPanelFromConfig(guildId, client);
                     }
+                    // v4.4.2 (dashboard sync parity): setting the BOOSTER role from
+                    // the web applies it RETROACTIVELY to everyone currently
+                    // boosting — the exact /set-role booster behavior (config.js).
+                    // Best-effort: a sync failure is logged, never fails the PUT
+                    // (the role itself is already saved; the startup sync in
+                    // ready.js catches up on the next restart).
+                    if (applied.includes('roles.booster') && g) {
+                        try {
+                            if (typeof g.members?.fetch === 'function') {
+                                await g.members.fetch(); // gateway cache may be partial
+                            }
+                            const { syncBoostRoles } = require('../bot/boostHandler');
+                            const boostRes = await syncBoostRoles(g, []);
+                            log(`[dash] booster role retroactive sync in ${guildId}: ${boostRes.applied} granted, ${boostRes.removed} stripped`);
+                        } catch (syncErr) {
+                            log(`[dash] booster role retroactive sync FAILED in ${guildId}: ${syncErr.message}`);
+                        }
+                    }
                     log(`[dash] config ${guildId} updated (${applied.length} fields) by ${body?.actor?.tag || body?.actor?.id || 'unknown'}`);
                     return sendJson(res, 200, { ok: true, applied, config: getConfig(guildId) });
                 }
